@@ -1,0 +1,26 @@
+# Roadmap
+- [x] Add progressive rendering to library and industry content and pagination to Insights activity
+- [x] Make file titles open the inline viewer by default; viewer trigger and progressive rendering tests pass
+- [x] Restrict Insights navigation, direct access and report data to admins; route tests pass and database admin guard verified
+- [x] Optimize images, repeated reads and document loading
+- [x] Remove confirmed dead code and patch vulnerable dependencies
+- [x] Harden access/privacy rules, document frames, recovery destinations and abuse limits; verify scans and admin document flows
+- [ ] Verify member-to-member activity isolation end-to-end (blocked: needs an explicitly authorized member session)
+- [ ] Verify first-time password email and concurrent abuse limits end-to-end (blocked: requires an approved test mailbox and privileged quota test access)
+- [ ] Resolve malformed-image relationship errors in some existing PowerPoint decks (blocked: third-party renderer compatibility; simple Word/PowerPoint/PDF fixtures pass)
+- [x] Remove the home-page Upload button and keep search typing independent of navigation
+- [x] Verify home-page search while signed in
+- [x] Fix signed-in logo destination and add Home navigation on industry pages
+- [x] Add admin-only file dashboard with search, industry/customer/date filters, deletion and per-file storage report
+- [x] Verify admin dashboard with a real signed-in file management flow
+- [x] Usage tracking + Insights page
+- [x] Add Energy and Automotive industries with cover images
+- [x] Sort content by date (newest/oldest)
+- [x] Add verified admin/member roles and content management permissions
+- [x] Add admin company rename/delete and file editing controls
+- [x] Verify role and company management rules
+- [x] Open PDF, PowerPoint and Word content inline without forced downloads
+- [x] Replace scrolling top navigation with a dropdown
+- [x] Fix uploaded content appearing under the wrong industry
+- [x] Simplify industry-wide and company-specific upload choices
+- [x] Remove industry dropdown from current-industry upload popup

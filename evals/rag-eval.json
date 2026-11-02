@@ -1,0 +1,299 @@
+{
+  "version": 1,
+  "k": 8,
+  "notes": "Questions are drafted from the extracted library content (spike-output) and need owner confirmation. expectedFiles are library file names; the download prefix (<id8>-) is ignored when matching. Scoped cases assume the file is filed under the listed industry in content_items; correct the scope if the library files it elsewhere.",
+  "cases": [
+    {
+      "id": "exact-united-next",
+      "category": "exact-term",
+      "question": "What does the United Next growth plan cover?",
+      "expectedFiles": ["2dfa09fc-United_Airlines_Strategic_Brief.docx"]
+    },
+    {
+      "id": "exact-smart-verify",
+      "category": "exact-term",
+      "question": "What is Smart Verify and how does it improve customer experience?",
+      "expectedFiles": ["9b17a6e8-MNC_financial_040225_v1.0.pptx"]
+    },
+    {
+      "id": "exact-intellimates",
+      "category": "exact-term",
+      "question": "What is the Intellimates platform and how does it help a supply chain?",
+      "expectedFiles": ["46fcbb41-UPS-II-AIonOS-The-Intellimates.pptx"]
+    },
+    {
+      "id": "exact-nura",
+      "category": "exact-term",
+      "question": "What cross-border health data governance challenge is Fujifilm NURA facing?",
+      "expectedFiles": ["da0e423f-AIONOS_NURA_Technical_Brief.pdf"]
+    },
+    {
+      "id": "exact-ruza-sabanovic",
+      "category": "exact-term",
+      "question": "Who is Ruza Sabanovic and where did she lead technology?",
+      "expectedFiles": ["2d33b0fd-2510_Ruza_Sabanovic.docx"]
+    },
+    {
+      "id": "exact-bajaj-pulsar",
+      "category": "exact-term",
+      "question": "What was the Bajaj Pulsar Chala Apni campaign and what results did it deliver?",
+      "expectedFiles": ["c772bed6-Case_study_-_Bajaj_Pulsar.pdf"]
+    },
+    {
+      "id": "exact-acleda-npl",
+      "category": "exact-term",
+      "question": "What is ACLEDA Bank's non-performing loan ratio and how fast is its digital channel growing?",
+      "expectedFiles": ["c1d70c0d-ACLEDA_Bank_Account_Plan_Aug2026.docx"]
+    },
+    {
+      "id": "exact-indusind-ratios",
+      "category": "exact-term",
+      "question": "What are IndusInd General Insurance's net written premium, profit and solvency ratio?",
+      "expectedFiles": ["8b9c8d4d-IndusInd_General_Insurance_AI_Maturity_19Sept.docx"]
+    },
+    {
+      "id": "exact-vodafone-investment",
+      "category": "exact-term",
+      "question": "What is in the investment summary of the Vodafone Oman data management hub commercial response?",
+      "expectedFiles": ["53630d60-Commercial_Proposal_-_Vodafone_Datalake_7_Sept_2026_v2.0.pdf"]
+    },
+    {
+      "id": "exact-aahl-report",
+      "category": "exact-term",
+      "question": "What does the Adani Airport Holdings integrated annual report cover for non-aeronautical revenue?",
+      "expectedFiles": ["f7165c9e-AAHL_IR_2023-24_C2C_Interactive.pdf"]
+    },
+    {
+      "id": "exact-sovereign-ai",
+      "category": "exact-term",
+      "question": "What does the BFSI deck for Bank of India say about sovereign AI for the enterprise?",
+      "expectedFiles": ["c4567bcf-AIONOS_BFSI_Deck_Bank_of_India.pptx"]
+    },
+    {
+      "id": "exact-adani-attendees",
+      "category": "exact-term",
+      "question": "Who attended the Adani workshop on 1 April 2025?",
+      "expectedFiles": ["031e760a-250401_Adani_Workshop.docx"]
+    },
+    {
+      "id": "exact-true-cx-rfi",
+      "category": "exact-term",
+      "question": "What is the CX Single Survey Platform RFI that True Corporation issued?",
+      "expectedFiles": ["bf2849d0-RFI_CXSingleSurveyPlatformProject_TrueCorporation.docx"]
+    },
+    {
+      "id": "exact-ithmaar-dashboard",
+      "category": "exact-term",
+      "question": "What does the CXO dashboard solution for Ithmaar Bank deliver?",
+      "expectedFiles": ["815ba684-Banking_CXO_Dashboard_Solution.docx"]
+    },
+    {
+      "id": "exact-staff-augmentation",
+      "category": "exact-term",
+      "question": "What are the terms of the staff augmentation services agreement with Aventis Technologies?",
+      "expectedFiles": ["b23f1fd0-20260420_Staff_Augmentation_Agreement_v0.1_AIPT-AVENTIS.docx"]
+    },
+    {
+      "id": "vague-retention",
+      "category": "vague",
+      "question": "How do we usually improve customer retention with AI?",
+      "expectedFiles": ["780aa9a1-Maruti_Suzuki_II_AIonOS_AgenticAI_Customer_Focus.pptx"]
+    },
+    {
+      "id": "vague-healthcare-india",
+      "category": "vague",
+      "question": "What do we know about the healthcare industry in India?",
+      "expectedFiles": [
+        "21049343-Braindesk_Report_on_Healthcare_Industry.pdf",
+        "51a0b398-Braindesk_GenAI_Trends_in_Healthcare.pdf"
+      ]
+    },
+    {
+      "id": "vague-genai-healthcare",
+      "category": "vague",
+      "question": "How is generative AI changing healthcare delivery?",
+      "expectedFiles": ["51a0b398-Braindesk_GenAI_Trends_in_Healthcare.pdf"]
+    },
+    {
+      "id": "vague-retail-cpg-trends",
+      "category": "vague",
+      "question": "What are the emerging trends in retail and consumer packaged goods?",
+      "expectedFiles": ["2f96f66e-Braindesk_Future_Trends_in_Retail_CPG_Industry.pdf"]
+    },
+    {
+      "id": "vague-automotive-market",
+      "category": "vague",
+      "question": "How big is the Indian automotive market and what is driving it?",
+      "expectedFiles": ["50f20f6b-Braindesk_India_-_Automotive_Market_Analysis.pdf"]
+    },
+    {
+      "id": "vague-company-mission",
+      "category": "vague",
+      "question": "What is our mission and who founded the company?",
+      "expectedFiles": ["64e81478-AIONOS_Acleda_Strategic_Collaboration_Deck.pdf"]
+    },
+    {
+      "id": "vague-airports-india",
+      "category": "vague",
+      "question": "How do we approach airport industry opportunities in India?",
+      "expectedFiles": [
+        "8a40a104-Braindesk_Airports_Industry_Analysis_India_.pdf",
+        "9166a939-Adani_Airports_v1.0_-_Solution_Master.pptx"
+      ]
+    },
+    {
+      "id": "vague-indigo-personalization",
+      "category": "vague",
+      "question": "What personalization work have we done for IndiGo to improve bookings?",
+      "expectedFiles": ["45364936-2411_-_IndiGo_MarTech_Personalization_using_Agentic_AI.pptx"]
+    },
+    {
+      "id": "vague-hotel-ar-process",
+      "category": "vague",
+      "question": "How would we modernise the accounts receivable and booking process for a hotel group?",
+      "expectedFiles": ["e7bf75e3-InterGlobe_Hotels_Roadmap.pptx"]
+    },
+    {
+      "id": "vague-kotak",
+      "category": "vague",
+      "question": "What do we propose for Kotak Mahindra Bank?",
+      "expectedFiles": ["9cea6d7f-250908_Kotak_AIonOS_v1.2.pptx"]
+    },
+    {
+      "id": "vague-ascension",
+      "category": "vague",
+      "question": "What is the Ascension Health discussion document about?",
+      "expectedFiles": ["22d2cff5-250201_-_Ascension_-_AIonOS_v1.0.pptx"]
+    },
+    {
+      "id": "vague-oman-arab-bank",
+      "category": "vague",
+      "question": "How do we support Oman Arab Bank?",
+      "expectedFiles": ["bc18002a-250910_AIonOS_Oman_Arab_Bank_v1.0.pptx"]
+    },
+    {
+      "id": "vague-riyadh-air",
+      "category": "vague",
+      "question": "What is the regulatory and digital context for Riyadh Air in Saudi Arabia?",
+      "expectedFiles": ["0124149a-KYC-_Riyadh_Air.docx"]
+    },
+    {
+      "id": "vague-united-account",
+      "category": "vague",
+      "question": "Which airline is headquartered in Chicago and has an India knowledge center in Gurugram?",
+      "expectedFiles": ["6ab6ded7-United_Airlines_Strategic_Account_Plan_v2.docx"]
+    },
+    {
+      "id": "vague-supply-chain-apac",
+      "category": "vague",
+      "question": "What hyper-personalized supply chain offering do we have for APAC?",
+      "expectedFiles": ["46fcbb41-UPS-II-AIonOS-The-Intellimates.pptx"]
+    },
+    {
+      "id": "vague-adani-airports-solutions",
+      "category": "vague",
+      "question": "What solution offerings do we propose to Adani Airports?",
+      "expectedFiles": ["9166a939-Adani_Airports_v1.0_-_Solution_Master.pptx"]
+    },
+    {
+      "id": "scoped-airlines-united",
+      "category": "scoped",
+      "question": "What is the United Next strategy and its main pillars?",
+      "expectedFiles": ["2dfa09fc-United_Airlines_Strategic_Brief.docx"],
+      "scope": { "industry": "airlines" }
+    },
+    {
+      "id": "scoped-bfsi-indusind",
+      "category": "scoped",
+      "question": "Which insurer has around 4.87% market share and a 1.59x solvency ratio?",
+      "expectedFiles": ["8b9c8d4d-IndusInd_General_Insurance_AI_Maturity_19Sept.docx"],
+      "scope": { "industry": "bfsi" }
+    },
+    {
+      "id": "scoped-hospitality-hotels",
+      "category": "scoped",
+      "question": "How does the booking and payment flow work for the hotel group?",
+      "expectedFiles": ["e7bf75e3-InterGlobe_Hotels_Roadmap.pptx"],
+      "scope": { "industry": "hospitality" }
+    },
+    {
+      "id": "scoped-automotive-bajaj",
+      "category": "scoped",
+      "question": "What case study covers a motorcycle brand's personalised campaign?",
+      "expectedFiles": ["c772bed6-Case_study_-_Bajaj_Pulsar.pdf"],
+      "scope": { "industry": "automotive" }
+    },
+    {
+      "id": "scoped-telecom-true",
+      "category": "scoped",
+      "question": "Which operator issued a request for information for a single customer survey platform?",
+      "expectedFiles": ["bf2849d0-RFI_CXSingleSurveyPlatformProject_TrueCorporation.docx"],
+      "scope": { "industry": "telecom" }
+    },
+    {
+      "id": "scoped-healthcare-nura",
+      "category": "scoped",
+      "question": "How is patient health data governed across borders?",
+      "expectedFiles": ["da0e423f-AIONOS_NURA_Technical_Brief.pdf"],
+      "scope": { "industry": "healthcare-and-life-sciences" }
+    },
+    {
+      "id": "scoped-airports-adani",
+      "category": "scoped",
+      "question": "What is the proposed solution master for Adani Airports?",
+      "expectedFiles": ["9166a939-Adani_Airports_v1.0_-_Solution_Master.pptx"],
+      "scope": { "industry": "airports" }
+    },
+    {
+      "id": "scoped-retail-cpg",
+      "category": "scoped",
+      "question": "What future trends should we pitch to retail and CPG clients?",
+      "expectedFiles": ["2f96f66e-Braindesk_Future_Trends_in_Retail_CPG_Industry.pdf"],
+      "scope": { "industry": "retail" }
+    },
+    {
+      "id": "scoped-logistics-ups",
+      "category": "scoped",
+      "question": "What do we offer for supply chain visibility and customer experience?",
+      "expectedFiles": ["46fcbb41-UPS-II-AIonOS-The-Intellimates.pptx"],
+      "scope": { "industry": "logistics" }
+    },
+    {
+      "id": "scoped-bfsi-kotak",
+      "category": "scoped",
+      "question": "What did we present to Kotak Mahindra Bank?",
+      "expectedFiles": ["9cea6d7f-250908_Kotak_AIonOS_v1.2.pptx"],
+      "scope": { "industry": "bfsi" }
+    },
+    {
+      "id": "unanswerable-germany-revenue",
+      "category": "unanswerable",
+      "question": "What was our revenue in Germany for FY2025?",
+      "expectedFiles": []
+    },
+    {
+      "id": "unanswerable-tesla-ceo",
+      "category": "unanswerable",
+      "question": "Who is the current chief executive of Tesla?",
+      "expectedFiles": []
+    },
+    {
+      "id": "unanswerable-app-pricing",
+      "category": "unanswerable",
+      "question": "What is the monthly subscription price of our consumer mobile app?",
+      "expectedFiles": []
+    },
+    {
+      "id": "unanswerable-brazil-headcount",
+      "category": "unanswerable",
+      "question": "How many employees did we have in Brazil last quarter?",
+      "expectedFiles": []
+    },
+    {
+      "id": "unanswerable-japan-visa",
+      "category": "unanswerable",
+      "question": "What are the visa requirements for travelling to Japan?",
+      "expectedFiles": []
+    }
+  ]
+}
