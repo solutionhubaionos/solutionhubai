@@ -266,26 +266,32 @@ function SourceChip({ source }: { source: ChatSource }) {
   );
 }
 
+/**
+ * The assistant's pending turn: a message-shaped placeholder that says what is
+ * happening, so a slow answer reads as work in progress rather than silence.
+ * The composer also disables sending while this is on screen.
+ */
 function ThinkingRow() {
   return (
-    <div className="flex gap-3" aria-live="polite">
+    <div className="flex gap-3" role="status" aria-live="polite">
       <span
         aria-hidden
         className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary/10 text-primary"
       >
         <Sparkles size={15} />
       </span>
-      <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3.5 py-2">
-        <span className="text-xs text-muted-foreground">Searching the library</span>
+      <div className="inline-flex items-center gap-1.5 rounded-2xl rounded-bl-md border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
+        <span>Thinking</span>
         <span className="flex items-center" aria-hidden>
-          {[0, 150, 300].map((delay) => (
+          {[0, 160, 320].map((delay) => (
             <span
               key={delay}
-              className="mx-0.5 h-1.5 w-1.5 animate-bounce rounded-full bg-primary"
+              className="mx-0.5 h-1.5 w-1.5 animate-bounce rounded-full bg-primary motion-reduce:animate-none"
               style={{ animationDelay: `${delay}ms` }}
             />
           ))}
         </span>
+        <span className="sr-only">AI Search is forming an answer</span>
       </div>
     </div>
   );

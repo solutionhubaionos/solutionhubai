@@ -1,9 +1,9 @@
 -- Ingestion waits 120 seconds after a file lands before a worker may claim it.
 -- A quick re-upload, move or replace inside the same upload flow then parses the
 -- final bytes once instead of parsing twice. The delay is stored per job and
--- enforced by the claim query in scripts/ingest-worker.ts, which only takes rows
--- with not_before <= now(); scripts/install-ingest-cron.sh drives that worker
--- once a minute.
+-- enforced by worker_claim_job() in drizzle/migrations/0017_worker_rpc.sql,
+-- which only takes rows with not_before <= now(); scripts/install-ingest-cron.sh
+-- drives that worker once a minute.
 set search_path = public, extensions;
 
 alter table public.ingestion_jobs

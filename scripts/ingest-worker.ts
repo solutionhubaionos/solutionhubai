@@ -1,7 +1,12 @@
 /**
- * Standalone ingestion worker. Claims one queued job at a time, downloads the
- * private file, extracts text, chunks, embeds and replaces the document's
- * passages atomically.
+ * Standalone ingestion worker. Claims one queued job at a time through the
+ * worker_* RPCs, downloads the private file, extracts text, chunks, embeds and
+ * replaces the document's passages atomically.
+ *
+ * Lovable Cloud does not expose a Postgres URL or service-role key, so the
+ * worker signs in as the library member and calls authenticated RPCs added by
+ * drizzle/migrations/0017_worker_rpc.sql. The account must be listed in
+ * public.ingestion_worker_users. A service-role key still works when present.
  *
  * Usage:
  *   bun scripts/ingest-worker.ts                 # drain the due queue, then exit
@@ -9,7 +14,17 @@
  *   bun scripts/ingest-worker.ts --cron          # one scheduled tick (see below)
  *   bun scripts/ingest-worker.ts --limit 5       # stop after five jobs
  *   bun scripts/ingest-worker.ts --local-dir spike-input
- *   bun scripts/ingest-worker.ts --backfill     # queue library items missing a job
+ *   bun scripts/ingest-worker.ts --backfill      # queue library items missing a job
+ *   bun scripts/ingest-worker.ts --workers 5     # five workers, each a separate process
+ *
+ * --workers runs several workers at once. worker_claim_job() takes a job with
+ * `for update skip locked`, so two workers can never claim the same file; a
+ * second worker always moves on to the next queued one.
+ *
+ * A claimed job is leased: the worker refreshes ingestion_jobs.heartbeat_at every
+ * minute, and the database only takes a job back once its heartbeat has stopped
+ * for five minutes. A slow document therefore keeps its lease, and only a worker
+ * that actually died loses one.
  *
  * Jobs are not claimable the moment they are queued: the trigger in
  * drizzle/migrations/0015_ingestion_delay.sql sets not_before to the upload time
@@ -24,10 +39,10 @@
  * Never print document text or credentials from here: logs carry counts only.
  */
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { spawn } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
-import postgres from "postgres";
-import type { Database } from "../src/integrations/supabase/types";
+import { fileURLToPath } from "node:url";
 import { documentFormat } from "../src/lib/document-format";
 import { extractDocument } from "../src/lib/rag/extract";
 import {
@@ -38,7 +53,6 @@ import {
 } from "../src/lib/rag/ingest";
 
 const BUCKET = "content";
-const MAX_ATTEMPTS = 3;
 const SUPPORTED = new Set(["pdf", "docx", "pptx"]);
 
 type Job = {
@@ -68,14 +82,39 @@ const backfill = flag("--backfill");
 const limit = Number(value("--limit") ?? 0) || Number.POSITIVE_INFINITY;
 const localDir = value("--local-dir") ? resolve(value("--local-dir")!) : null;
 
+/**
+ * Parallel workers. Each runs as its own OS process, so extraction runs on its
+ * own core instead of blocking a shared event loop. INGEST_WORKER_CHILD marks a
+ * spawned child so it never spawns again.
+ */
+const requestedWorkers = Math.trunc(Number(value("--workers") ?? 1)) || 1;
+const workerCount =
+  process.env.INGEST_WORKER_CHILD === "1" ? 1 : Math.min(Math.max(requestedWorkers, 1), 16);
+
 /** Longest this invocation sleeps for a job that is not due yet. */
 const MAX_WAIT_MS = watch ? 60_000 : cron ? 59_000 : 0;
 const IDLE_POLL_MS = 5_000;
 /** Cushion past the database deadline so the claim query sees the job as due. */
 const DUE_MARGIN_MS = 50;
+/**
+ * How often a running job's lease is refreshed. 0017 reclaims a job whose
+ * heartbeat is older than five minutes, so five beats may be missed before a
+ * file is handed to another worker.
+ */
+const HEARTBEAT_MS = 60_000;
 
-if (!process.env.SUPABASE_DB_URL) {
-  console.error("SUPABASE_DB_URL is missing from .env");
+const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const libraryEmail = process.env.LIBRARY_USER_EMAIL;
+const libraryPassword = process.env.LIBRARY_USER_PASSWORD;
+
+if (!process.env.SUPABASE_URL) {
+  console.error("SUPABASE_URL is missing from .env");
+  process.exit(1);
+}
+if (!serviceKey && (!process.env.SUPABASE_PUBLISHABLE_KEY || !libraryEmail || !libraryPassword)) {
+  console.error(
+    "Set SUPABASE_SERVICE_ROLE_KEY, or SUPABASE_PUBLISHABLE_KEY + LIBRARY_USER_EMAIL + LIBRARY_USER_PASSWORD",
+  );
   process.exit(1);
 }
 if (!process.env.TOKENFACTORY_API_BASE || !process.env.TOKENFACTORY_API_KEY) {
@@ -83,41 +122,55 @@ if (!process.env.TOKENFACTORY_API_BASE || !process.env.TOKENFACTORY_API_KEY) {
   process.exit(1);
 }
 
-const sql = postgres(process.env.SUPABASE_DB_URL, { ssl: "require", max: 2 });
 const embedConfig = {
   apiKey: process.env.TOKENFACTORY_API_KEY,
   baseUrl: process.env.TOKENFACTORY_API_BASE,
 };
 
-let storage: SupabaseClient<Database> | null = null;
+let supabase: SupabaseClient | null = null;
 let localFiles: Map<string, string> | null = null;
 
-async function createStorageClient(): Promise<SupabaseClient<Database>> {
-  const url = process.env.SUPABASE_URL;
-  const publishable = process.env.SUPABASE_PUBLISHABLE_KEY;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const email = process.env.LIBRARY_USER_EMAIL;
-  const password = process.env.LIBRARY_USER_PASSWORD;
+async function getClient(): Promise<SupabaseClient> {
+  if (supabase) return supabase;
 
-  if (!url) throw new Error("SUPABASE_URL is missing");
+  const url = process.env.SUPABASE_URL!;
+  const publishable = process.env.SUPABASE_PUBLISHABLE_KEY;
   const options = { auth: { persistSession: false, autoRefreshToken: false } };
 
   if (serviceKey) {
-    return createClient<Database>(url, serviceKey, options);
+    supabase = createClient(url, serviceKey, options);
+    return supabase;
   }
-  if (publishable && email && password) {
-    const client = createClient<Database>(url, publishable, options);
-    const { error } = await client.auth.signInWithPassword({ email, password });
-    if (error) {
-      throw new Error(
-        `No usable Storage credential: set SUPABASE_SERVICE_ROLE_KEY, or a valid LIBRARY_USER_EMAIL + LIBRARY_USER_PASSWORD (member sign-in failed: ${error.message})`,
-      );
+
+  const next = createClient(url, publishable!, options);
+  const { error } = await next.auth.signInWithPassword({
+    email: libraryEmail!,
+    password: libraryPassword!,
+  });
+  if (error) throw new Error(`Member sign-in failed: ${error.message}`);
+  supabase = next;
+  return supabase;
+}
+
+/** Fails fast with the exact SQL when 0017 has not been applied or the account is not listed. */
+async function checkWorkerAccess() {
+  const client = await getClient();
+  const { data, error } = await client.rpc("is_ingestion_worker");
+  if (error) {
+    if (error.code === "PGRST202") {
+      throw new Error("Apply drizzle/migrations/0017_worker_rpc.sql before running ingestion");
     }
-    return client;
+    throw new Error(`Worker access check failed: ${error.message}`);
   }
-  throw new Error(
-    "Set SUPABASE_SERVICE_ROLE_KEY, or LIBRARY_USER_EMAIL + LIBRARY_USER_PASSWORD, or pass --local-dir",
-  );
+  if (!data) {
+    const email = libraryEmail ?? "<worker email>";
+    throw new Error(
+      "This account is not an ingestion worker. Add it in the Lovable SQL editor:\n" +
+        "insert into public.ingestion_worker_users (user_id)\n" +
+        `select id from auth.users where lower(email) = lower('${email}')\n` +
+        "on conflict do nothing;",
+    );
+  }
 }
 
 function findLocalFile(fileName: string): string {
@@ -142,37 +195,19 @@ async function readBytes(job: Job): Promise<Uint8Array> {
   if (localDir) {
     return new Uint8Array(readFileSync(findLocalFile(job.file_name)));
   }
-  storage ??= await createStorageClient();
-  const { data, error } = await storage.storage.from(BUCKET).download(job.file_path);
+  const client = await getClient();
+  const { data, error } = await client.storage.from(BUCKET).download(job.file_path);
   if (error || !data) throw new Error(`Download failed: ${error?.message ?? "empty response"}`);
   return new Uint8Array(await data.arrayBuffer());
 }
 
-/** Claims a single job, so two workers never pick the same one. */
+/** Claims a single job in one database function, so two workers never pick the same one. */
 async function claimJob(): Promise<Job | null> {
-  return sql.begin(async (tx) => {
-    const rows = await tx<Job[]>`
-      select j.id, j.content_id, j.attempts, j.content_hash, j.chunk_count,
-             ci.file_path, ci.file_name, ci.mime_type
-      from public.ingestion_jobs j
-      join public.content_items ci on ci.id = j.content_id
-      where j.status = 'queued'
-        and j.not_before <= now()
-      order by j.not_before, j.created_at
-      limit 1
-      for update of j skip locked
-    `;
-    const job = rows[0];
-    if (!job) return null;
-
-    const [updated] = await tx<{ attempts: number }[]>`
-      update public.ingestion_jobs
-         set status = 'running', attempts = attempts + 1, started_at = now(), updated_at = now()
-       where id = ${job.id}
-       returning attempts
-    `;
-    return { ...job, attempts: updated.attempts };
-  });
+  const client = await getClient();
+  const { data, error } = await client.rpc("worker_claim_job");
+  if (error) throw new Error(`Could not claim a job: ${error.message}`);
+  const rows = (data as Job[] | null) ?? [];
+  return rows[0] ?? null;
 }
 
 /**
@@ -181,47 +216,151 @@ async function claimJob(): Promise<Job | null> {
  * fixed poll interval is what keeps the 120s delay exact.
  */
 async function nextDueInMs(): Promise<number | null> {
-  const [row] = await sql<{ seconds: number | null }[]>`
-    select extract(epoch from (min(not_before) - clock_timestamp()))::float8 as seconds
-      from public.ingestion_jobs
-     where status = 'queued'
-  `;
-  if (!row || row.seconds === null || Number.isNaN(row.seconds)) return null;
-  return Math.max(0, Math.round(row.seconds * 1000));
+  const client = await getClient();
+  const { data, error } = await client.rpc("worker_next_due_seconds");
+  if (error) throw new Error(`Could not read the queue deadline: ${error.message}`);
+  if (data === null || data === undefined) return null;
+  const seconds = Number(data);
+  if (!Number.isFinite(seconds)) return null;
+  return Math.max(0, Math.round(seconds * 1000));
 }
 
 const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
 
 async function finish(
   job: Job,
-  status: "ready" | "empty" | "skipped",
   patch: { chunkCount: number; contentHash?: string | null; warnings: string[] },
 ) {
-  await sql`
-    update public.ingestion_jobs
-       set status = ${status},
-           chunk_count = ${patch.chunkCount},
-           content_hash = ${patch.contentHash ?? null},
-           warnings = ${sql.json(patch.warnings)},
-           error = null,
-           finished_at = now(),
-           updated_at = now()
-     where id = ${job.id}
-  `;
+  const client = await getClient();
+  const { error } = await client.rpc("worker_finish_job", {
+    p_job_id: job.id,
+    p_status: "ready",
+    p_chunk_count: patch.chunkCount,
+    p_content_hash: patch.contentHash ?? null,
+    p_warnings: patch.warnings,
+  });
+  if (error) throw new Error(`Could not finish job ${job.id}: ${error.message}`);
 }
 
-/** Records the failure; retries until MAX_ATTEMPTS, then stays failed. */
+const STAGING_BATCH = 10;
+
+async function beginStaging(jobId: string) {
+  const client = await getClient();
+  const { error } = await client.rpc("worker_begin_staging", { p_job_id: jobId });
+  if (error) throw new Error(`Could not start staging: ${error.message}`);
+}
+
+async function stageChunks(jobId: string, chunks: readonly EmbeddedChunk[]) {
+  const client = await getClient();
+  const { error } = await client.rpc("worker_stage_chunks", {
+    p_job_id: jobId,
+    p_chunks: chunks,
+  });
+  if (error) throw new Error(`Could not stage chunks: ${error.message}`);
+}
+
+async function commitStaging(jobId: string, contentHash: string, warnings: string[]) {
+  const client = await getClient();
+  const { data, error } = await client.rpc("worker_commit_staging", {
+    p_job_id: jobId,
+    p_content_hash: contentHash,
+    p_status: "ready",
+    p_warnings: warnings,
+  });
+  if (error) throw new Error(`Could not commit chunks: ${error.message}`);
+  return Number(data ?? 0);
+}
+
+async function replaceChunks(
+  job: Job,
+  chunks: readonly EmbeddedChunk[],
+  contentHash: string | null,
+  status: "ready" | "empty" | "skipped",
+  warnings: string[],
+): Promise<number> {
+  if (status === "ready" && chunks.length > 0) {
+    if (!contentHash) throw new Error("Ready chunks need a content hash");
+    // The Data API has a request-size limit; stage in small batches, then
+    // copy the whole set into document_chunks in one atomic RPC.
+    await beginStaging(job.id);
+    for (let index = 0; index < chunks.length; index += STAGING_BATCH) {
+      await stageChunks(job.id, chunks.slice(index, index + STAGING_BATCH));
+    }
+    return commitStaging(job.id, contentHash, warnings);
+  }
+
+  const client = await getClient();
+  const { data, error } = await client.rpc("worker_replace_document_chunks", {
+    p_content_id: job.content_id,
+    p_chunks: chunks,
+    p_content_hash: contentHash,
+    p_status: status,
+    p_warnings: warnings,
+  });
+  if (error) throw new Error(`Could not replace chunks: ${error.message}`);
+  return Number(data ?? 0);
+}
+
+/** Records the failure; retries until the database's three-attempt limit, then stays failed. */
 async function fail(job: Job, message: string): Promise<"queued" | "failed"> {
-  const status = job.attempts >= MAX_ATTEMPTS ? "failed" : "queued";
-  await sql`
-    update public.ingestion_jobs
-       set status = ${status},
-           error = ${message.slice(0, 500)},
-           finished_at = ${status === "failed" ? sql`now()` : null},
-           updated_at = now()
-     where id = ${job.id}
-  `;
-  return status;
+  const client = await getClient();
+  const { data, error } = await client.rpc("worker_fail_job", {
+    p_job_id: job.id,
+    p_error: message.slice(0, 500),
+  });
+  if (error) throw new Error(`Could not record failure for job ${job.id}: ${error.message}`);
+  return data === "failed" ? "failed" : "queued";
+}
+
+async function reclaimStale(): Promise<number> {
+  const client = await getClient();
+  const { data, error } = await client.rpc("worker_reclaim_stale");
+  if (error) throw new Error(`Could not reclaim stale jobs: ${error.message}`);
+  return Number(data ?? 0);
+}
+
+/** True while this worker still owns the job; false once another worker took it. */
+async function heartbeat(job: Job): Promise<boolean> {
+  const client = await getClient();
+  const { data, error } = await client.rpc("worker_heartbeat", { p_job_id: job.id });
+  if (error) throw new Error(`Could not heartbeat job ${job.id}: ${error.message}`);
+  return data === true;
+}
+
+/**
+ * Refreshes the lease while a job is processed, so a legitimately slow document
+ * is never mistaken for a dead worker and handed to a second process.
+ */
+function startHeartbeat(job: Job): () => void {
+  let stopped = false;
+  const timer = setInterval(() => {
+    if (stopped) return;
+    heartbeat(job)
+      .then((owned) => {
+        if (!owned && !stopped) {
+          stopped = true;
+          clearInterval(timer);
+          console.warn(`job ${job.id} lease lost: another worker owns it now`);
+        }
+      })
+      .catch((error) => {
+        // Not fatal: the job only has to finish inside the five-minute window.
+        console.error(
+          `job ${job.id} heartbeat failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
+  }, HEARTBEAT_MS);
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+  };
+}
+
+async function backfillJobs(): Promise<number> {
+  const client = await getClient();
+  const { data, error } = await client.rpc("worker_backfill");
+  if (error) throw new Error(`Could not backfill jobs: ${error.message}`);
+  return Number(data ?? 0);
 }
 
 function lowTextWarning(emptyUnits: number): string[] {
@@ -236,7 +375,8 @@ async function processJob(job: Job, counters: Counters) {
   const format = documentFormat(job.file_name, job.mime_type ?? "");
 
   if (!SUPPORTED.has(format)) {
-    await finish(job, "skipped", { chunkCount: 0, warnings: [`Format not extracted: ${format}`] });
+    // Clear old chunks too, in case a previously indexed file was replaced by an unsupported one.
+    await replaceChunks(job, [], null, "skipped", [`Format not extracted: ${format}`]);
     counters.skipped += 1;
     console.log(`job ${job.id} ${label} -> skipped (${format})`);
     return;
@@ -257,7 +397,7 @@ async function processJob(job: Job, counters: Counters) {
   ];
 
   if (rows.length === 0) {
-    await sql`select public.replace_document_chunks(${job.content_id}, ${sql.json([])}, null, 'empty', ${sql.json(warnings)})`;
+    await replaceChunks(job, [], null, "empty", warnings);
     counters.empty += 1;
     console.log(`job ${job.id} ${label} -> empty (no extractable text)`);
     return;
@@ -266,7 +406,7 @@ async function processJob(job: Job, counters: Counters) {
   const contentHash = hashChunkContents(rows.map((row) => row.content));
   if (contentHash === job.content_hash && job.chunk_count > 0) {
     // Text unchanged (a move, or a re-run): keep the existing vectors.
-    await finish(job, "ready", {
+    await finish(job, {
       chunkCount: job.chunk_count,
       contentHash,
       warnings: [...warnings, "Text unchanged; embeddings reused"],
@@ -285,11 +425,7 @@ async function processJob(job: Job, counters: Counters) {
     embedding: embedded.embeddings[index],
   }));
 
-  const [replaced] = await sql<{ n: number }[]>`
-    select public.replace_document_chunks(
-      ${job.content_id}, ${sql.json(payload)}, ${contentHash}, 'ready', ${sql.json(warnings)}
-    ) as n
-  `;
+  const replacedCount = await replaceChunks(job, payload, contentHash, "ready", warnings);
 
   counters.ready += 1;
   const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
@@ -298,45 +434,23 @@ async function processJob(job: Job, counters: Counters) {
       ? "n/a"
       : `${embedded.costEstimated ? "~$" : "$"}${embedded.costUsd.toFixed(6)}`;
   console.log(
-    `job ${job.id} ${label} -> ready (${replaced.n} chunks, ${embedded.promptTokens ?? "?"} tokens, ${cost}, ${seconds}s)`,
+    `job ${job.id} ${label} -> ready (${replacedCount} chunks, ${embedded.promptTokens ?? "?"} tokens, ${cost}, ${seconds}s)`,
   );
 }
 
 async function run() {
   const counters: Counters = { claimed: 0, ready: 0, empty: 0, skipped: 0, failed: 0 };
 
-  // The 120s delay is enforced by the database; without this column the claim
-  // query would fail, so fail early with the migration to apply.
-  const [delayColumn] = await sql<{ ok: boolean }[]>`
-    select exists (
-      select 1 from information_schema.columns
-       where table_schema = 'public'
-         and table_name = 'ingestion_jobs'
-         and column_name = 'not_before'
-    ) as ok
-  `;
-  if (!delayColumn?.ok) {
-    throw new Error("Apply drizzle/migrations/0015_ingestion_delay.sql before running ingestion");
-  }
+  await checkWorkerAccess();
 
-  // A worker that died mid-job leaves the row in 'running' with no owner.
-  const reclaimed = await sql<{ id: string }[]>`
-    update public.ingestion_jobs
-       set status = 'queued', updated_at = now()
-     where status = 'running' and started_at < now() - interval '15 minutes'
-    returning id`;
-  if (reclaimed.length > 0) console.log(`reclaimed ${reclaimed.length} stale job(s)`);
+  // A worker that died mid-job stops heartbeating; its job is requeued after
+  // five minutes, while a slow but live worker keeps its own job.
+  const reclaimed = await reclaimStale();
+  if (reclaimed > 0) console.log(`reclaimed ${reclaimed} stale job(s)`);
 
   if (backfill) {
-    const queued = await sql<{ content_id: string }[]>`
-      insert into public.ingestion_jobs (content_id)
-      select ci.id from public.content_items ci
-       where not exists (
-         select 1 from public.ingestion_jobs j where j.content_id = ci.id
-       )
-      on conflict (content_id) do nothing
-      returning content_id`;
-    console.log(`backfilled ${queued.length} item(s) with no ingestion job`);
+    const queued = await backfillJobs();
+    console.log(`backfilled ${queued} item(s) with no ingestion job`);
   }
 
   for (;;) {
@@ -358,19 +472,32 @@ async function run() {
       if (dueInMs > 1_000) {
         console.log(`next job due in ${Math.ceil(dueInMs / 1000)}s; waiting`);
       }
-      // Land just past the deadline; the claim query re-checks it in the database.
+      // Land just past the deadline; the claim function re-checks it in the database.
       await sleep(Math.max(dueInMs, 250) + DUE_MARGIN_MS);
       continue;
     }
 
     counters.claimed += 1;
+    const stopHeartbeat = startHeartbeat(job);
     try {
       await processJob(job, counters);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      const status = await fail(job, message);
-      if (status === "failed") counters.failed += 1;
-      console.error(`job ${job.id} ${job.file_name} -> ${status}: ${message}`);
+      try {
+        const status = await fail(job, message);
+        if (status === "failed") counters.failed += 1;
+        console.error(`job ${job.id} ${job.file_name} -> ${status}: ${message}`);
+      } catch (failError) {
+        // The job stays running and is reclaimed once its heartbeat goes stale;
+        // keep the loop alive.
+        console.error(
+          `job ${job.id} ${job.file_name} -> could not record failure: ${
+            failError instanceof Error ? failError.message : String(failError)
+          } (original: ${message})`,
+        );
+      }
+    } finally {
+      stopHeartbeat();
     }
 
     if (counters.claimed >= limit) break;
@@ -383,11 +510,80 @@ async function run() {
   if (counters.claimed === 0) console.log("Queue is empty.");
 }
 
+/**
+ * Runs several workers in parallel, one process each.
+ *
+ * No extra locking is needed: worker_claim_job() (0017) claims with
+ * `for update skip locked`, so two workers cannot take the same content, and
+ * document_chunks are replaced through a per-job staging table keyed by job id.
+ *
+ * The parent checks the queue before spawning, so an idle cron tick costs one
+ * sign-in rather than one per worker.
+ */
+async function runWorkers() {
+  // Fail on bad credentials or a missing allowlist once, with one clear error.
+  await checkWorkerAccess();
+
+  if (backfill) {
+    const queued = await backfillJobs();
+    console.log(`backfilled ${queued} item(s) with no ingestion job`);
+  }
+
+  if (!watch) {
+    const dueInMs = await nextDueInMs();
+    if (dueInMs === null) {
+      console.log("Queue is empty.");
+      return;
+    }
+    if (dueInMs > MAX_WAIT_MS) {
+      console.log(`next job due in ${Math.ceil(dueInMs / 1000)}s; a later run will pick it up`);
+      return;
+    }
+  }
+
+  // Everything except --workers and --backfill: the parent already backfilled.
+  const childArgs: string[] = [];
+  const rawArgs = process.argv.slice(2);
+  for (let index = 0; index < rawArgs.length; index += 1) {
+    const arg = rawArgs[index]!;
+    if (arg === "--workers") {
+      index += 1;
+      continue;
+    }
+    if (arg === "--backfill") continue;
+    childArgs.push(arg);
+  }
+
+  console.log(`starting ${workerCount} workers`);
+  // fileURLToPath rather than argv[1]: the script path is absolute and correct
+  // whether it was run as `bun scripts/...`, `bun run ingest`, or from cron.
+  const scriptPath = fileURLToPath(import.meta.url);
+  const children = Array.from({ length: workerCount }, () =>
+    spawn(process.execPath, [scriptPath, ...childArgs], {
+      stdio: "inherit",
+      env: { ...process.env, INGEST_WORKER_CHILD: "1" },
+    }),
+  );
+  const codes = await Promise.all(
+    children.map(
+      (child) =>
+        new Promise<number>((resolve) => {
+          child.on("exit", (code) => resolve(code ?? 1));
+        }),
+    ),
+  );
+
+  const failed = codes.filter((code) => code !== 0).length;
+  if (failed > 0) {
+    console.error(`${failed} of ${workerCount} workers exited with an error`);
+    process.exitCode = 1;
+  }
+}
+
 try {
-  await run();
+  if (workerCount > 1) await runWorkers();
+  else await run();
 } catch (error) {
   console.error(error instanceof Error ? error.message : error);
   process.exitCode = 1;
-} finally {
-  await sql.end();
 }

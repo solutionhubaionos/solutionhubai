@@ -83,7 +83,7 @@ function loadEvalSet(path: string): EvalSet {
 const set = loadEvalSet(setPath);
 const k = clampMatchCount(set.k);
 
-const sql = postgres(process.env.SUPABASE_DB_URL, { ssl: "require", max: 1 });
+const sql = postgres(process.env.SUPABASE_DB_URL, { ssl: "require", max: 1, prepare: false });
 
 type Subject = { id: string; email: string };
 

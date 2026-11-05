@@ -29,6 +29,13 @@ spike-input-sample/
 .env
 .env.local
 
+# Windows download metadata (never part of the project)
+*:Zone.Identifier
+
+# Ingestion worker runtime files
+.ingest.log
+.ingest.lock
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

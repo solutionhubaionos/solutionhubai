@@ -13,7 +13,7 @@ if (!process.env.SUPABASE_DB_URL) {
 type User = { id: string; email: string };
 type Tx = Parameters<Parameters<ReturnType<typeof postgres>["begin"]>[0]>[0];
 
-const sql = postgres(process.env.SUPABASE_DB_URL, { ssl: "require", max: 1 });
+const sql = postgres(process.env.SUPABASE_DB_URL, { ssl: "require", max: 1, prepare: false });
 const memberA: User = { id: crypto.randomUUID(), email: "rag-member-a@aionos.ai" };
 const memberB: User = { id: crypto.randomUUID(), email: "rag-member-b@aionos.ai" };
 const admin: User = { id: crypto.randomUUID(), email: "rag-admin@aionos.ai" };

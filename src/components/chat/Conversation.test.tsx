@@ -95,7 +95,7 @@ describe("Conversation", () => {
     expect(screen.getByText("· p.3")).toBeInTheDocument();
   });
 
-  it("shows a searching indicator while a turn is in flight", () => {
+  it("shows a thinking indicator while a turn is in flight", () => {
     renderConversation(
       <Conversation
         messages={[{ id: "1", role: "user", content: "Anything?" }]}
@@ -107,7 +107,8 @@ describe("Conversation", () => {
         onCancelDocument={vi.fn()}
       />,
     );
-    expect(screen.getByText("Searching the library")).toBeInTheDocument();
+    expect(screen.getByText("Thinking")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("AI Search is forming an answer");
   });
 
   it("waits for confirmation before generating a document", () => {
