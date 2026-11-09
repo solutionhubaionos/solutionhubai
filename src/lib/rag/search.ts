@@ -116,6 +116,21 @@ export async function retrieve(
   return deps.search({ embedding, queryText, scope: normalizeScope(scope), matchCount });
 }
 
+async function searchScopedChunks(
+  client: SupabaseClient<Database>,
+  input: SearchInput,
+): Promise<RetrievedChunk[]> {
+  const { data, error } = await client.rpc("search_chunks", {
+    query_embedding: formatVectorLiteral(input.embedding),
+    query_text: input.queryText,
+    filter_industry: input.scope.industry,
+    filter_customer: input.scope.customer,
+    match_count: input.matchCount,
+  });
+  if (error) throw new Error(`Library search failed: ${error.message}`);
+  return mapSearchRows((data ?? []) as SearchRow[]);
+}
+
 /** Wires retrieve() to an authenticated Supabase client and the gateway embedder. */
 export async function searchLibraryChunks(
   client: SupabaseClient<Database>,
@@ -126,16 +141,44 @@ export async function searchLibraryChunks(
 ): Promise<RetrievedChunk[]> {
   return retrieve(query, scope, k, {
     embedQuery: embed,
-    search: async ({ embedding, queryText, scope: scoped, matchCount }) => {
-      const { data, error } = await client.rpc("search_chunks", {
-        query_embedding: formatVectorLiteral(embedding),
-        query_text: queryText,
-        filter_industry: scoped.industry,
-        filter_customer: scoped.customer,
-        match_count: matchCount,
-      });
-      if (error) throw new Error(`Library search failed: ${error.message}`);
-      return mapSearchRows((data ?? []) as SearchRow[]);
-    },
+    search: (input) => searchScopedChunks(client, input),
   });
+}
+
+/**
+ * Runs the hybrid search once per selected scope and merges the hits. The
+ * question is embedded once, each scope is filtered by the database under the
+ * caller's JWT, and a passage found in overlapping scopes keeps its best score.
+ */
+export async function searchLibraryChunksAcrossScopes(
+  client: SupabaseClient<Database>,
+  query: string,
+  scopes: readonly RetrievalScope[],
+  k: number,
+  embed: (query: string) => Promise<number[]>,
+): Promise<RetrievedChunk[]> {
+  const queryText = query.trim();
+  if (!queryText) return [];
+
+  const matchCount = clampMatchCount(k);
+  const unique = new Map<string, NormalizedScope>();
+  for (const scope of scopes.length > 0 ? scopes : [{}]) {
+    const normalized = normalizeScope(scope);
+    unique.set(`${normalized.industry ?? ""}\u0000${normalized.customer ?? ""}`, normalized);
+  }
+
+  const embedding = await embed(queryText);
+  const batches = await Promise.all(
+    [...unique.values()].map((scope) =>
+      searchScopedChunks(client, { embedding, queryText, scope, matchCount }),
+    ),
+  );
+
+  const best = new Map<string, RetrievedChunk>();
+  for (const chunk of batches.flat()) {
+    const existing = best.get(chunk.chunkId);
+    if (!existing || chunk.score > existing.score) best.set(chunk.chunkId, chunk);
+  }
+
+  return [...best.values()].sort((a, b) => b.score - a.score).slice(0, matchCount);
 }

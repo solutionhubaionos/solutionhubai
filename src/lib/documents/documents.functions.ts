@@ -20,6 +20,16 @@ export type GenerateDocumentResult =
   | { ok: true; file: GeneratedDocument; sourceCount: number; usedFallback: boolean }
   | { ok: false; error: string };
 
+const historySchema = z
+  .array(
+    z.object({
+      role: z.enum(["user", "assistant"]),
+      content: z.string().trim().min(1).max(4000),
+    }),
+  )
+  .max(10)
+  .optional();
+
 const draftSchema = z.object({
   type: z.enum(["pdf", "docx", "pptx"]),
   title: z.string().trim().min(3).max(120),
@@ -33,9 +43,28 @@ const draftSchema = z.object({
   prompt: z.string().trim().max(500),
 });
 
-/** Search text for retrieval: the confirmed draft, not the raw chat message. */
-function retrievalQuery(draft: z.infer<typeof draftSchema>): string {
-  return [draft.title, draft.subtitle, draft.client, draft.industry, draft.sector, ...draft.outline]
+/**
+ * Search text for retrieval: the confirmed draft plus the questions the user
+ * asked in the chat, so the file reflects the conversation as well as the
+ * library.
+ */
+function retrievalQuery(
+  draft: z.infer<typeof draftSchema>,
+  history: readonly { role: "user" | "assistant"; content: string }[] = [],
+): string {
+  const asked = history
+    .filter((turn) => turn.role === "user")
+    .slice(-3)
+    .map((turn) => turn.content);
+  return [
+    draft.title,
+    draft.subtitle,
+    draft.client,
+    draft.industry,
+    draft.sector,
+    ...draft.outline,
+    ...asked,
+  ]
     .filter((value): value is string => Boolean(value))
     .join(". ")
     .slice(0, 400);
@@ -44,13 +73,14 @@ function retrievalQuery(draft: z.infer<typeof draftSchema>): string {
 async function passagesFor(
   supabase: Parameters<typeof searchLibraryChunks>[0],
   draft: z.infer<typeof draftSchema>,
+  history: readonly { role: "user" | "assistant"; content: string }[],
   apiKey: string,
   baseUrl: string,
 ): Promise<RetrievedChunk[]> {
   try {
     return await searchLibraryChunks(
       supabase,
-      retrievalQuery(draft),
+      retrievalQuery(draft, history),
       draft.industrySlug ? { industry: draft.industrySlug } : {},
       DEFAULT_MATCH_COUNT,
       (query) => embedQuery(query, { apiKey, baseUrl }),
@@ -65,16 +95,19 @@ async function passagesFor(
 
 export const generateDocument = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data: unknown) => z.object({ draft: draftSchema }).parse(data))
+  .inputValidator((data: unknown) =>
+    z.object({ draft: draftSchema, history: historySchema }).parse(data),
+  )
   .handler(async ({ data, context }): Promise<GenerateDocumentResult> => {
     const { draft } = data;
+    const history = data.history ?? [];
     const apiKey = process.env["TOKENFACTORY_API_KEY"];
     const baseUrl = process.env["TOKENFACTORY_API_BASE"];
     const providerReady = Boolean(apiKey && baseUrl);
 
     try {
       const passages = providerReady
-        ? await passagesFor(context.supabase, draft, apiKey!, baseUrl!)
+        ? await passagesFor(context.supabase, draft, history, apiKey!, baseUrl!)
         : [];
 
       let usedFallback = true;
@@ -84,6 +117,7 @@ export const generateDocument = createServerFn({ method: "POST" })
           const composed = await composeDocument(draft, passages, {
             apiKey: apiKey!,
             baseUrl: baseUrl!,
+            history,
           });
           outline = composed.outline;
           usedFallback = false;

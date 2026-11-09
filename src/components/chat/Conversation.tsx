@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { FileText, MessageSquare, Plus, Presentation, Sparkles } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -19,6 +19,7 @@ export function Conversation({
   onExampleSelect,
   onGenerateDocument,
   onCancelDocument,
+  intake,
 }: {
   messages: ChatMessageView[];
   isTyping: boolean;
@@ -27,6 +28,8 @@ export function Conversation({
   onExampleSelect: (prompt: string) => void;
   onGenerateDocument: (messageId: string) => void;
   onCancelDocument: (messageId: string) => void;
+  /** The guided sector/company picker, shown under the latest prompt. */
+  intake?: ReactNode;
 }) {
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -40,25 +43,30 @@ export function Conversation({
 
   const opening =
     messages.find((message) => message.role === "user")?.content ?? "New conversation";
+  const hasUserMessage = messages.some((message) => message.role === "user");
 
   return (
     <section aria-label="Conversation" className="flex flex-col gap-4">
-      <div className="flex items-center gap-3 px-1">
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <MessageSquare size={14} className="shrink-0 text-muted-foreground" />
-          <h2 className="truncate font-display text-sm font-semibold text-foreground">{opening}</h2>
-          <span className="shrink-0 rounded-full bg-secondary px-2 py-0.5 text-[11px] text-muted-foreground">
-            {messages.length} {messages.length === 1 ? "message" : "messages"}
-          </span>
+      {hasUserMessage && (
+        <div className="flex items-center gap-3 px-1">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <MessageSquare size={14} className="shrink-0 text-muted-foreground" />
+            <h2 className="truncate font-display text-sm font-semibold text-foreground">
+              {opening}
+            </h2>
+            <span className="shrink-0 rounded-full bg-secondary px-2 py-0.5 text-[11px] text-muted-foreground">
+              {messages.length} {messages.length === 1 ? "message" : "messages"}
+            </span>
+          </div>
+          <button
+            onClick={onNewChat}
+            className={`${FOCUS} inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-secondary lg:hidden`}
+          >
+            <Plus size={13} />
+            New chat
+          </button>
         </div>
-        <button
-          onClick={onNewChat}
-          className={`${FOCUS} inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-secondary lg:hidden`}
-        >
-          <Plus size={13} />
-          New chat
-        </button>
-      </div>
+      )}
 
       <div
         role="log"
@@ -74,9 +82,14 @@ export function Conversation({
             onCancelDocument={onCancelDocument}
           />
         ))}
+        {intake}
         {isTyping && <ThinkingRow />}
         <div ref={endRef} />
       </div>
+
+      {!hasUserMessage && exampleCards.length > 0 && (
+        <ExampleGrid exampleCards={exampleCards} onExampleSelect={onExampleSelect} />
+      )}
     </section>
   );
 }
@@ -109,38 +122,51 @@ function EmptyState({
       </p>
 
       {exampleCards.length > 0 && (
-        <div className="mt-5 w-full text-left sm:mt-6">
-          <p className="mb-2.5 text-center text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Try an example
-          </p>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-2.5 lg:grid-cols-4">
-            {exampleCards.map((card) => {
-              const { icon: Icon, label } = CARD_KINDS[card.kind];
-              return (
-                <button
-                  key={card.prompt}
-                  onClick={() => onExampleSelect(card.prompt)}
-                  className={`${FOCUS} flex min-h-[76px] flex-col justify-between rounded-2xl border border-border bg-secondary/50 p-2.5 text-left transition-all duration-150 hover:-translate-y-px hover:bg-secondary`}
-                >
-                  <span className="line-clamp-3 text-xs font-medium text-foreground">
-                    {card.label}
-                  </span>
-                  <span className="mt-2 flex items-center gap-1.5">
-                    <span
-                      aria-hidden
-                      className="grid h-6 w-6 place-items-center rounded-lg bg-card text-primary shadow-sm"
-                    >
-                      <Icon size={13} />
-                    </span>
-                    <span className="text-[11px] text-muted-foreground">{label}</span>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+        <div className="mt-5 sm:mt-6">
+          <ExampleGrid exampleCards={exampleCards} onExampleSelect={onExampleSelect} />
         </div>
       )}
     </section>
+  );
+}
+
+/** The four starter cards, also shown under the greeting on a fresh chat. */
+function ExampleGrid({
+  exampleCards,
+  onExampleSelect,
+}: {
+  exampleCards: ExampleCard[];
+  onExampleSelect: (prompt: string) => void;
+}) {
+  return (
+    <div className="w-full text-left">
+      <p className="mb-2.5 text-center text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+        Try an example
+      </p>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-2.5 lg:grid-cols-4">
+        {exampleCards.map((card) => {
+          const { icon: Icon, label } = CARD_KINDS[card.kind];
+          return (
+            <button
+              key={card.prompt}
+              onClick={() => onExampleSelect(card.prompt)}
+              className={`${FOCUS} flex min-h-[76px] flex-col justify-between rounded-2xl border border-border bg-secondary/50 p-2.5 text-left transition-all duration-150 hover:-translate-y-px hover:bg-secondary`}
+            >
+              <span className="line-clamp-3 text-xs font-medium text-foreground">{card.label}</span>
+              <span className="mt-2 flex items-center gap-1.5">
+                <span
+                  aria-hidden
+                  className="grid h-6 w-6 place-items-center rounded-lg bg-card text-primary shadow-sm"
+                >
+                  <Icon size={13} />
+                </span>
+                <span className="text-[11px] text-muted-foreground">{label}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

@@ -46,6 +46,9 @@ export const SECTORS = [
 /** A scope the retrieval function understands: at most one industry/customer. */
 export type RetrievalFilter = { industry?: string; customer?: string };
 
+/** Upper bound on scoped searches for one question; keeps latency predictable. */
+export const MAX_RETRIEVAL_SCOPES = 8;
+
 /**
  * Splits the picked context into the single-value filters retrieval can apply
  * and the free-text hints that are appended to the search query.
@@ -76,6 +79,33 @@ export function retrievalInputs(context: ChatContext): {
   if (website) hints.push(website);
 
   return { filter, hints };
+}
+
+/**
+ * Every (industry, company) pair worth searching. The database function filters
+ * by one industry and one company, so multi-select becomes several scoped
+ * searches that are merged, instead of silently narrowing to the first pick.
+ */
+export function retrievalScopes(context: ChatContext): RetrievalFilter[] {
+  const industries = [...new Set(context.industries.filter(Boolean))];
+  const clients = [...new Set(context.clients.filter(Boolean))];
+
+  if (industries.length === 0 && clients.length === 0) return [{}];
+  if (clients.length === 0) {
+    return industries.map((industry) => ({ industry })).slice(0, MAX_RETRIEVAL_SCOPES);
+  }
+  if (industries.length === 0) {
+    return clients.map((customer) => ({ customer })).slice(0, MAX_RETRIEVAL_SCOPES);
+  }
+
+  const scopes: RetrievalFilter[] = [];
+  for (const industry of industries) {
+    for (const customer of clients) {
+      scopes.push({ industry, customer });
+      if (scopes.length >= MAX_RETRIEVAL_SCOPES) return scopes;
+    }
+  }
+  return scopes;
 }
 
 /** The text actually embedded for retrieval: the question, then any hints. */

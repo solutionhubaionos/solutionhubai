@@ -35,9 +35,12 @@ export function passagesBlock(passages: readonly RetrievedChunk[]): string {
     .join("\n\n");
 }
 
+export type ComposeHistoryTurn = { role: "user" | "assistant"; content: string };
+
 export function composeUserPrompt(
   draft: DocumentDraft,
   passages: readonly RetrievedChunk[],
+  history: readonly ComposeHistoryTurn[] = [],
 ): string {
   const context = [
     draft.client ? `Client: ${draft.client}` : null,
@@ -51,17 +54,24 @@ export function composeUserPrompt(
       ? passagesBlock(passages)
       : "No passages were retrieved. Keep the outline generic and do not state facts about clients.";
 
-  return [
+  const conversation = history
+    .map(
+      (turn) =>
+        `${turn.role === "user" ? "User" : "Assistant"}: ${turn.content.replace(/\s+/g, " ").slice(0, 600)}`,
+    )
+    .join("\n");
+
+  const lines = [
     `Document request: ${draft.prompt}`,
     `Format: ${draft.type}`,
     `Title to use: ${draft.title}`,
     `Subtitle to use: ${draft.subtitle}`,
     context.length > 0 ? context.join(" · ") : "No additional context selected.",
     `Section headings to cover: ${draft.outline.join(" | ")}`,
-    "",
-    "Library passages:",
-    library,
-  ].join("\n");
+  ];
+  if (conversation) lines.push("", "Conversation so far:", conversation);
+  lines.push("", "Library passages:", library);
+  return lines.join("\n");
 }
 
 /** Reads the model's JSON, tolerating fences and stray prose around it. */
@@ -140,6 +150,8 @@ export type ComposeOptions = {
   baseUrl: string;
   model?: string;
   fetchImpl?: typeof fetch;
+  /** Recent chat turns, so the document reflects the current conversation. */
+  history?: readonly ComposeHistoryTurn[];
 };
 
 type ChatCompletionResponse = {
@@ -162,7 +174,10 @@ export async function composeDocument(
       model: options.model ?? ANSWER_MODEL,
       messages: [
         { role: "system", content: COMPOSE_SYSTEM_PROMPT },
-        { role: "user", content: composeUserPrompt(draft, passages) },
+        {
+          role: "user",
+          content: composeUserPrompt(draft, passages, options.history ?? []),
+        },
       ],
       max_tokens: COMPOSE_MAX_TOKENS,
       temperature: 0.4,

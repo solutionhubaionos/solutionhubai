@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   EMPTY_CONTEXT,
+  MAX_RETRIEVAL_SCOPES,
   buildRetrievalQuery,
   contextSummary,
   isValidWebsite,
   normaliseWebsite,
   retrievalInputs,
+  retrievalScopes,
   titleFromQuestion,
 } from "./scope";
 
@@ -39,6 +41,42 @@ describe("retrievalInputs", () => {
     });
     expect(result.filter).toEqual({});
     expect(result.hints).toEqual(["CIO / CTO", "Payments", "acme.com"]);
+  });
+});
+
+describe("retrievalScopes", () => {
+  it("searches everything when no context is picked", () => {
+    expect(retrievalScopes(EMPTY_CONTEXT)).toEqual([{}]);
+  });
+
+  it("searches each picked industry separately", () => {
+    expect(retrievalScopes({ ...EMPTY_CONTEXT, industries: ["airports", "telecom"] })).toEqual([
+      { industry: "airports" },
+      { industry: "telecom" },
+    ]);
+  });
+
+  it("pairs industries with companies so every pick is actually filtered", () => {
+    expect(
+      retrievalScopes({
+        ...EMPTY_CONTEXT,
+        industries: ["airports", "telecom"],
+        clients: ["Heathrow", "Vodafone"],
+      }),
+    ).toEqual([
+      { industry: "airports", customer: "Heathrow" },
+      { industry: "airports", customer: "Vodafone" },
+      { industry: "telecom", customer: "Heathrow" },
+      { industry: "telecom", customer: "Vodafone" },
+    ]);
+  });
+
+  it("keeps the number of scoped searches bounded", () => {
+    const industries = Array.from({ length: 20 }, (_, index) => `industry-${index}`);
+    const clients = Array.from({ length: 20 }, (_, index) => `client-${index}`);
+    expect(retrievalScopes({ ...EMPTY_CONTEXT, industries, clients })).toHaveLength(
+      MAX_RETRIEVAL_SCOPES,
+    );
   });
 });
 

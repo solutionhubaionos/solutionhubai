@@ -31,6 +31,8 @@ export function Composer({
   focusSignal,
   contextBar,
   onCreateTool,
+  disabled = false,
+  placeholder,
 }: {
   value: string;
   onChange: (next: string) => void;
@@ -40,6 +42,9 @@ export function Composer({
   focusSignal: number;
   contextBar: ReactNode;
   onCreateTool: (toolId: string) => void;
+  /** Locked while the guided scope picker is waiting for a choice. */
+  disabled?: boolean;
+  placeholder?: string;
 }) {
   const areaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -71,9 +76,10 @@ export function Composer({
             onSend();
           }}
           rows={1}
+          disabled={disabled}
           aria-label="Ask the library a question"
-          placeholder="Ask anything across your library…"
-          className={`${FOCUS} block max-h-[200px] w-full resize-none bg-transparent text-sm leading-relaxed text-foreground placeholder:text-muted-foreground`}
+          placeholder={placeholder ?? "Ask anything across your library…"}
+          className={`${FOCUS} block max-h-[200px] w-full resize-none bg-transparent text-sm leading-relaxed text-foreground placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60`}
         />
       </div>
       <div className="flex items-center justify-between gap-2 px-2.5 pb-2.5 pt-1">
@@ -81,9 +87,10 @@ export function Composer({
           <DropdownMenuTrigger asChild>
             <button
               type="button"
+              disabled={disabled}
               aria-label="Create with AI"
               title="Create with AI"
-              className={`${FOCUS} grid h-8 w-8 place-items-center rounded-lg border border-border bg-card text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground`}
+              className={`${FOCUS} grid h-8 w-8 place-items-center rounded-lg border border-border bg-card text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50`}
             >
               <Plus size={16} />
             </button>
@@ -106,7 +113,7 @@ export function Composer({
           <Button
             size="icon"
             onClick={onSend}
-            disabled={isTyping || value.trim().length === 0}
+            disabled={disabled || isTyping || value.trim().length === 0}
             aria-label="Send question"
             className="h-9 w-9 rounded-xl"
           >

@@ -10,7 +10,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { DEFAULT_MATCH_COUNT } from "../rag/config";
 import { embedQuery } from "../rag/embeddings";
-import { searchLibraryChunks } from "../rag/search";
+import { searchLibraryChunksAcrossScopes } from "../rag/search";
 import {
   buildMessages,
   collectSources,
@@ -18,7 +18,7 @@ import {
   noPassagesAnswer,
   type ChatSource,
 } from "./answer";
-import { buildRetrievalQuery, retrievalInputs } from "./scope";
+import { buildRetrievalQuery, retrievalScopes } from "./scope";
 
 export type AskLibraryResult =
   | { ok: true; answer: string; sources: ChatSource[]; grounded: boolean }
@@ -68,11 +68,12 @@ export const askLibrary = createServerFn({ method: "POST" })
     };
 
     try {
-      const { filter } = retrievalInputs(ctx);
-      const chunks = await searchLibraryChunks(
+      // One scoped search per selected industry/company pair, embedded once and
+      // merged, so every pick contributes rather than only the first.
+      const chunks = await searchLibraryChunksAcrossScopes(
         context.supabase,
         buildRetrievalQuery(data.question, ctx),
-        filter,
+        retrievalScopes(ctx),
         DEFAULT_MATCH_COUNT,
         (query) => embedQuery(query, { apiKey, baseUrl }),
       );

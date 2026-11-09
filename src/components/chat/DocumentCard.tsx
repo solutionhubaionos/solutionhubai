@@ -6,6 +6,7 @@
 import {
   AlertTriangle,
   Download,
+  Eye,
   File,
   FileText,
   Loader2,
@@ -14,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DocumentPreviewDialog } from "./DocumentPreviewDialog";
 import { downloadDocument } from "@/lib/documents/download";
 import { DOCUMENT_FORMATS, formatBytes, type DocumentDraftState } from "@/lib/documents/types";
 import { FOCUS } from "./theme";
@@ -128,6 +130,15 @@ export function DocumentCard({
             <Button size="sm" onClick={() => downloadDocument(file)}>
               <Download /> Download
             </Button>
+            <DocumentPreviewDialog
+              file={file}
+              type={draft.type}
+              trigger={
+                <Button size="sm" variant="outline">
+                  <Eye /> View
+                </Button>
+              }
+            />
             <span className="text-[11px] text-muted-foreground">
               {file.fileName} · {formatBytes(file.bytes)} · {file.pages}{" "}
               {draft.type === "pptx" ? "slides" : "pages"}
