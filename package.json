@@ -12,6 +12,9 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "eval": "bun scripts/run-eval.ts",
+    "eval:answers": "bun scripts/run-answer-eval.ts",
     "ingest": "bun scripts/ingest-worker.ts",
     "ingest:cron": "bun scripts/ingest-worker.ts --cron"
   },

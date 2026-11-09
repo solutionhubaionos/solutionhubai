@@ -59,11 +59,11 @@ flowchart TD
 
 Same retrieval seam feeds three consumers:
 
-| Consumer                                                         | Server function                                     | Notes                                                      |
-| ---------------------------------------------------------------- | --------------------------------------------------- | ---------------------------------------------------------- |
-| AI Search / chat (`/_authenticated/chat`)                        | `askLibrary` (`src/lib/chat/chat.functions.ts`)     | retrieve → answer, history-aware                           |
-| Retrieval debug page (`/_authenticated/rag-debug`, admin-gated)  | `searchLibrary` (`src/lib/rag/search.functions.ts`) | raw passages + score/vector/text rank, `noindex`           |
-| Document generation (`src/lib/documents/documents.functions.ts`) | `generateDocument`                                  | retrieve from the confirmed draft, then compose an outline |
+| Consumer                                                         | Server function                                     | Notes                                                                               |
+| ---------------------------------------------------------------- | --------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| AI Search / chat (`/_authenticated/chat`)                        | `askLibrary` (`src/lib/chat/chat.functions.ts`)     | retrieve → answer; history reaches the prompt only, never retrieval (a Phase 2 fix) |
+| Retrieval debug page (`/_authenticated/rag-debug`, admin-gated)  | `searchLibrary` (`src/lib/rag/search.functions.ts`) | raw passages + score/vector/text rank, `noindex`                                    |
+| Document generation (`src/lib/documents/documents.functions.ts`) | `generateDocument`                                  | retrieve from the confirmed draft, then compose an outline                          |
 
 All three go through `retrieve()` → `searchLibraryChunks()` in `src/lib/rag/search.ts`.
 
@@ -289,6 +289,12 @@ the staging rows.
   **filters vs. hints** — exactly one industry/customer picked becomes a real SQL filter;
   multiple picks are appended to the search text instead of silently narrowing to the first.
   `buildRetrievalQuery()` then embeds `question + "\nContext: hint, hint, …"`.
+
+  Two defects are measured by the Phase 0 eval rather than hidden: the question is
+  embedded as typed, so a follow-up loses its referent, and the same hint text goes to
+  the full-text arm, where `websearch_to_tsquery` ANDs the hints with the question and
+  kills text recall.
+
 - `generateDocument`: builds the query from the **confirmed draft** (title, subtitle, client,
   industry, sector, outline headings), capped at 400 chars, filtering on `industrySlug`.
 
@@ -404,15 +410,18 @@ written to Storage.
 
 ## 7. Evaluation and verification
 
-| Tool                             | What it does                                                                                                                                                                                                                                                                                                                                                                    |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `evals/rag-eval.json`            | 46 cases, `k = 8`: 15 `exact-term`, 16 `vague`, 10 `scoped`, 5 `unanswerable`                                                                                                                                                                                                                                                                                                   |
-| `scripts/run-eval.ts`            | Embeds every question in one batch, runs the **real** `search_chunks` as an authenticated member (sets `request.jwt.claims` + `set local role authenticated`, so RLS applies), scores **recall@k** and **MRR** per category; exits non-zero below the threshold (default `0.8`, `--threshold`, `--k`, `--set`, `--verbose`); needs `SUPABASE_DB_URL`, so it is self-hosted only |
-| `src/lib/rag/eval.ts`            | Pure scoring: `rankFiles()` (dedup by document, order preserved), `evaluateCase()` (first expected file's rank → recall, `1/rank` → RR), `summarize()` (per-category recall/MRR, plus `unanswerableWithResults` as a fabrication check)                                                                                                                                         |
-| `scripts/verify-rag.ts`          | RLS smoke test in a single transaction that is **rolled back**: checks the HNSW index exists, `anon` has no SELECT, both functions are `security invoker`, member A reads/retrieves, industry filter includes/excludes correctly, member B and anon are denied; needs `SUPABASE_DB_URL`, so it is self-hosted only                                                              |
-| `bun run test` (`vitest`)        | Unit coverage for the chunker (split, overlap, heading repetition, page/slide mapping, token cap), search (scope normalization, clamping, vector literal, RPC args, error propagation), eval scoring, extraction, ingestion hashing                                                                                                                                             |
-| `scripts/extract-spike.ts`       | Writes per-file chunks to `spike-output/` for eyeballing extraction + chunk shape before anything is embedded                                                                                                                                                                                                                                                                   |
-| `bun run ingest` / `ingest:cron` | Runs the worker; `.ingest.log` shows per-job chunk counts, tokens, cost and duration, ending in a summary line                                                                                                                                                                                                                                                                  |
+| Tool                             | What it does                                                                                                                                                                                                                                                                                                                                                                              |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `evals/rag-eval.json`            | 115 cases, `k = 8`: 46 original plus 16 `multi-turn`, 22 `chart-table`/diagram, 10 `scope-mode`, 10 `adversarial`, 11 `projection`; cases carry `turns`, `evidence`, `mustMention`, `expectation` and `scopeMode`                                                                                                                                                                         |
+| `scripts/run-eval.ts`            | Runs the production query path (context hints, scope logic, optional `--prefix instruct`) and the **real** `search_chunks` as an authenticated member (sets `request.jwt.claims` + `set local role authenticated`, so RLS applies); scores document/chunk recall@k, MRR, nDCG@k and the unanswerable false-positive rate per category; `--diagnostics`, `--json`; needs `SUPABASE_DB_URL` |
+| `scripts/run-answer-eval.ts`     | Generates one answer per case, then scores citation validity (LLM judge, strict rubric), numeric faithfulness (deterministic), `mustMention` completeness and refusal accuracy; `--no-judge`, `--json`, `--strict`                                                                                                                                                                        |
+| `src/lib/rag/eval.ts`            | Pure retrieval scoring: `resolveCaseQuestion()`, `chunkMatchesCase()` (file + evidence), `rankFiles()`, `ndcgAtK()`, `evaluateCase()`, `summarize()` (per-category recall/MRR/nDCG and false-positive rate)                                                                                                                                                                               |
+| `src/lib/rag/answer-eval.ts`     | Pure answer scoring: sentence splitting, number normalisation, `checkNumericFaithfulness()`, `checkCitations()`, `completeness()`, `isRefusal()`, judge prompt and verdict parsing                                                                                                                                                                                                        |
+| `docs/rag-eval-baseline.md`      | Phase 0 metric definitions, commands, diagnostics and the baseline table every later phase reports against                                                                                                                                                                                                                                                                                |
+| `scripts/verify-rag.ts`          | RLS smoke test in a single transaction that is **rolled back**: checks the HNSW index exists, `anon` has no SELECT, both functions are `security invoker`, member A reads/retrieves, industry filter includes/excludes correctly, member B and anon are denied; needs `SUPABASE_DB_URL`, so it is self-hosted only                                                                        |
+| `bun run test` (`vitest`)        | Unit coverage for the chunker (split, overlap, heading repetition, page/slide mapping, token cap), search (scope normalization, clamping, vector literal, RPC args, error propagation), eval scoring, extraction, ingestion hashing                                                                                                                                                       |
+| `scripts/extract-spike.ts`       | Writes per-file chunks to `spike-output/` for eyeballing extraction + chunk shape before anything is embedded                                                                                                                                                                                                                                                                             |
+| `bun run ingest` / `ingest:cron` | Runs the worker; `.ingest.log` shows per-job chunk counts, tokens, cost and duration, ending in a summary line                                                                                                                                                                                                                                                                            |
 
 ---
 
@@ -472,6 +481,10 @@ breaks retrieval.
    same file; the UI dedups by file only).
 5. Token counting is `chars / 4`, not a real tokenizer — fine for sizing, not for billing.
 6. The debug route is explicitly marked _"Temporary debug surface … remove once chat ships"_.
+7. The Phase 0 retrieval/answer runners need `SUPABASE_DB_URL`; Lovable Cloud does not
+   expose one, so the baseline must be produced from a self-hosted copy of the project.
+   The harness itself is covered by unit tests and runs with one command once a database
+   is reachable.
 
 ## 10. Production cutover checklist
 

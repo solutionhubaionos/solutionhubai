@@ -29,6 +29,14 @@ export const DEFAULT_MATCH_COUNT = 8;
 export const MAX_MATCH_COUNT = 50;
 
 /**
+ * Qwen3-Embedding expects an instruction on the query side only. Documents
+ * stay un-prefixed. Kept here so retrieval and the eval can A/B it with one
+ * switch; production turns it on in Phase 2.
+ */
+export const QUERY_INSTRUCT_PREFIX =
+  "Instruct: Given a question from a sales team, retrieve slides and passages from AIonOS case studies, proposals and decks that answer it\nQuery: ";
+
+/**
  * Chat answer generation. Same gateway and key as embeddings, a text model
  * instead; kept here so the model can be switched in one place.
  */
