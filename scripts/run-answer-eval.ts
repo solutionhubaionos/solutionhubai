@@ -17,7 +17,12 @@
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { buildContext, buildMessages, generateAnswer, noPassagesAnswer } from "../src/lib/chat/answer";
+import {
+  buildContext,
+  buildMessages,
+  generateAnswer,
+  noPassagesAnswer,
+} from "../src/lib/chat/answer";
 import { ANSWER_MODEL } from "../src/lib/rag/config";
 import { embedTexts, queryEmbeddingText } from "../src/lib/rag/embeddings";
 import {
@@ -275,11 +280,7 @@ async function main() {
       answer = noPassagesAnswer();
     } else {
       const history = (testCase.turns ?? []).slice(0, -1);
-      const messages = buildMessages(
-        resolveCaseQuestion(testCase),
-        buildContext(chunks),
-        history,
-      );
+      const messages = buildMessages(resolveCaseQuestion(testCase), buildContext(chunks), history);
       try {
         ({ answer } = await generateAnswer(messages, {
           apiKey,

@@ -61,6 +61,8 @@ drizzle/migrations/0016_backfill_existing_content.sql
 drizzle/migrations/0017_worker_rpc.sql
 drizzle/migrations/0018_worker_statement_timeout.sql
 drizzle/migrations/0019_chunk_provenance.sql
+drizzle/migrations/0020_entity_matching.sql
+drizzle/migrations/0021_customer_name_typo.sql
 ```
 
 Paste one file at a time and run it. The editor asks for confirmation on
@@ -133,7 +135,9 @@ bun scripts/apply-sql.ts --dry-run \
   drizzle/migrations/0016_backfill_existing_content.sql \
   drizzle/migrations/0017_worker_rpc.sql \
   drizzle/migrations/0018_worker_statement_timeout.sql \
-  drizzle/migrations/0019_chunk_provenance.sql
+  drizzle/migrations/0019_chunk_provenance.sql \
+  drizzle/migrations/0020_entity_matching.sql \
+  drizzle/migrations/0021_customer_name_typo.sql
 ```
 
 Then run the same command without `--dry-run`. `verify-rag.ts` needs
