@@ -10,8 +10,10 @@
  */
 import type { RetrievedChunk } from "../rag/search";
 import {
+  ANSWER_MAX_CONTINUATIONS,
   ANSWER_MAX_TOKENS,
   ANSWER_MODEL,
+  ANSWER_TIMEOUT_MS,
   MAX_CONTEXT_CHARS,
   MAX_HISTORY_MESSAGES,
 } from "../rag/config";
@@ -181,20 +183,34 @@ export type GenerateOptions = {
   /** Aborts the request; used by the query rewrite so it can never hang chat. */
   timeoutMs?: number;
   signal?: AbortSignal;
+  requestId?: string;
+  log?: (event: string, meta: Record<string, unknown>) => void;
+  /** Defaults to ANSWER_MAX_CONTINUATIONS. */
+  maxContinuations?: number;
 };
 
-/**
- * Calls the OpenAI-compatible chat endpoint used by the embedding provider.
- * Returns the trimmed answer text; throws with a provider message on failure.
- */
-export async function generateAnswer(
+/** Sent when the provider stopped on `length`; keeps the answer going. */
+const CONTINUATION_PROMPT =
+  "Continue the answer exactly where it stopped. Do not repeat any text and do not add a preamble.";
+
+export type GenerateResult = {
+  answer: string;
+  /** `stop`, `length`, or null when the provider omitted it. */
+  finishReason: string | null;
+  /** How many follow-up completions were issued for a truncated answer. */
+  continuations: number;
+};
+type Completion = { text: string; finishReason: string | null };
+
+/** One non-streaming completion; the provider's finish_reason is kept as-is. */
+async function completeOnce(
   messages: readonly ChatMessage[],
   options: GenerateOptions,
-): Promise<{ answer: string }> {
+  maxTokens: number,
+  signal: AbortSignal | null,
+): Promise<Completion> {
   const doFetch = options.fetchImpl ?? fetch;
   const baseUrl = options.baseUrl.replace(/\/+$/, "");
-  const signal =
-    options.signal ?? (options.timeoutMs ? AbortSignal.timeout(options.timeoutMs) : null);
 
   const response = await doFetch(`${baseUrl}/chat/completions`, {
     method: "POST",
@@ -202,7 +218,7 @@ export async function generateAnswer(
     body: JSON.stringify({
       model: options.model ?? ANSWER_MODEL,
       messages,
-      max_tokens: options.maxTokens ?? ANSWER_MAX_TOKENS,
+      max_tokens: maxTokens,
       temperature: 0.2,
     }),
     ...(signal ? { signal } : {}),
@@ -219,9 +235,86 @@ export async function generateAnswer(
     throw new Error("Answer provider returned a non-JSON response");
   }
 
-  const answer = body.choices?.[0]?.message?.content?.trim() ?? "";
+  const choice = body.choices?.[0];
+  return {
+    text: choice?.message?.content?.trim() ?? "",
+    finishReason: choice?.finish_reason ?? null,
+  };
+}
+
+/** Joins a truncated answer and its continuation without gluing words together. */
+function joinAnswerParts(parts: readonly string[]): string {
+  return parts.reduce((joined, part) => {
+    if (!joined) return part;
+    if (!part) return joined;
+    return /\s$/.test(joined) ? `${joined}${part}` : `${joined} ${part}`;
+  }, "");
+}
+
+/**
+ * Calls the OpenAI-compatible chat endpoint used by the embedding provider.
+ * Every completion logs its finish_reason; a `length` stop triggers one
+ * continuation request instead of returning a sentence cut in half.
+ */
+export async function generateAnswer(
+  messages: readonly ChatMessage[],
+  options: GenerateOptions,
+): Promise<GenerateResult> {
+  const log =
+    options.log ??
+    ((event: string, meta: Record<string, unknown>) =>
+      console.log(`[CHAT] ${event}`, { requestId: options.requestId, ...meta }));
+  const model = options.model ?? ANSWER_MODEL;
+  const maxTokens = options.maxTokens ?? ANSWER_MAX_TOKENS;
+  const maxContinuations = options.maxContinuations ?? ANSWER_MAX_CONTINUATIONS;
+  const signal = options.signal ?? AbortSignal.timeout(options.timeoutMs ?? ANSWER_TIMEOUT_MS);
+
+  const parts: string[] = [];
+  let conversation: ChatMessage[] = [...messages];
+  let finishReason: string | null = null;
+  let continuations = 0;
+
+  for (;;) {
+    const completion = await completeOnce(conversation, options, maxTokens, signal);
+    log("completion", {
+      model,
+      attempt: continuations + 1,
+      finishReason: completion.finishReason,
+      chars: completion.text.length,
+    });
+
+    if (!completion.text) {
+      if (parts.length === 0) throw new Error("Answer provider returned an empty answer");
+      break;
+    }
+
+    parts.push(completion.text);
+    finishReason = completion.finishReason;
+    if (finishReason !== "length") break;
+
+    if (continuations >= maxContinuations) {
+      log("answer truncated", {
+        model,
+        finishReason,
+        maxTokens,
+        continuations,
+        chars: joinAnswerParts(parts).length,
+      });
+      break;
+    }
+
+    continuations += 1;
+    conversation = [
+      ...conversation,
+      { role: "assistant", content: completion.text },
+      { role: "user", content: CONTINUATION_PROMPT },
+    ];
+    log("continuation requested", { model, continuations, maxTokens });
+  }
+
+  const answer = joinAnswerParts(parts).trim();
   if (!answer) throw new Error("Answer provider returned an empty answer");
-  return { answer };
+  return { answer, finishReason, continuations };
 }
 
 export type FinalAnswer = {
@@ -248,7 +341,9 @@ export function finalizeAnswer(raw: string, context: BuiltContext): FinalAnswer 
     answer: processed.text,
     sources,
     invalidMarkers: processed.invalid,
-    metaPhrases: findMetaPhrases(processed.text),
+    // Detected on the raw text: "according to passage [7]" loses its marker
+    // during validation, but it is still narration worth measuring.
+    metaPhrases: findMetaPhrases(raw),
   };
 }
 

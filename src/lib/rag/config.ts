@@ -50,7 +50,12 @@ export const QUERY_INSTRUCT_PREFIX =
  * instead; kept here so the model can be switched in one place.
  */
 export const ANSWER_MODEL = "deepseek/deepseek-v4.1-flash";
-export const ANSWER_MAX_TOKENS = 700;
+/** Long enough for a full answer over several sources; 700 cut answers mid-sentence. */
+export const ANSWER_MAX_TOKENS = 2_400;
+/** Wall-clock cap on one answer completion. */
+export const ANSWER_TIMEOUT_MS = 90_000;
+/** One continuation is enough for a normal answer; more hides a runaway model. */
+export const ANSWER_MAX_CONTINUATIONS = 1;
 
 /**
  * Chat context and prompt budget. One place for the knobs the answer quality

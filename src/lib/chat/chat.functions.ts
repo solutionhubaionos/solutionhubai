@@ -136,7 +136,7 @@ export const askLibrary = createServerFn({ method: "POST" })
 
       const built = buildContext(chunks);
       const messages = buildMessages(data.question, built, data.history ?? []);
-      const raw = await generateAnswer(messages, { apiKey, baseUrl });
+      const raw = await generateAnswer(messages, { apiKey, baseUrl, requestId });
       const final = finalizeAnswer(raw.answer, built);
 
       // Measure how often the model still narrates its own retrieval; never block.
