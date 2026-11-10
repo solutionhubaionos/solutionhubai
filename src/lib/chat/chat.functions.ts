@@ -8,9 +8,10 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { DEFAULT_MATCH_COUNT, ENTITY_FILTER_THRESHOLD } from "../rag/config";
-import { resolveLibraryEntity, isComparativeQuestion } from "../rag/entities";
+import { ENTITY_FILTER_THRESHOLD, RETRIEVAL_CANDIDATES } from "../rag/config";
+import { resolveLibraryEntity, isComparativeQuestion, normalizeEntityKey } from "../rag/entities";
 import { embedQuery } from "../rag/embeddings";
+import { selectRelevantChunks } from "../rag/relevance";
 import { searchLibraryChunksAcrossScopes } from "../rag/search";
 import {
   buildContext,
@@ -108,13 +109,26 @@ export const askLibrary = createServerFn({ method: "POST" })
 
       // One scoped search per selected industry/company pair, embedded once and
       // merged, so every pick contributes rather than only the first.
-      const chunks = await searchLibraryChunksAcrossScopes(
+      const candidates = await searchLibraryChunksAcrossScopes(
         context.supabase,
         searchText,
         scopes,
-        DEFAULT_MATCH_COUNT,
+        RETRIEVAL_CANDIDATES,
         (query) => embedQuery(query, { apiKey, baseUrl }),
       );
+
+      // Retrieval hands back a fixed candidate list; only passages that clear
+      // the score floor (and the resolved customer) are worth prompting with.
+      const chunks = selectRelevantChunks(candidates, {
+        entityKeys: (entity?.spellings ?? []).map(normalizeEntityKey),
+        comparative: isComparativeQuestion(data.question),
+      });
+      console.log("[CHAT] retrieval", {
+        requestId,
+        candidates: candidates.length,
+        selected: chunks.length,
+        documents: [...new Set(chunks.map((chunk) => chunk.contentId))].length,
+      });
 
       if (chunks.length === 0) {
         return { ok: true, answer: noPassagesAnswer(), sources: [], grounded: false };
