@@ -12,6 +12,8 @@ export type NumericKind = "number" | "percent" | "multiple";
 
 export type NumericToken = {
   raw: string;
+  /** Parsed digits before any scale word is applied. */
+  amount: number;
   value: number;
   kind: NumericKind;
 };
@@ -32,15 +34,20 @@ export type CitationCheck = {
 const SCALES: Record<string, number> = {
   k: 1e3,
   thousand: 1e3,
+  thousands: 1e3,
   m: 1e6,
   mn: 1e6,
   million: 1e6,
+  millions: 1e6,
   bn: 1e9,
   b: 1e9,
   billion: 1e9,
+  billions: 1e9,
   crore: 1e7,
+  crores: 1e7,
   cr: 1e7,
   lakh: 1e5,
+  lakhs: 1e5,
 };
 
 /** Common abbreviations that end in a full stop but do not end a sentence. */
@@ -79,19 +86,31 @@ export function splitSentences(text: string): string[] {
 
 /** Extracts numeric claims with their unit, so 2x and 2% are not the same fact. */
 export function extractNumbers(text: string): NumericToken[] {
+  // The sign only applies at a token boundary, so "FY2023-24" and "164-414"
+  // are two positive numbers rather than a negative one.
   const pattern =
-    /(-?\d[\d,]*(?:\.\d+)?)\s*(%|percent|per\s?cent|x|k|thousand|m|mn|million|bn|billion|crore|cr|lakh)?/gi;
+    /(?:(?<![\w.,])-)?\d[\d,]*(?:\.\d+)?(\s*(%|percent|per\s?cent|x|thousand|thousands|million|millions|billion|billions|crores?|lakhs?|cr|mn|bn|k|m|b))?/gi;
   const tokens: NumericToken[] = [];
   for (const match of text.matchAll(pattern)) {
-    const digits = match[1];
+    const digits = match[0].match(/-?\d[\d,]*(?:\.\d+)?/)?.[0];
     if (!digits) continue;
     const parsed = Number.parseFloat(digits.replace(/,/g, ""));
     if (!Number.isFinite(parsed)) continue;
 
-    const unit = (match[2] ?? "").toLowerCase().replace(/\s+/g, " ");
+    const next = text[(match.index ?? 0) + match[0].length] ?? "";
+    // "P1 Booking" is not "1 billion"; a glued lowercase word is not a unit.
+    const gluedToWord = match[2] !== undefined && /[a-z]/.test(next);
+    const unit = gluedToWord ? "" : (match[2] ?? "").toLowerCase().replace(/\s+/g, " ");
+    const raw = gluedToWord
+      ? match[0].slice(0, match[0].length - (match[1]?.length ?? 0)).trim()
+      : match[0].trim();
+    const tail = text.slice((match.index ?? 0) + match[0].length);
     let kind: NumericKind = "number";
     let value = parsed;
     if (unit === "%" || unit === "percent" || unit === "per cent") {
+      kind = "percent";
+    } else if (!unit && /^\s*[-–]\s*\d[\d.,]*\s*(?:%|percent|per\s?cent)/i.test(tail)) {
+      // "55-60%" is a percentage range; both ends are percentages.
       kind = "percent";
     } else if (unit === "x") {
       kind = "multiple";
@@ -99,7 +118,7 @@ export function extractNumbers(text: string): NumericToken[] {
       value = parsed * (SCALES[unit] as number);
     }
 
-    tokens.push({ raw: match[0].trim(), value, kind });
+    tokens.push({ raw, amount: parsed, value, kind });
   }
   return tokens;
 }
@@ -107,6 +126,11 @@ export function extractNumbers(text: string): NumericToken[] {
 /** Canonical key for comparing normalised numbers. */
 export function numericKey(token: NumericToken): string {
   return `${token.kind}:${token.value.toFixed(6)}`;
+}
+
+/** Unit-less form, for passages whose scale lives in a table header. */
+function amountKey(token: NumericToken): string {
+  return `${token.kind}:${token.amount.toFixed(6)}`;
 }
 
 /**
@@ -119,7 +143,10 @@ export function checkNumericFaithfulness(
 ): { violations: NumericViolation[]; checked: number } {
   const allowed = new Set<string>();
   for (const passage of citedPassages) {
-    for (const token of extractNumbers(passage)) allowed.add(numericKey(token));
+    for (const token of extractNumbers(passage)) {
+      allowed.add(numericKey(token));
+      allowed.add(amountKey(token));
+    }
   }
 
   const violations: NumericViolation[] = [];
@@ -127,7 +154,7 @@ export function checkNumericFaithfulness(
   for (const sentence of splitSentences(stripCitations(answer))) {
     for (const token of extractNumbers(sentence)) {
       checked += 1;
-      if (!allowed.has(numericKey(token))) {
+      if (!allowed.has(numericKey(token)) && !allowed.has(amountKey(token))) {
         violations.push({ sentence, raw: token.raw });
       }
     }
@@ -183,7 +210,11 @@ export function isRefusal(answer: string): boolean {
     /\bnot (?:covered|found|available|in the library|stated)\b/,
     /\b(?:couldn't|could not|can't|cannot) find\b/,
     /\bno (?:relevant )?(?:passages?|information|evidence|content)\b/,
-    /\b(?:does not|doesn't) (?:say|cover|contain|mention)\b/,
+    /\bno passage\b/,
+    /\b(?:do|does|did)(?:n't| not) (?:answer|say|state|cover|contain|mention|provide|report|name)\b/,
+    /\bcannot be answered\b/,
+    /\bnothing (?:in|among) the (?:numbered )?passages?\b/,
+    /\bnone of (?:them|the (?:numbered )?passages?)\b/,
     /\bnothing in the library\b/,
   ].some((pattern) => pattern.test(text));
 }

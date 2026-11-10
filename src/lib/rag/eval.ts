@@ -135,6 +135,16 @@ export function fileMatchesExpected(
   );
 }
 
+/**
+ * Evidence matching. Numeric evidence must sit on a number boundary, so "42"
+ * does not match "3,842"; text evidence stays a case-insensitive substring.
+ */
+export function evidenceMatches(haystack: string, needle: string): boolean {
+  if (!/\d/.test(needle)) return haystack.includes(needle);
+  const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?<![\\d.,])${escaped}(?!\\d)`, "i").test(haystack);
+}
+
 /** True when a passage is relevant: right file, plus the evidence when required. */
 export function chunkMatchesCase(chunk: RetrievedChunk, testCase: EvalCase): boolean {
   const fileMatch = testCase.expectedFiles.some((expected) =>
@@ -145,7 +155,7 @@ export function chunkMatchesCase(chunk: RetrievedChunk, testCase: EvalCase): boo
   const evidence = (testCase.evidence ?? []).map(normalizeEvidence).filter(Boolean);
   if (evidence.length === 0) return true;
   const haystack = normalizeEvidence(chunk.content);
-  return evidence.some((needle) => haystack.includes(needle));
+  return evidence.some((needle) => evidenceMatches(haystack, needle));
 }
 
 /** Deduplicates by document while preserving the retrieval order. */

@@ -36,6 +36,26 @@ describe("extractNumbers", () => {
   it("keeps percentages and multiples distinct", () => {
     expect(extractNumbers("30%")[0]).toMatchObject({ kind: "percent", value: 30 });
     expect(extractNumbers("1.59x")[0]).toMatchObject({ kind: "multiple", value: 1.59 });
+    expect(extractNumbers("55-60%").map((token) => token.kind)).toEqual(["percent", "percent"]);
+  });
+
+  it("does not turn fiscal-year hyphens or ranges into negative numbers", () => {
+    expect(extractNumbers("FY2023-24 revenue").map((token) => token.value)).toEqual([2023, 24]);
+    expect(extractNumbers("164-414 partners").map((token) => token.value)).toEqual([164, 414]);
+    expect(extractNumbers("-5% growth")[0]).toMatchObject({ kind: "percent", value: -5 });
+  });
+
+  it("scales plural Indian units", () => {
+    expect(extractNumbers("2,725.26 crores")[0]?.value).toBeCloseTo(2_725.26e7);
+  });
+
+  it("does not read the first letter of the next word as a scale", () => {
+    expect(extractNumbers("P1 Booking intake")).toHaveLength(1);
+    expect(extractNumbers("scale of 1 based on rules")[0]?.value).toBe(1);
+  });
+
+  it("keeps a scale glued to a following capitalised word", () => {
+    expect(extractNumbers("$3BnDigital ad spend")[0]).toMatchObject({ value: 3e9 });
   });
 });
 
@@ -53,7 +73,14 @@ describe("checkNumericFaithfulness", () => {
       "The programme saved $2M in year one.",
     ]);
     expect(result.violations).toHaveLength(1);
-    expect(result.violations[0]?.raw).toBe("4 m");
+    expect(result.violations[0]?.raw).toBe("4 million");
+  });
+
+  it("accepts a table value whose unit sits in the header", () => {
+    const result = checkNumericFaithfulness("Non-aero income was 2,725.26 crores [1].", [
+      "(` in Crores)\nTotal 2,199.92 2,725.26 377.13",
+    ]);
+    expect(result.violations).toEqual([]);
   });
 
   it("flags a percentage with no cited source", () => {
@@ -96,6 +123,9 @@ describe("isRefusal", () => {
   it("recognises a plain refusal", () => {
     expect(isRefusal("That is not covered in the library.")).toBe(true);
     expect(isRefusal("I couldn't find any relevant passages.")).toBe(true);
+    expect(isRefusal("The library passages do not answer this question.")).toBe(true);
+    expect(isRefusal("None of the passages contain that figure.")).toBe(true);
+    expect(isRefusal("This cannot be answered from the library.")).toBe(true);
   });
 
   it("does not treat a grounded answer as a refusal", () => {

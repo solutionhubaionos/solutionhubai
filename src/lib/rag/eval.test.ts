@@ -120,6 +120,21 @@ describe("chunkMatchesCase", () => {
       }),
     ).toBe(true);
   });
+
+  it("does not let a short number match inside a larger number", () => {
+    expect(
+      chunkMatchesCase(chunk("1", "deck.pptx", "Total bookings processed: 3,842"), {
+        ...base,
+        evidence: ["42"],
+      }),
+    ).toBe(false);
+    expect(
+      chunkMatchesCase(chunk("1", "deck.pptx", "AR staff labour hours: 42 hours/week"), {
+        ...base,
+        evidence: ["42"],
+      }),
+    ).toBe(true);
+  });
 });
 
 describe("rankFiles", () => {

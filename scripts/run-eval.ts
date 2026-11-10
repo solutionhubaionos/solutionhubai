@@ -21,13 +21,13 @@ import { embedTexts, queryEmbeddingText } from "../src/lib/rag/embeddings";
 import { evaluateCase, summarize, type EvalOutcome } from "../src/lib/rag/eval";
 import { clampMatchCount } from "../src/lib/rag/search";
 import {
-  connectDatabase,
+  createEvalBackend,
   fail,
   loadEvalSet,
   productionQueryForCase,
   requireProviderEnv,
-  resolveSubject,
   retrieveForCase,
+  type EvalBackend,
 } from "./eval-runtime";
 
 const args = process.argv.slice(2);
@@ -50,7 +50,7 @@ const instruct = prefixMode === "instruct";
 const { apiKey, baseUrl } = requireProviderEnv();
 const set = loadEvalSet(setPath, requestedK);
 const k = clampMatchCount(set.k);
-const sql = connectDatabase();
+const backend = createEvalBackend();
 
 function printOutcome(outcome: EvalOutcome) {
   const documentHit = outcome.answerable
@@ -72,42 +72,27 @@ function printOutcome(outcome: EvalOutcome) {
   }
 }
 
-async function runDiagnostics(example?: {
-  embedding: readonly number[];
-  queryText: string;
-  scope: { industry: string | null; customer: string | null };
-}) {
+async function runDiagnostics(
+  backend: EvalBackend,
+  example?: {
+    embedding: readonly number[];
+    queryText: string;
+    scope: { industry: string | null; customer: string | null };
+  },
+) {
   console.log("\n=== Diagnostics ===");
   try {
-    const models = await sql<{ embedding_model: string; n: number }[]>`
-      select embedding_model, count(*)::int as n
-      from public.document_chunks
-      group by 1
-      order by 2 desc`;
-    console.log("embedding_model rows:", models);
-    const [ext] = await sql<{ extversion: string }[]>`
-      select extversion from pg_extension where extname = 'vector'`;
-    console.log("pgvector:", ext?.extversion ?? "MISSING");
-    const [counts] = await sql<{ items: number; chunks: number; ready: number }[]>`
-      select
-        (select count(*)::int from public.content_items) as items,
-        (select count(*)::int from public.document_chunks) as chunks,
-        (select count(*)::int from public.ingestion_jobs where status = 'ready') as ready`;
-    console.log("library:", counts);
-
+    console.log("embedding_model rows:", await backend.embeddingModels());
+    console.log("pgvector:", (await backend.pgvectorVersion()) ?? "not exposed (Supabase REST)");
+    console.log("library:", await backend.counts());
     if (example) {
-      const literal = `[${example.embedding.join(",")}]`;
       console.log("\nEXPLAIN search_chunks (narrow industry+customer filter):");
-      const plan = await sql`
-        explain (analyze, buffers)
-        select * from public.search_chunks(
-          ${literal}::vector(1536),
-          ${example.queryText},
-          ${example.scope.industry},
-          ${example.scope.customer},
-          ${k}
-        )`;
-      for (const row of plan) console.log(Object.values(row as Record<string, unknown>)[0]);
+      const plan = await backend.explain(example, k);
+      if (plan) {
+        for (const line of plan) console.log(line);
+      } else {
+        console.log("not available over Supabase REST; use a Postgres SUPABASE_DB_URL");
+      }
     }
   } catch (error) {
     console.error("diagnostics failed:", error instanceof Error ? error.message : String(error));
@@ -115,15 +100,11 @@ async function runDiagnostics(example?: {
 }
 
 async function main() {
-  const subject = await resolveSubject(sql, requestedEmail);
-  const [library] = await sql<{ items: number; indexed: number; ready: number }[]>`
-    select
-      (select count(*) from public.content_items)::int as items,
-      (select count(distinct content_id) from public.document_chunks)::int as indexed,
-      (select count(*) from public.ingestion_jobs where status = 'ready')::int as ready`;
+  const subject = await backend.resolveSubject(requestedEmail);
+  const library = await backend.counts();
   console.log(
-    `Library: ${library?.items ?? 0} files, ${library?.indexed ?? 0} indexed ` +
-      `(${library?.ready ?? 0} jobs ready). Subject: ${subject.email}`,
+    `Library: ${library.items} files, ${library.indexed} indexed ` +
+      `(${library.ready ?? "n/a"} jobs ready). Subject: ${subject.email}`,
   );
   console.log(
     `Eval: ${setPath} (${set.cases.length} cases, k=${k}) · prefix=${prefixMode} · ` +
@@ -138,13 +119,20 @@ async function main() {
 
   const outcomes: EvalOutcome[] = [];
   const startedAt = Date.now();
-  let example: Parameters<typeof runDiagnostics>[0];
+  let example: Parameters<typeof runDiagnostics>[1];
   for (const [index, testCase] of set.cases.entries()) {
     const embedding = embeddings[index];
     if (!embedding) fail(`No embedding returned for case ${testCase.id}`);
     let chunks;
     try {
-      ({ chunks } = await retrieveForCase(sql, subject, testCase, embedding, queries[index]!, k));
+      ({ chunks } = await retrieveForCase(
+        backend,
+        subject,
+        testCase,
+        embedding,
+        queries[index]!,
+        k,
+      ));
     } catch (error) {
       fail(
         `Search failed for ${testCase.id}: ${error instanceof Error ? error.message : String(error)}`,
@@ -193,7 +181,7 @@ async function main() {
       `(${((elapsed * 1000) / summary.total).toFixed(0)}ms each, ${promptTokens ?? "?"} query tokens)`,
   );
 
-  if (diagnostics) await runDiagnostics(example);
+  if (diagnostics) await runDiagnostics(backend, example);
 
   if (jsonPath) {
     mkdirSync(dirname(jsonPath), { recursive: true });
@@ -234,5 +222,5 @@ try {
   console.error(error instanceof Error ? error.message : error);
   process.exitCode = 1;
 } finally {
-  await sql.end();
+  await backend.end();
 }

@@ -412,8 +412,8 @@ written to Storage.
 
 | Tool                             | What it does                                                                                                                                                                                                                                                                                                                                                                              |
 | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `evals/rag-eval.json`            | 115 cases, `k = 8`: 46 original plus 16 `multi-turn`, 22 `chart-table`/diagram, 10 `scope-mode`, 10 `adversarial`, 11 `projection`; cases carry `turns`, `evidence`, `mustMention`, `expectation` and `scopeMode`                                                                                                                                                                         |
-| `scripts/run-eval.ts`            | Runs the production query path (context hints, scope logic, optional `--prefix instruct`) and the **real** `search_chunks` as an authenticated member (sets `request.jwt.claims` + `set local role authenticated`, so RLS applies); scores document/chunk recall@k, MRR, nDCG@k and the unanswerable false-positive rate per category; `--diagnostics`, `--json`; needs `SUPABASE_DB_URL` |
+| `evals/rag-eval.json`            | 125 cases, `k = 8`: 46 original plus 17 `multi-turn`, 31 `chart-table`/diagram, 10 `scope-mode`, 10 `adversarial`, 11 `projection`; cases carry `turns`, `evidence`, `mustMention`, `expectation` and `scopeMode`                                                                                                                                                                         |
+| `scripts/run-eval.ts`            | Runs the production query path (context hints, scope logic, optional `--prefix instruct`) and the **real** `search_chunks` as an authenticated member; uses the Supabase REST backend by default (signs in as `LIBRARY_USER_EMAIL` and calls the same RPC as the app, so RLS applies), or direct Postgres when `SUPABASE_DB_URL` is a `postgres://` URI; scores document/chunk recall@k, MRR, nDCG@k and the unanswerable false-positive rate per category; `--diagnostics`, `--json` |
 | `scripts/run-answer-eval.ts`     | Generates one answer per case, then scores citation validity (LLM judge, strict rubric), numeric faithfulness (deterministic), `mustMention` completeness and refusal accuracy; `--no-judge`, `--json`, `--strict`                                                                                                                                                                        |
 | `src/lib/rag/eval.ts`            | Pure retrieval scoring: `resolveCaseQuestion()`, `chunkMatchesCase()` (file + evidence), `rankFiles()`, `ndcgAtK()`, `evaluateCase()`, `summarize()` (per-category recall/MRR/nDCG and false-positive rate)                                                                                                                                                                               |
 | `src/lib/rag/answer-eval.ts`     | Pure answer scoring: sentence splitting, number normalisation, `checkNumericFaithfulness()`, `checkCitations()`, `completeness()`, `isRefusal()`, judge prompt and verdict parsing                                                                                                                                                                                                        |
@@ -441,8 +441,9 @@ Required env on Lovable Cloud: `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`,
 `LIBRARY_USER_EMAIL` + `LIBRARY_USER_PASSWORD` (private Storage and worker RPCs), and
 `TOKENFACTORY_API_BASE` + `TOKENFACTORY_API_KEY` (embeddings and answers). `SUPABASE_DB_URL`
 and `SUPABASE_SERVICE_ROLE_KEY` are optional and only available on self-hosted Supabase;
-`apply-sql.ts`, `verify-rag.ts` and `run-eval.ts` need `SUPABASE_DB_URL` and cannot run
-against Lovable Cloud.
+`apply-sql.ts` and `verify-rag.ts` need `SUPABASE_DB_URL`. The eval runners do not: they use
+Supabase REST and the library member session by default, and only use direct Postgres for
+`EXPLAIN` and the pgvector version when a Postgres URI is present.
 
 Migration order matters: `0010` (tables, HNSW, first RPC) → `0011` (grants) → `0012`
 (tsvector, content hash, atomic replace) → `0013` (enqueue triggers) → `0014` (hybrid
@@ -481,10 +482,9 @@ breaks retrieval.
    same file; the UI dedups by file only).
 5. Token counting is `chars / 4`, not a real tokenizer — fine for sizing, not for billing.
 6. The debug route is explicitly marked _"Temporary debug surface … remove once chat ships"_.
-7. The Phase 0 retrieval/answer runners need `SUPABASE_DB_URL`; Lovable Cloud does not
-   expose one, so the baseline must be produced from a self-hosted copy of the project.
-   The harness itself is covered by unit tests and runs with one command once a database
-   is reachable.
+7. The Phase 0 retrieval/answer runners use Supabase REST by default and run against
+   Lovable Cloud; direct Postgres is only needed for `EXPLAIN` and the pgvector version,
+   which the REST API does not expose.
 
 ## 10. Production cutover checklist
 
@@ -522,6 +522,5 @@ library member). Project ids are not hardcoded in application code; the local
    waits for the exact `not_before` deadline, so a file is picked up 120 seconds after
    upload rather than on the next minute boundary.
 6. Verify with `.ingest.log` and the admin debug page at `/_authenticated/rag-debug`, which
-   shows raw passages and both ranks. `verify-rag.ts` and `run-eval.ts` require
-   `SUPABASE_DB_URL`; they cannot run against Lovable Cloud, but work on a self-hosted
-   project with the same migrations.
+   shows raw passages and both ranks. `verify-rag.ts` requires `SUPABASE_DB_URL`; the
+   eval runners use Supabase REST and run against Lovable Cloud.
