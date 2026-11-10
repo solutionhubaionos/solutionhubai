@@ -17,7 +17,7 @@ import type { ChatHistoryMessage } from "./answer";
 import { generateAnswer } from "./answer";
 
 /** Standalone questions longer than this are never rewritten on a hunch. */
-const SHORT_QUESTION_WORDS = 6;
+const SHORT_QUESTION_WORDS = 5;
 
 /** Words that point at an earlier turn instead of naming the subject. */
 const PRONOUN =
