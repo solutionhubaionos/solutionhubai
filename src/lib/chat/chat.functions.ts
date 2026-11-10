@@ -19,6 +19,7 @@ import {
   noPassagesAnswer,
   type ChatSource,
 } from "./answer";
+import { rewriteQuery } from "./rewrite";
 import { buildRetrievalQuery, retrievalScopes } from "./scope";
 
 export type AskLibraryResult =
@@ -70,11 +71,19 @@ export const askLibrary = createServerFn({ method: "POST" })
     };
 
     try {
+      // A follow-up is rewritten into a standalone query before it is embedded;
+      // both forms go to the log so a bad rewrite can be traced.
+      const rewrite = await rewriteQuery(data.question, data.history ?? [], {
+        apiKey,
+        baseUrl,
+        log: (event, meta) => console.log(`[CHAT] ${event}`, { requestId, ...meta }),
+      });
+
       // One scoped search per selected industry/company pair, embedded once and
       // merged, so every pick contributes rather than only the first.
       const chunks = await searchLibraryChunksAcrossScopes(
         context.supabase,
-        buildRetrievalQuery(data.question, ctx),
+        buildRetrievalQuery(rewrite.query, ctx),
         retrievalScopes(ctx),
         DEFAULT_MATCH_COUNT,
         (query) => embedQuery(query, { apiKey, baseUrl }),

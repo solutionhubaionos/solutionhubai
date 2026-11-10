@@ -178,6 +178,9 @@ export type GenerateOptions = {
   model?: string;
   maxTokens?: number;
   fetchImpl?: typeof fetch;
+  /** Aborts the request; used by the query rewrite so it can never hang chat. */
+  timeoutMs?: number;
+  signal?: AbortSignal;
 };
 
 /**
@@ -190,6 +193,8 @@ export async function generateAnswer(
 ): Promise<{ answer: string }> {
   const doFetch = options.fetchImpl ?? fetch;
   const baseUrl = options.baseUrl.replace(/\/+$/, "");
+  const signal =
+    options.signal ?? (options.timeoutMs ? AbortSignal.timeout(options.timeoutMs) : null);
 
   const response = await doFetch(`${baseUrl}/chat/completions`, {
     method: "POST",
@@ -200,6 +205,7 @@ export async function generateAnswer(
       max_tokens: options.maxTokens ?? ANSWER_MAX_TOKENS,
       temperature: 0.2,
     }),
+    ...(signal ? { signal } : {}),
   });
 
   const raw = await response.text();
