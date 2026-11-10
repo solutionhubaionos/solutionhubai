@@ -335,7 +335,7 @@
         }
       ],
       "evidence": ["135", "84", "23", "28"],
-      "mustMention": ["135","84","23","28"]
+      "mustMention": ["135", "84", "23", "28"]
     },
     {
       "id": "mt-united-loyalty",
@@ -357,7 +357,7 @@
         }
       ],
       "evidence": ["800", "2,000"],
-      "mustMention": ["800","2,000"]
+      "mustMention": ["800", "2,000"]
     },
     {
       "id": "mt-indusind-solvency",
@@ -379,7 +379,7 @@
         }
       ],
       "evidence": ["1.59x", "1.50x"],
-      "mustMention": ["1.59x","1.50x"]
+      "mustMention": ["1.59x", "1.50x"]
     },
     {
       "id": "mt-indusind-profit",
@@ -401,7 +401,7 @@
         }
       ],
       "evidence": ["38M", "12.5"],
-      "mustMention": ["38M","12.5"]
+      "mustMention": ["38M", "12.5"]
     },
     {
       "id": "mt-acleda-npl",
@@ -423,7 +423,7 @@
         }
       ],
       "evidence": ["6.85%", "5.47%"],
-      "mustMention": ["6.85%","5.47%"]
+      "mustMention": ["6.85%", "5.47%"]
     },
     {
       "id": "mt-acleda-app",
@@ -511,7 +511,7 @@
         }
       ],
       "evidence": ["CDP", "Adobe"],
-      "mustMention": ["CDP","Adobe"]
+      "mustMention": ["CDP", "Adobe"]
     },
     {
       "id": "mt-igh-channels",
@@ -533,7 +533,7 @@
         }
       ],
       "evidence": ["OTA", "POS"],
-      "mustMention": ["OTA","POS"]
+      "mustMention": ["OTA", "POS"]
     },
     {
       "id": "mt-mnc-ancillary",
@@ -599,7 +599,7 @@
         }
       ],
       "evidence": ["220,000", "160,000"],
-      "mustMention": ["220,000","160,000"]
+      "mustMention": ["220,000", "160,000"]
     },
     {
       "id": "mt-kotak-themes",
@@ -621,7 +621,7 @@
         }
       ],
       "evidence": ["Hyper-Personalized", "Compliance"],
-      "mustMention": ["Hyper-Personalized","Compliance"]
+      "mustMention": ["Hyper-Personalized", "Compliance"]
     },
     {
       "id": "mt-vodafone-total",
@@ -665,7 +665,7 @@
         }
       ],
       "evidence": ["Data Exchange", "Smart Building"],
-      "mustMention": ["Data Exchange","Smart Building"]
+      "mustMention": ["Data Exchange", "Smart Building"]
     },
     {
       "id": "chart-indusind-nwp",
@@ -673,7 +673,7 @@
       "question": "What net written premium and year-on-year growth does IndusInd General Insurance report?",
       "expectedFiles": ["8b9c8d4d-IndusInd_General_Insurance_AI_Maturity_19Sept.docx"],
       "evidence": ["868", "7.1"],
-      "mustMention": ["868","7.1"]
+      "mustMention": ["868", "7.1"]
     },
     {
       "id": "chart-indusind-solvency",
@@ -681,7 +681,7 @@
       "question": "What solvency ratio does IndusInd General Insurance report against its regulatory floor?",
       "expectedFiles": ["8b9c8d4d-IndusInd_General_Insurance_AI_Maturity_19Sept.docx"],
       "evidence": ["1.59x", "1.50x"],
-      "mustMention": ["1.59x","1.50x"]
+      "mustMention": ["1.59x", "1.50x"]
     },
     {
       "id": "chart-indusind-share",
@@ -697,7 +697,7 @@
       "question": "What was ACLEDA's NPL ratio in Q2 2026 versus 2024?",
       "expectedFiles": ["c1d70c0d-ACLEDA_Bank_Account_Plan_Aug2026.docx"],
       "evidence": ["6.85%", "5.47%"],
-      "mustMention": ["6.85%","5.47%"]
+      "mustMention": ["6.85%", "5.47%"]
     },
     {
       "id": "chart-acleda-pat",
@@ -713,7 +713,7 @@
       "question": "How many ATMs, POS terminals and QR merchants does ACLEDA operate?",
       "expectedFiles": ["c1d70c0d-ACLEDA_Bank_Account_Plan_Aug2026.docx"],
       "evidence": ["1,587", "7,177", "933K"],
-      "mustMention": ["1,587","7,177","933K"]
+      "mustMention": ["1,587", "7,177", "933K"]
     },
     {
       "id": "chart-acleda-assets",
@@ -729,7 +729,7 @@
       "question": "How many aircraft is United taking in 2025 and of which types?",
       "expectedFiles": ["2dfa09fc-United_Airlines_Strategic_Brief.docx"],
       "evidence": ["135", "84", "23", "28"],
-      "mustMention": ["135","84","23","28"]
+      "mustMention": ["135", "84", "23", "28"]
     },
     {
       "id": "chart-united-loyalty",
@@ -737,7 +737,7 @@
       "question": "What annual value does the enhanced Chase card provide per cardholder?",
       "expectedFiles": ["2dfa09fc-United_Airlines_Strategic_Brief.docx"],
       "evidence": ["800", "2,000"],
-      "mustMention": ["800","2,000"]
+      "mustMention": ["800", "2,000"]
     },
     {
       "id": "chart-united-aws",
@@ -745,7 +745,7 @@
       "question": "How much has United's AWS partnership saved and what developer-productivity gain did it produce?",
       "expectedFiles": ["2dfa09fc-United_Airlines_Strategic_Brief.docx"],
       "evidence": ["$2B", "40%"],
-      "mustMention": ["$2B","40%"]
+      "mustMention": ["$2B", "40%"]
     },
     {
       "id": "chart-mnc-ancillary",
@@ -769,7 +769,7 @@
       "question": "What is Indonesia's digital ad spend and the average campaign budget shown for data enrichment?",
       "expectedFiles": ["9b17a6e8-MNC_financial_040225_v1.0.pptx"],
       "evidence": ["$3Bn", "100-150K"],
-      "mustMention": ["$3Bn","100-150K"]
+      "mustMention": ["$3Bn", "100-150K"]
     },
     {
       "id": "chart-ups-postal",
@@ -785,7 +785,7 @@
       "question": "What CSAT and average-handle-time improvements does the Intellimates deck claim?",
       "expectedFiles": ["46fcbb41-UPS-II-AIonOS-The-Intellimates.pptx"],
       "evidence": ["40%", "35%"],
-      "mustMention": ["40%","35%"]
+      "mustMention": ["40%", "35%"]
     },
     {
       "id": "chart-aahl-passengers",
@@ -801,7 +801,7 @@
       "question": "How many real-time WhatsApp conversations and personalised videos did the Bajaj Pulsar campaign generate?",
       "expectedFiles": ["c772bed6-Case_study_-_Bajaj_Pulsar.pdf"],
       "evidence": ["220,000", "160,000"],
-      "mustMention": ["220,000","160,000"]
+      "mustMention": ["220,000", "160,000"]
     },
     {
       "id": "chart-vodafone-implementation",
@@ -817,7 +817,7 @@
       "question": "Which AIonOS solution offerings are mapped for Adani Airports?",
       "expectedFiles": ["9166a939-Adani_Airports_v1.0_-_Solution_Master.pptx"],
       "evidence": ["Data Exchange", "Smart Building"],
-      "mustMention": ["Data Exchange","Smart Building"]
+      "mustMention": ["Data Exchange", "Smart Building"]
     },
     {
       "id": "diagram-igh-channels",
@@ -825,7 +825,7 @@
       "question": "Which booking and payment channels are mapped in the InterGlobe Hotels diagram?",
       "expectedFiles": ["e7bf75e3-InterGlobe_Hotels_Roadmap.pptx"],
       "evidence": ["OTA", "POS"],
-      "mustMention": ["OTA","POS"]
+      "mustMention": ["OTA", "POS"]
     },
     {
       "id": "diagram-igh-stages",
@@ -833,7 +833,7 @@
       "question": "What are the stages of the InterGlobe Hotels accounts-receivable engagement?",
       "expectedFiles": ["e7bf75e3-InterGlobe_Hotels_Roadmap.pptx"],
       "evidence": ["Root Cause Analysis", "Solution Design"],
-      "mustMention": ["Root Cause Analysis","Solution Design"]
+      "mustMention": ["Root Cause Analysis", "Solution Design"]
     },
     {
       "id": "diagram-kotak-themes",
@@ -841,7 +841,7 @@
       "question": "Which AI-native banking focus areas does the Kotak deck show?",
       "expectedFiles": ["9cea6d7f-250908_Kotak_AIonOS_v1.2.pptx"],
       "evidence": ["Hyper-Personalized", "Compliance"],
-      "mustMention": ["Hyper-Personalized","Compliance"]
+      "mustMention": ["Hyper-Personalized", "Compliance"]
     },
     {
       "id": "scope-all-airlines-vodafone",
@@ -1127,32 +1127,32 @@
       "category": "chart-table",
       "question": "How many bookings had the IGH air-crew billing dashboard processed by 20 May 2025, and at what automation rate?",
       "expectedFiles": ["IGH AR Agentic AI Solution V2.pptx"],
-      "evidence": ["3,842","87.4"],
-      "mustMention": ["3,842","87.4"]
+      "evidence": ["3,842", "87.4"],
+      "mustMention": ["3,842", "87.4"]
     },
     {
       "id": "chart-igh-impact-processing",
       "category": "chart-table",
       "question": "What was the average processing time after automation versus before, and the reduction?",
       "expectedFiles": ["IGH AR Agentic AI Solution V2.pptx"],
-      "evidence": ["3.2","28.5","88.8"],
-      "mustMention": ["3.2","28.5","88.8"]
+      "evidence": ["3.2", "28.5", "88.8"],
+      "mustMention": ["3.2", "28.5", "88.8"]
     },
     {
       "id": "chart-igh-impact-hours",
       "category": "chart-table",
       "question": "How many AR staff labour hours per week were saved, and by what percentage?",
       "expectedFiles": ["IGH AR Agentic AI Solution V2.pptx"],
-      "evidence": ["42","160","73.8"],
-      "mustMention": ["42","160","73.8"]
+      "evidence": ["42", "160", "73.8"],
+      "mustMention": ["42", "160", "73.8"]
     },
     {
       "id": "chart-oberoi-financials",
       "category": "chart-table",
       "question": "What revenue and profit did Oberoi report for 2025, and their year-on-year growth?",
       "expectedFiles": ["Oberoi Hotels_0407.pptx"],
-      "evidence": ["2,880","770","10%","14%"],
-      "mustMention": ["2,880","770","10%","14%"]
+      "evidence": ["2,880", "770", "10%", "14%"],
+      "mustMention": ["2,880", "770", "10%", "14%"]
     },
     {
       "id": "chart-oberoi-repeat",
@@ -1167,32 +1167,32 @@
       "category": "chart-table",
       "question": "What energy, deployment, cabling and CSAT improvements does IntelliSustain claim for Oberoi?",
       "expectedFiles": ["Oberoi Hotels_0407.pptx"],
-      "evidence": ["30%","40%","70%","20%"],
-      "mustMention": ["30%","40%","70%","20%"]
+      "evidence": ["30%", "40%", "70%", "20%"],
+      "mustMention": ["30%", "40%", "70%", "20%"]
     },
     {
       "id": "chart-oberoi-expansion",
       "category": "chart-table",
       "question": "How many hotels and keys does Oberoi plan to have by 2030?",
       "expectedFiles": ["Oberoi Hotels_0407.pptx"],
-      "evidence": ["56","6,279"],
-      "mustMention": ["56","6,279"]
+      "evidence": ["56", "6,279"],
+      "mustMention": ["56", "6,279"]
     },
     {
       "id": "chart-indigo-ancillary-jetblue",
       "category": "chart-table",
       "question": "What ancillary revenue per passenger did JetBlue report in 2022, and what was its ancillary revenue that year?",
       "expectedFiles": ["Fly++ IndiGo  25.06.24 (full proposal).pptx"],
-      "evidence": ["53","2.1 billion"],
-      "mustMention": ["53","2.1 billion"]
+      "evidence": ["53", "2.1 billion"],
+      "mustMention": ["53", "2.1 billion"]
     },
     {
       "id": "chart-indigo-checkout-ancillaries",
       "category": "chart-table",
       "question": "What total flight and total ancillaries does the IndiGo checkout example show?",
       "expectedFiles": ["Fly++ IndiGo  25.06.24 (full proposal).pptx"],
-      "evidence": ["7,676","2,350"],
-      "mustMention": ["7,676","2,350"]
+      "evidence": ["7,676", "2,350"],
+      "mustMention": ["7,676", "2,350"]
     },
     {
       "id": "mt-igh-impact",

@@ -16,7 +16,14 @@ import { supabase } from "@/integrations/supabase/client";
 export type Industry = { slug: string; name: string; tagline: string; image: string };
 
 const BUILTIN_IMAGES: Record<string, string> = {
-  airlines, airports, bfsi, hospitality, logistics, manufacturing, retail, telecom,
+  airlines,
+  airports,
+  bfsi,
+  hospitality,
+  logistics,
+  manufacturing,
+  retail,
+  telecom,
   "healthcare-and-life-sciences": healthcare,
   energy,
   automotive,
@@ -45,7 +52,13 @@ export function useIndustries() {
 }
 
 export function slugify(name: string) {
-  return name.trim().toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60);
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 60);
 }
 
 export const CONTENT_TYPES = [
@@ -59,5 +72,4 @@ export const CONTENT_TYPES = [
 export const contentTypeLabel = (v: string) =>
   CONTENT_TYPES.find((c) => c.value === v)?.label ?? "Other";
 
-export const ACCEPTED_FILES =
-  ".ppt,.pptx,.doc,.docx,.xls,.xlsx,.pdf,.csv,image/*,video/*";
+export const ACCEPTED_FILES = ".ppt,.pptx,.doc,.docx,.xls,.xlsx,.pdf,.csv,image/*,video/*";

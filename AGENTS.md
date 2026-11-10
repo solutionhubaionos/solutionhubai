@@ -1,4 +1,5 @@
 <!-- LOVABLE:BEGIN -->
+
 > [!IMPORTANT]
 > This project is connected to [Lovable](https://lovable.dev). Avoid rewriting
 > published git history — force pushing, or rebasing/amending/squashing commits
@@ -7,9 +8,11 @@
 >
 > Commits you push to the connected branch sync back to Lovable and show up in
 > the editor, so keep the branch in a working state.
+
 <!-- LOVABLE:END -->
 
 ## Project rules
+
 - Content grids render in incremental batches through ProgressiveList keyed by filters; Insights activity pages live in URL search, and file triggers reuse FilePreviewDialog to preserve private viewing and activity logging. File tiles use a full-area preview button behind non-interactive content, with separate action buttons above it to avoid nested controls.
 - Bundled photos use WebP; document engines load on demand and PDFs retain one parsed document across page changes to reduce repeated work.
 - User changes and sign-out clear query caches; short explicit freshness windows avoid repeated unchanged metadata reads without bypassing RLS.

@@ -38,12 +38,21 @@ function ResetPassword() {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (password.length < 8) { toast.error("Password must be at least 8 characters."); return; }
-    if (password !== confirm) { toast.error("Passwords don't match."); return; }
+    if (password.length < 8) {
+      toast.error("Password must be at least 8 characters.");
+      return;
+    }
+    if (password !== confirm) {
+      toast.error("Passwords don't match.");
+      return;
+    }
     setLoading(true);
     const { error } = await supabase.auth.updateUser({ password });
     setLoading(false);
-    if (error) { toast.error(error.message); return; }
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
     toast.success("Password set. Welcome to Solution Hub!");
     navigate({ to: "/library", replace: true });
   }
@@ -54,18 +63,34 @@ function ResetPassword() {
       <div className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center">
         <h1 className="text-3xl font-bold">Choose a password</h1>
         {!ready ? (
-          <p className="mt-4 text-sm text-muted-foreground">Verifying your link… If this doesn't continue, request a new link from the sign-in page.</p>
+          <p className="mt-4 text-sm text-muted-foreground">
+            Verifying your link… If this doesn't continue, request a new link from the sign-in page.
+          </p>
         ) : (
           <form onSubmit={onSubmit} className="mt-8 space-y-4">
             <div className="space-y-2">
               <Label htmlFor="pw">New password</Label>
-              <Input id="pw" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+              <Input
+                id="pw"
+                type="password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="pw2">Confirm password</Label>
-              <Input id="pw2" type="password" required value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+              <Input
+                id="pw2"
+                type="password"
+                required
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+              />
             </div>
-            <Button type="submit" className="w-full" disabled={loading}>{loading ? "Saving…" : "Save password"}</Button>
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading ? "Saving…" : "Save password"}
+            </Button>
           </form>
         )}
       </div>

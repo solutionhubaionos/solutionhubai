@@ -6,14 +6,14 @@ library on 9 November 2026.
 
 ## Status
 
-| Item                                   | Result                                                                 |
-| -------------------------------------- | ---------------------------------------------------------------------- |
-| Eval set rebuilt                       | 125 cases (46 original + 79 new) in `evals/rag-eval.json`, version 2    |
-| Retrieval runner (`bun run eval`)      | Measured against the live library through Supabase REST                |
-| Answer runner (`bun run eval:answers`) | Measured: 125 cases, 9 empty generations (7.2%); see the answer table  |
+| Item                                   | Result                                                                                |
+| -------------------------------------- | ------------------------------------------------------------------------------------- |
+| Eval set rebuilt                       | 125 cases (46 original + 79 new) in `evals/rag-eval.json`, version 2                  |
+| Retrieval runner (`bun run eval`)      | Measured against the live library through Supabase REST                               |
+| Answer runner (`bun run eval:answers`) | Measured: 125 cases, 9 empty generations (7.2%); see the answer table                 |
 | Database diagnostics                   | `embedding_model` counts via REST; pgvector version and `EXPLAIN` need a Postgres URI |
-| pgvector version                       | Not exposed by the Supabase REST API                                   |
-| `embedding_model` counts               | `qwen/qwen3-embedding-8b`: 4,749 chunks, no mixed-model rows           |
+| pgvector version                       | Not exposed by the Supabase REST API                                                  |
+| `embedding_model` counts               | `qwen/qwen3-embedding-8b`: 4,749 chunks, no mixed-model rows                          |
 
 The live project is Lovable Cloud, which exposes the Data API but not a Postgres
 connection string. The runners therefore default to a Supabase REST backend: they
@@ -117,14 +117,14 @@ select status, count(*) from public.ingestion_jobs group by 1;
 
 Measured through the Data API on 9 November 2026:
 
-| Check                          | Result                                      |
-| ------------------------------ | ------------------------------------------- |
-| `content_items`                | 208                                         |
-| distinct indexed `content_id`  | 187                                         |
-| `document_chunks`              | 4,749                                       |
-| `embedding_model`              | `qwen/qwen3-embedding-8b` (4,749; no mixed rows) |
-| pgvector version               | not exposed by REST                         |
-| `EXPLAIN (ANALYZE, BUFFERS)`   | not available without a Postgres URI        |
+| Check                         | Result                                           |
+| ----------------------------- | ------------------------------------------------ |
+| `content_items`               | 208                                              |
+| distinct indexed `content_id` | 187                                              |
+| `document_chunks`             | 4,749                                            |
+| `embedding_model`             | `qwen/qwen3-embedding-8b` (4,749; no mixed rows) |
+| pgvector version              | not exposed by REST                              |
+| `EXPLAIN (ANALYZE, BUFFERS)`  | not available without a Postgres URI             |
 
 ```sql
 explain (analyze, buffers)
@@ -143,22 +143,22 @@ from public.search_chunks(
 Retrieval baseline measured on 125 cases, k = 8, production query path (context
 hints included, no rewrite, no instruct prefix):
 
-| Metric                       | Baseline | Phase 1 | Phase 2 | Phase 3 |
-| ---------------------------- | -------- | ------- | ------- | ------- |
-| document recall@8            | 83.6%    |         |         |         |
-| chunk recall@8               | 69.1%    |         |         |         |
-| MRR                          | 0.648    |         |         |         |
-| nDCG@8                       | 0.695    |         |         |         |
-| unanswerable false-positive  | 100.0%   |         |         |         |
-| multi-turn document recall@8 | 58.8%    |         |         |         |
-| chart/table chunk recall@8   | 67.7%    |         |         |         |
-| scope-mode document recall@8 | 60.0%    |         |         |         |
-| citation support (judge)     | 80.7%    |         |         |         |
-| numeric faithfulness         | 90.7%    |         |         |         |
-| completeness (mustMention)   | 74.1%    |         |         |         |
-| refusal accuracy             | 93.3%    |         |         |         |
-| empty generations            | 9/125    |         |         |         |
-| p50 / p95 end-to-end latency | not measured |     |         |         |
+| Metric                       | Baseline     | Phase 1 | Phase 2 | Phase 3 |
+| ---------------------------- | ------------ | ------- | ------- | ------- |
+| document recall@8            | 83.6%        |         |         |         |
+| chunk recall@8               | 69.1%        |         |         |         |
+| MRR                          | 0.648        |         |         |         |
+| nDCG@8                       | 0.695        |         |         |         |
+| unanswerable false-positive  | 100.0%       |         |         |         |
+| multi-turn document recall@8 | 58.8%        |         |         |         |
+| chart/table chunk recall@8   | 67.7%        |         |         |         |
+| scope-mode document recall@8 | 60.0%        |         |         |         |
+| citation support (judge)     | 80.7%        |         |         |         |
+| numeric faithfulness         | 90.7%        |         |         |         |
+| completeness (mustMention)   | 74.1%        |         |         |         |
+| refusal accuracy             | 93.3%        |         |         |         |
+| empty generations            | 9/125        |         |         |         |
+| p50 / p95 end-to-end latency | not measured |         |         |         |
 
 Per-category retrieval baseline:
 
@@ -183,15 +183,15 @@ say "no evidence" before generation. That is the Phase 2 target.
 Measured on the same 125 cases with `ANSWER_MODEL=deepseek/deepseek-v4.1-flash`
 and `JUDGE_MODEL=openai/gpt-oss-120b`, k = 8, 9 November 2026:
 
-| Metric                       | Result                                                        |
-| ---------------------------- | ------------------------------------------------------------- |
-| citation support (judge)     | 80.7% (247/306 judged sentences)                              |
-| invalid citation markers     | 0                                                             |
-| uncited numeric sentences    | 16                                                            |
-| numeric faithfulness         | 90.7% (35 violations in 376 checked numbers)                  |
-| completeness (`mustMention`) | 74.1%                                                         |
-| refusal accuracy             | 93.3% (14/15 unanswerable and adversarial cases)              |
-| empty generations            | 9 (7.2%)                                                      |
+| Metric                       | Result                                           |
+| ---------------------------- | ------------------------------------------------ |
+| citation support (judge)     | 80.7% (247/306 judged sentences)                 |
+| invalid citation markers     | 0                                                |
+| uncited numeric sentences    | 16                                               |
+| numeric faithfulness         | 90.7% (35 violations in 376 checked numbers)     |
+| completeness (`mustMention`) | 74.1%                                            |
+| refusal accuracy             | 93.3% (14/15 unanswerable and adversarial cases) |
+| empty generations            | 9 (7.2%)                                         |
 
 The only refusal miss is `adv-oberoi`, whose generation was empty; every answer
 that was actually produced refused the unanswerable questions. The 100%

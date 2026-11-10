@@ -9,7 +9,10 @@ export function useRole() {
     queryKey: ["role", user.id],
     staleTime: 60_000,
     queryFn: async () => {
-      const { data, error } = await supabase.from("user_roles").select("role").eq("user_id", user.id);
+      const { data, error } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", user.id);
       if (error) throw error;
       return roleFromRows(data);
     },

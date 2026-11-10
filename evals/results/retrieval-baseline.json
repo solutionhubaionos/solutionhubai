@@ -105,9 +105,7 @@
       "category": "exact-term",
       "question": "What does the United Next growth plan cover?",
       "answerable": true,
-      "expectedFiles": [
-        "2dfa09fc-United_Airlines_Strategic_Brief.docx"
-      ],
+      "expectedFiles": ["2dfa09fc-United_Airlines_Strategic_Brief.docx"],
       "files": [
         {
           "rank": 1,
@@ -141,9 +139,7 @@
       "category": "exact-term",
       "question": "What is Smart Verify and how does it improve customer experience?",
       "answerable": true,
-      "expectedFiles": [
-        "9b17a6e8-MNC_financial_040225_v1.0.pptx"
-      ],
+      "expectedFiles": ["9b17a6e8-MNC_financial_040225_v1.0.pptx"],
       "files": [
         {
           "rank": 1,
@@ -177,9 +173,7 @@
       "category": "exact-term",
       "question": "What is the Intellimates platform and how does it help a supply chain?",
       "answerable": true,
-      "expectedFiles": [
-        "46fcbb41-UPS-II-AIonOS-The-Intellimates.pptx"
-      ],
+      "expectedFiles": ["46fcbb41-UPS-II-AIonOS-The-Intellimates.pptx"],
       "files": [
         {
           "rank": 1,
@@ -237,9 +231,7 @@
       "category": "exact-term",
       "question": "What cross-border health data governance challenge is Fujifilm NURA facing?",
       "answerable": true,
-      "expectedFiles": [
-        "da0e423f-AIONOS_NURA_Technical_Brief.pdf"
-      ],
+      "expectedFiles": ["da0e423f-AIONOS_NURA_Technical_Brief.pdf"],
       "files": [
         {
           "rank": 1,
@@ -285,9 +277,7 @@
       "category": "exact-term",
       "question": "Who is Ruza Sabanovic and where did she lead technology?",
       "answerable": true,
-      "expectedFiles": [
-        "2d33b0fd-2510_Ruza_Sabanovic.docx"
-      ],
+      "expectedFiles": ["2d33b0fd-2510_Ruza_Sabanovic.docx"],
       "files": [
         {
           "rank": 1,
@@ -345,9 +335,7 @@
       "category": "exact-term",
       "question": "What was the Bajaj Pulsar Chala Apni campaign and what results did it deliver?",
       "answerable": true,
-      "expectedFiles": [
-        "c772bed6-Case_study_-_Bajaj_Pulsar.pdf"
-      ],
+      "expectedFiles": ["c772bed6-Case_study_-_Bajaj_Pulsar.pdf"],
       "files": [
         {
           "rank": 1,
@@ -393,9 +381,7 @@
       "category": "exact-term",
       "question": "What is ACLEDA Bank's non-performing loan ratio and how fast is its digital channel growing?",
       "answerable": true,
-      "expectedFiles": [
-        "c1d70c0d-ACLEDA_Bank_Account_Plan_Aug2026.docx"
-      ],
+      "expectedFiles": ["c1d70c0d-ACLEDA_Bank_Account_Plan_Aug2026.docx"],
       "files": [
         {
           "rank": 1,
@@ -423,9 +409,7 @@
       "category": "exact-term",
       "question": "What are IndusInd General Insurance's net written premium, profit and solvency ratio?",
       "answerable": true,
-      "expectedFiles": [
-        "8b9c8d4d-IndusInd_General_Insurance_AI_Maturity_19Sept.docx"
-      ],
+      "expectedFiles": ["8b9c8d4d-IndusInd_General_Insurance_AI_Maturity_19Sept.docx"],
       "files": [
         {
           "rank": 1,
@@ -471,9 +455,7 @@
       "category": "exact-term",
       "question": "What is in the investment summary of the Vodafone Oman data management hub commercial response?",
       "answerable": true,
-      "expectedFiles": [
-        "53630d60-Commercial_Proposal_-_Vodafone_Datalake_7_Sept_2026_v2.0.pdf"
-      ],
+      "expectedFiles": ["53630d60-Commercial_Proposal_-_Vodafone_Datalake_7_Sept_2026_v2.0.pdf"],
       "files": [
         {
           "rank": 1,
@@ -513,9 +495,7 @@
       "category": "exact-term",
       "question": "What does the Adani Airport Holdings integrated annual report cover for non-aeronautical revenue?",
       "answerable": true,
-      "expectedFiles": [
-        "f7165c9e-AAHL_IR_2023-24_C2C_Interactive.pdf"
-      ],
+      "expectedFiles": ["f7165c9e-AAHL_IR_2023-24_C2C_Interactive.pdf"],
       "files": [
         {
           "rank": 1,
@@ -537,9 +517,7 @@
       "category": "exact-term",
       "question": "What does the BFSI deck for Bank of India say about sovereign AI for the enterprise?",
       "answerable": true,
-      "expectedFiles": [
-        "c4567bcf-AIONOS_BFSI_Deck_Bank_of_India.pptx"
-      ],
+      "expectedFiles": ["c4567bcf-AIONOS_BFSI_Deck_Bank_of_India.pptx"],
       "files": [
         {
           "rank": 1,
@@ -591,9 +569,7 @@
       "category": "exact-term",
       "question": "Who attended the Adani workshop on 1 April 2025?",
       "answerable": true,
-      "expectedFiles": [
-        "031e760a-250401_Adani_Workshop.docx"
-      ],
+      "expectedFiles": ["031e760a-250401_Adani_Workshop.docx"],
       "files": [
         {
           "rank": 1,
@@ -639,9 +615,7 @@
       "category": "exact-term",
       "question": "What is the CX Single Survey Platform RFI that True Corporation issued?",
       "answerable": true,
-      "expectedFiles": [
-        "bf2849d0-RFI_CXSingleSurveyPlatformProject_TrueCorporation.docx"
-      ],
+      "expectedFiles": ["bf2849d0-RFI_CXSingleSurveyPlatformProject_TrueCorporation.docx"],
       "files": [
         {
           "rank": 1,
@@ -693,9 +667,7 @@
       "category": "exact-term",
       "question": "What does the CXO dashboard solution for Ithmaar Bank deliver?",
       "answerable": true,
-      "expectedFiles": [
-        "815ba684-Banking_CXO_Dashboard_Solution.docx"
-      ],
+      "expectedFiles": ["815ba684-Banking_CXO_Dashboard_Solution.docx"],
       "files": [
         {
           "rank": 1,
@@ -735,9 +707,7 @@
       "category": "exact-term",
       "question": "What are the terms of the staff augmentation services agreement with Aventis Technologies?",
       "answerable": true,
-      "expectedFiles": [
-        "b23f1fd0-20260420_Staff_Augmentation_Agreement_v0.1_AIPT-AVENTIS.docx"
-      ],
+      "expectedFiles": ["b23f1fd0-20260420_Staff_Augmentation_Agreement_v0.1_AIPT-AVENTIS.docx"],
       "files": [
         {
           "rank": 1,
@@ -783,9 +753,7 @@
       "category": "vague",
       "question": "How do we usually improve customer retention with AI?",
       "answerable": true,
-      "expectedFiles": [
-        "780aa9a1-Maruti_Suzuki_II_AIonOS_AgenticAI_Customer_Focus.pptx"
-      ],
+      "expectedFiles": ["780aa9a1-Maruti_Suzuki_II_AIonOS_AgenticAI_Customer_Focus.pptx"],
       "files": [
         {
           "rank": 1,
@@ -874,9 +842,7 @@
       "category": "vague",
       "question": "How is generative AI changing healthcare delivery?",
       "answerable": true,
-      "expectedFiles": [
-        "51a0b398-Braindesk_GenAI_Trends_in_Healthcare.pdf"
-      ],
+      "expectedFiles": ["51a0b398-Braindesk_GenAI_Trends_in_Healthcare.pdf"],
       "files": [
         {
           "rank": 1,
@@ -904,9 +870,7 @@
       "category": "vague",
       "question": "What are the emerging trends in retail and consumer packaged goods?",
       "answerable": true,
-      "expectedFiles": [
-        "2f96f66e-Braindesk_Future_Trends_in_Retail_CPG_Industry.pdf"
-      ],
+      "expectedFiles": ["2f96f66e-Braindesk_Future_Trends_in_Retail_CPG_Industry.pdf"],
       "files": [
         {
           "rank": 1,
@@ -928,9 +892,7 @@
       "category": "vague",
       "question": "How big is the Indian automotive market and what is driving it?",
       "answerable": true,
-      "expectedFiles": [
-        "50f20f6b-Braindesk_India_-_Automotive_Market_Analysis.pdf"
-      ],
+      "expectedFiles": ["50f20f6b-Braindesk_India_-_Automotive_Market_Analysis.pdf"],
       "files": [
         {
           "rank": 1,
@@ -958,9 +920,7 @@
       "category": "vague",
       "question": "What is our mission and who founded the company?",
       "answerable": true,
-      "expectedFiles": [
-        "64e81478-AIONOS_Acleda_Strategic_Collaboration_Deck.pdf"
-      ],
+      "expectedFiles": ["64e81478-AIONOS_Acleda_Strategic_Collaboration_Deck.pdf"],
       "files": [
         {
           "rank": 1,
@@ -1061,9 +1021,7 @@
       "category": "vague",
       "question": "What personalization work have we done for IndiGo to improve bookings?",
       "answerable": true,
-      "expectedFiles": [
-        "45364936-2411_-_IndiGo_MarTech_Personalization_using_Agentic_AI.pptx"
-      ],
+      "expectedFiles": ["45364936-2411_-_IndiGo_MarTech_Personalization_using_Agentic_AI.pptx"],
       "files": [
         {
           "rank": 1,
@@ -1115,9 +1073,7 @@
       "category": "vague",
       "question": "How would we modernise the accounts receivable and booking process for a hotel group?",
       "answerable": true,
-      "expectedFiles": [
-        "e7bf75e3-InterGlobe_Hotels_Roadmap.pptx"
-      ],
+      "expectedFiles": ["e7bf75e3-InterGlobe_Hotels_Roadmap.pptx"],
       "files": [
         {
           "rank": 1,
@@ -1151,9 +1107,7 @@
       "category": "vague",
       "question": "What do we propose for Kotak Mahindra Bank?",
       "answerable": true,
-      "expectedFiles": [
-        "9cea6d7f-250908_Kotak_AIonOS_v1.2.pptx"
-      ],
+      "expectedFiles": ["9cea6d7f-250908_Kotak_AIonOS_v1.2.pptx"],
       "files": [
         {
           "rank": 1,
@@ -1217,9 +1171,7 @@
       "category": "vague",
       "question": "What is the Ascension Health discussion document about?",
       "answerable": true,
-      "expectedFiles": [
-        "22d2cff5-250201_-_Ascension_-_AIonOS_v1.0.pptx"
-      ],
+      "expectedFiles": ["22d2cff5-250201_-_Ascension_-_AIonOS_v1.0.pptx"],
       "files": [
         {
           "rank": 1,
@@ -1283,9 +1235,7 @@
       "category": "vague",
       "question": "How do we support Oman Arab Bank?",
       "answerable": true,
-      "expectedFiles": [
-        "bc18002a-250910_AIonOS_Oman_Arab_Bank_v1.0.pptx"
-      ],
+      "expectedFiles": ["bc18002a-250910_AIonOS_Oman_Arab_Bank_v1.0.pptx"],
       "files": [
         {
           "rank": 1,
@@ -1325,9 +1275,7 @@
       "category": "vague",
       "question": "What is the regulatory and digital context for Riyadh Air in Saudi Arabia?",
       "answerable": true,
-      "expectedFiles": [
-        "0124149a-KYC-_Riyadh_Air.docx"
-      ],
+      "expectedFiles": ["0124149a-KYC-_Riyadh_Air.docx"],
       "files": [
         {
           "rank": 1,
@@ -1373,9 +1321,7 @@
       "category": "vague",
       "question": "Which airline is headquartered in Chicago and has an India knowledge center in Gurugram?",
       "answerable": true,
-      "expectedFiles": [
-        "6ab6ded7-United_Airlines_Strategic_Account_Plan_v2.docx"
-      ],
+      "expectedFiles": ["6ab6ded7-United_Airlines_Strategic_Account_Plan_v2.docx"],
       "files": [
         {
           "rank": 1,
@@ -1421,9 +1367,7 @@
       "category": "vague",
       "question": "What hyper-personalized supply chain offering do we have for APAC?",
       "answerable": true,
-      "expectedFiles": [
-        "46fcbb41-UPS-II-AIonOS-The-Intellimates.pptx"
-      ],
+      "expectedFiles": ["46fcbb41-UPS-II-AIonOS-The-Intellimates.pptx"],
       "files": [
         {
           "rank": 1,
@@ -1487,9 +1431,7 @@
       "category": "vague",
       "question": "What solution offerings do we propose to Adani Airports?",
       "answerable": true,
-      "expectedFiles": [
-        "9166a939-Adani_Airports_v1.0_-_Solution_Master.pptx"
-      ],
+      "expectedFiles": ["9166a939-Adani_Airports_v1.0_-_Solution_Master.pptx"],
       "files": [
         {
           "rank": 1,
@@ -1547,9 +1489,7 @@
       "category": "scoped",
       "question": "What is the United Next strategy and its main pillars?",
       "answerable": true,
-      "expectedFiles": [
-        "2dfa09fc-United_Airlines_Strategic_Brief.docx"
-      ],
+      "expectedFiles": ["2dfa09fc-United_Airlines_Strategic_Brief.docx"],
       "files": [
         {
           "rank": 1,
@@ -1583,9 +1523,7 @@
       "category": "scoped",
       "question": "Which insurer has around 4.87% market share and a 1.59x solvency ratio?",
       "answerable": true,
-      "expectedFiles": [
-        "8b9c8d4d-IndusInd_General_Insurance_AI_Maturity_19Sept.docx"
-      ],
+      "expectedFiles": ["8b9c8d4d-IndusInd_General_Insurance_AI_Maturity_19Sept.docx"],
       "files": [
         {
           "rank": 1,
@@ -1631,9 +1569,7 @@
       "category": "scoped",
       "question": "How does the booking and payment flow work for the hotel group?",
       "answerable": true,
-      "expectedFiles": [
-        "e7bf75e3-InterGlobe_Hotels_Roadmap.pptx"
-      ],
+      "expectedFiles": ["e7bf75e3-InterGlobe_Hotels_Roadmap.pptx"],
       "files": [
         {
           "rank": 1,
@@ -1685,9 +1621,7 @@
       "category": "scoped",
       "question": "What case study covers a motorcycle brand's personalised campaign?",
       "answerable": true,
-      "expectedFiles": [
-        "c772bed6-Case_study_-_Bajaj_Pulsar.pdf"
-      ],
+      "expectedFiles": ["c772bed6-Case_study_-_Bajaj_Pulsar.pdf"],
       "files": [
         {
           "rank": 1,
@@ -1727,9 +1661,7 @@
       "category": "scoped",
       "question": "Which operator issued a request for information for a single customer survey platform?",
       "answerable": true,
-      "expectedFiles": [
-        "bf2849d0-RFI_CXSingleSurveyPlatformProject_TrueCorporation.docx"
-      ],
+      "expectedFiles": ["bf2849d0-RFI_CXSingleSurveyPlatformProject_TrueCorporation.docx"],
       "files": [
         {
           "rank": 1,
@@ -1769,9 +1701,7 @@
       "category": "scoped",
       "question": "How is patient health data governed across borders?",
       "answerable": true,
-      "expectedFiles": [
-        "da0e423f-AIONOS_NURA_Technical_Brief.pdf"
-      ],
+      "expectedFiles": ["da0e423f-AIONOS_NURA_Technical_Brief.pdf"],
       "files": [
         {
           "rank": 1,
@@ -1811,9 +1741,7 @@
       "category": "scoped",
       "question": "What is the proposed solution master for Adani Airports?",
       "answerable": true,
-      "expectedFiles": [
-        "9166a939-Adani_Airports_v1.0_-_Solution_Master.pptx"
-      ],
+      "expectedFiles": ["9166a939-Adani_Airports_v1.0_-_Solution_Master.pptx"],
       "files": [
         {
           "rank": 1,
@@ -1865,9 +1793,7 @@
       "category": "scoped",
       "question": "What future trends should we pitch to retail and CPG clients?",
       "answerable": true,
-      "expectedFiles": [
-        "2f96f66e-Braindesk_Future_Trends_in_Retail_CPG_Industry.pdf"
-      ],
+      "expectedFiles": ["2f96f66e-Braindesk_Future_Trends_in_Retail_CPG_Industry.pdf"],
       "files": [
         {
           "rank": 1,
@@ -1889,9 +1815,7 @@
       "category": "scoped",
       "question": "What do we offer for supply chain visibility and customer experience?",
       "answerable": true,
-      "expectedFiles": [
-        "46fcbb41-UPS-II-AIonOS-The-Intellimates.pptx"
-      ],
+      "expectedFiles": ["46fcbb41-UPS-II-AIonOS-The-Intellimates.pptx"],
       "files": [
         {
           "rank": 1,
@@ -1943,9 +1867,7 @@
       "category": "scoped",
       "question": "What did we present to Kotak Mahindra Bank?",
       "answerable": true,
-      "expectedFiles": [
-        "9cea6d7f-250908_Kotak_AIonOS_v1.2.pptx"
-      ],
+      "expectedFiles": ["9cea6d7f-250908_Kotak_AIonOS_v1.2.pptx"],
       "files": [
         {
           "rank": 1,
@@ -2299,9 +2221,7 @@
       "category": "multi-turn",
       "question": "How many aircraft is it taking in 2025, and of which types?",
       "answerable": true,
-      "expectedFiles": [
-        "2dfa09fc-United_Airlines_Strategic_Brief.docx"
-      ],
+      "expectedFiles": ["2dfa09fc-United_Airlines_Strategic_Brief.docx"],
       "files": [
         {
           "rank": 1,
@@ -2365,9 +2285,7 @@
       "category": "multi-turn",
       "question": "And what annual value does the enhanced Chase card give cardholders?",
       "answerable": true,
-      "expectedFiles": [
-        "2dfa09fc-United_Airlines_Strategic_Brief.docx"
-      ],
+      "expectedFiles": ["2dfa09fc-United_Airlines_Strategic_Brief.docx"],
       "files": [
         {
           "rank": 1,
@@ -2431,9 +2349,7 @@
       "category": "multi-turn",
       "question": "What is its solvency ratio, and what is the floor?",
       "answerable": true,
-      "expectedFiles": [
-        "8b9c8d4d-IndusInd_General_Insurance_AI_Maturity_19Sept.docx"
-      ],
+      "expectedFiles": ["8b9c8d4d-IndusInd_General_Insurance_AI_Maturity_19Sept.docx"],
       "files": [
         {
           "rank": 1,
@@ -2485,9 +2401,7 @@
       "category": "multi-turn",
       "question": "And what was its net profit and growth?",
       "answerable": true,
-      "expectedFiles": [
-        "8b9c8d4d-IndusInd_General_Insurance_AI_Maturity_19Sept.docx"
-      ],
+      "expectedFiles": ["8b9c8d4d-IndusInd_General_Insurance_AI_Maturity_19Sept.docx"],
       "files": [
         {
           "rank": 1,
@@ -2545,9 +2459,7 @@
       "category": "multi-turn",
       "question": "And how has that ratio moved since 2024?",
       "answerable": true,
-      "expectedFiles": [
-        "c1d70c0d-ACLEDA_Bank_Account_Plan_Aug2026.docx"
-      ],
+      "expectedFiles": ["c1d70c0d-ACLEDA_Bank_Account_Plan_Aug2026.docx"],
       "files": [
         {
           "rank": 1,
@@ -2587,9 +2499,7 @@
       "category": "multi-turn",
       "question": "How many users does its Super App have?",
       "answerable": true,
-      "expectedFiles": [
-        "c1d70c0d-ACLEDA_Bank_Account_Plan_Aug2026.docx"
-      ],
+      "expectedFiles": ["c1d70c0d-ACLEDA_Bank_Account_Plan_Aug2026.docx"],
       "files": [
         {
           "rank": 1,
@@ -2653,9 +2563,7 @@
       "category": "multi-turn",
       "question": "And what did that do to postal traffic to the US?",
       "answerable": true,
-      "expectedFiles": [
-        "46fcbb41-UPS-II-AIonOS-The-Intellimates.pptx"
-      ],
+      "expectedFiles": ["46fcbb41-UPS-II-AIonOS-The-Intellimates.pptx"],
       "files": [
         {
           "rank": 1,
@@ -2713,9 +2621,7 @@
       "category": "multi-turn",
       "question": "What CSAT improvement does the deck claim for that?",
       "answerable": true,
-      "expectedFiles": [
-        "46fcbb41-UPS-II-AIonOS-The-Intellimates.pptx"
-      ],
+      "expectedFiles": ["46fcbb41-UPS-II-AIonOS-The-Intellimates.pptx"],
       "files": [
         {
           "rank": 1,
@@ -2779,9 +2685,7 @@
       "category": "multi-turn",
       "question": "What has it already invested in to do that?",
       "answerable": true,
-      "expectedFiles": [
-        "45364936-2411_-_IndiGo_MarTech_Personalization_using_Agentic_AI.pptx"
-      ],
+      "expectedFiles": ["45364936-2411_-_IndiGo_MarTech_Personalization_using_Agentic_AI.pptx"],
       "files": [
         {
           "rank": 1,
@@ -2839,9 +2743,7 @@
       "category": "multi-turn",
       "question": "Which booking and payment channels are mapped?",
       "answerable": true,
-      "expectedFiles": [
-        "e7bf75e3-InterGlobe_Hotels_Roadmap.pptx"
-      ],
+      "expectedFiles": ["e7bf75e3-InterGlobe_Hotels_Roadmap.pptx"],
       "files": [
         {
           "rank": 1,
@@ -2893,9 +2795,7 @@
       "category": "multi-turn",
       "question": "What ancillary revenue target is in the deck?",
       "answerable": true,
-      "expectedFiles": [
-        "9b17a6e8-MNC_financial_040225_v1.0.pptx"
-      ],
+      "expectedFiles": ["9b17a6e8-MNC_financial_040225_v1.0.pptx"],
       "files": [
         {
           "rank": 1,
@@ -2941,9 +2841,7 @@
       "category": "multi-turn",
       "question": "What market is the authentication suite targeting?",
       "answerable": true,
-      "expectedFiles": [
-        "9b17a6e8-MNC_financial_040225_v1.0.pptx"
-      ],
+      "expectedFiles": ["9b17a6e8-MNC_financial_040225_v1.0.pptx"],
       "files": [
         {
           "rank": 1,
@@ -2989,9 +2887,7 @@
       "category": "multi-turn",
       "question": "What results did it deliver?",
       "answerable": true,
-      "expectedFiles": [
-        "c772bed6-Case_study_-_Bajaj_Pulsar.pdf"
-      ],
+      "expectedFiles": ["c772bed6-Case_study_-_Bajaj_Pulsar.pdf"],
       "files": [
         {
           "rank": 1,
@@ -3055,9 +2951,7 @@
       "category": "multi-turn",
       "question": "Which banking themes did the deck cover?",
       "answerable": true,
-      "expectedFiles": [
-        "9cea6d7f-250908_Kotak_AIonOS_v1.2.pptx"
-      ],
+      "expectedFiles": ["9cea6d7f-250908_Kotak_AIonOS_v1.2.pptx"],
       "files": [
         {
           "rank": 1,
@@ -3109,9 +3003,7 @@
       "category": "multi-turn",
       "question": "What is the total five-year quote?",
       "answerable": true,
-      "expectedFiles": [
-        "53630d60-Commercial_Proposal_-_Vodafone_Datalake_7_Sept_2026_v2.0.pdf"
-      ],
+      "expectedFiles": ["53630d60-Commercial_Proposal_-_Vodafone_Datalake_7_Sept_2026_v2.0.pdf"],
       "files": [
         {
           "rank": 1,
@@ -3163,9 +3055,7 @@
       "category": "multi-turn",
       "question": "Which solution offerings does it list?",
       "answerable": true,
-      "expectedFiles": [
-        "9166a939-Adani_Airports_v1.0_-_Solution_Master.pptx"
-      ],
+      "expectedFiles": ["9166a939-Adani_Airports_v1.0_-_Solution_Master.pptx"],
       "files": [
         {
           "rank": 1,
@@ -3229,9 +3119,7 @@
       "category": "chart-table",
       "question": "What net written premium and year-on-year growth does IndusInd General Insurance report?",
       "answerable": true,
-      "expectedFiles": [
-        "8b9c8d4d-IndusInd_General_Insurance_AI_Maturity_19Sept.docx"
-      ],
+      "expectedFiles": ["8b9c8d4d-IndusInd_General_Insurance_AI_Maturity_19Sept.docx"],
       "files": [
         {
           "rank": 1,
@@ -3277,9 +3165,7 @@
       "category": "chart-table",
       "question": "What solvency ratio does IndusInd General Insurance report against its regulatory floor?",
       "answerable": true,
-      "expectedFiles": [
-        "8b9c8d4d-IndusInd_General_Insurance_AI_Maturity_19Sept.docx"
-      ],
+      "expectedFiles": ["8b9c8d4d-IndusInd_General_Insurance_AI_Maturity_19Sept.docx"],
       "files": [
         {
           "rank": 1,
@@ -3325,9 +3211,7 @@
       "category": "chart-table",
       "question": "What market share does IndusInd General Insurance hold?",
       "answerable": true,
-      "expectedFiles": [
-        "8b9c8d4d-IndusInd_General_Insurance_AI_Maturity_19Sept.docx"
-      ],
+      "expectedFiles": ["8b9c8d4d-IndusInd_General_Insurance_AI_Maturity_19Sept.docx"],
       "files": [
         {
           "rank": 1,
@@ -3379,9 +3263,7 @@
       "category": "chart-table",
       "question": "What was ACLEDA's NPL ratio in Q2 2026 versus 2024?",
       "answerable": true,
-      "expectedFiles": [
-        "c1d70c0d-ACLEDA_Bank_Account_Plan_Aug2026.docx"
-      ],
+      "expectedFiles": ["c1d70c0d-ACLEDA_Bank_Account_Plan_Aug2026.docx"],
       "files": [
         {
           "rank": 1,
@@ -3409,9 +3291,7 @@
       "category": "chart-table",
       "question": "What profit after tax did ACLEDA report for Q2 2026?",
       "answerable": true,
-      "expectedFiles": [
-        "c1d70c0d-ACLEDA_Bank_Account_Plan_Aug2026.docx"
-      ],
+      "expectedFiles": ["c1d70c0d-ACLEDA_Bank_Account_Plan_Aug2026.docx"],
       "files": [
         {
           "rank": 1,
@@ -3433,9 +3313,7 @@
       "category": "chart-table",
       "question": "How many ATMs, POS terminals and QR merchants does ACLEDA operate?",
       "answerable": true,
-      "expectedFiles": [
-        "c1d70c0d-ACLEDA_Bank_Account_Plan_Aug2026.docx"
-      ],
+      "expectedFiles": ["c1d70c0d-ACLEDA_Bank_Account_Plan_Aug2026.docx"],
       "files": [
         {
           "rank": 1,
@@ -3457,9 +3335,7 @@
       "category": "chart-table",
       "question": "What were ACLEDA's total assets in Q2 2026?",
       "answerable": true,
-      "expectedFiles": [
-        "c1d70c0d-ACLEDA_Bank_Account_Plan_Aug2026.docx"
-      ],
+      "expectedFiles": ["c1d70c0d-ACLEDA_Bank_Account_Plan_Aug2026.docx"],
       "files": [
         {
           "rank": 1,
@@ -3481,9 +3357,7 @@
       "category": "chart-table",
       "question": "How many aircraft is United taking in 2025 and of which types?",
       "answerable": true,
-      "expectedFiles": [
-        "2dfa09fc-United_Airlines_Strategic_Brief.docx"
-      ],
+      "expectedFiles": ["2dfa09fc-United_Airlines_Strategic_Brief.docx"],
       "files": [
         {
           "rank": 1,
@@ -3517,9 +3391,7 @@
       "category": "chart-table",
       "question": "What annual value does the enhanced Chase card provide per cardholder?",
       "answerable": true,
-      "expectedFiles": [
-        "2dfa09fc-United_Airlines_Strategic_Brief.docx"
-      ],
+      "expectedFiles": ["2dfa09fc-United_Airlines_Strategic_Brief.docx"],
       "files": [
         {
           "rank": 1,
@@ -3583,9 +3455,7 @@
       "category": "chart-table",
       "question": "How much has United's AWS partnership saved and what developer-productivity gain did it produce?",
       "answerable": true,
-      "expectedFiles": [
-        "2dfa09fc-United_Airlines_Strategic_Brief.docx"
-      ],
+      "expectedFiles": ["2dfa09fc-United_Airlines_Strategic_Brief.docx"],
       "files": [
         {
           "rank": 1,
@@ -3619,9 +3489,7 @@
       "category": "chart-table",
       "question": "What ancillary revenue uplift does the MNC Financial Services deck target?",
       "answerable": true,
-      "expectedFiles": [
-        "9b17a6e8-MNC_financial_040225_v1.0.pptx"
-      ],
+      "expectedFiles": ["9b17a6e8-MNC_financial_040225_v1.0.pptx"],
       "files": [
         {
           "rank": 1,
@@ -3685,9 +3553,7 @@
       "category": "chart-table",
       "question": "How large is the SMS OTP market the authentication suite aims to replace?",
       "answerable": true,
-      "expectedFiles": [
-        "9b17a6e8-MNC_financial_040225_v1.0.pptx"
-      ],
+      "expectedFiles": ["9b17a6e8-MNC_financial_040225_v1.0.pptx"],
       "files": [
         {
           "rank": 1,
@@ -3715,9 +3581,7 @@
       "category": "chart-table",
       "question": "What is Indonesia's digital ad spend and the average campaign budget shown for data enrichment?",
       "answerable": true,
-      "expectedFiles": [
-        "9b17a6e8-MNC_financial_040225_v1.0.pptx"
-      ],
+      "expectedFiles": ["9b17a6e8-MNC_financial_040225_v1.0.pptx"],
       "files": [
         {
           "rank": 1,
@@ -3763,9 +3627,7 @@
       "category": "chart-table",
       "question": "By how much did postal traffic to the US fall after the de minimis change?",
       "answerable": true,
-      "expectedFiles": [
-        "46fcbb41-UPS-II-AIonOS-The-Intellimates.pptx"
-      ],
+      "expectedFiles": ["46fcbb41-UPS-II-AIonOS-The-Intellimates.pptx"],
       "files": [
         {
           "rank": 1,
@@ -3823,9 +3685,7 @@
       "category": "chart-table",
       "question": "What CSAT and average-handle-time improvements does the Intellimates deck claim?",
       "answerable": true,
-      "expectedFiles": [
-        "46fcbb41-UPS-II-AIonOS-The-Intellimates.pptx"
-      ],
+      "expectedFiles": ["46fcbb41-UPS-II-AIonOS-The-Intellimates.pptx"],
       "files": [
         {
           "rank": 1,
@@ -3889,9 +3749,7 @@
       "category": "chart-table",
       "question": "How many million passengers did Adani Airport Holdings handle in 2023-24?",
       "answerable": true,
-      "expectedFiles": [
-        "f7165c9e-AAHL_IR_2023-24_C2C_Interactive.pdf"
-      ],
+      "expectedFiles": ["f7165c9e-AAHL_IR_2023-24_C2C_Interactive.pdf"],
       "files": [
         {
           "rank": 1,
@@ -3919,9 +3777,7 @@
       "category": "chart-table",
       "question": "How many real-time WhatsApp conversations and personalised videos did the Bajaj Pulsar campaign generate?",
       "answerable": true,
-      "expectedFiles": [
-        "c772bed6-Case_study_-_Bajaj_Pulsar.pdf"
-      ],
+      "expectedFiles": ["c772bed6-Case_study_-_Bajaj_Pulsar.pdf"],
       "files": [
         {
           "rank": 1,
@@ -3967,9 +3823,7 @@
       "category": "chart-table",
       "question": "What is the implementation-services quote in the Vodafone Oman proposal?",
       "answerable": true,
-      "expectedFiles": [
-        "53630d60-Commercial_Proposal_-_Vodafone_Datalake_7_Sept_2026_v2.0.pdf"
-      ],
+      "expectedFiles": ["53630d60-Commercial_Proposal_-_Vodafone_Datalake_7_Sept_2026_v2.0.pdf"],
       "files": [
         {
           "rank": 1,
@@ -4021,9 +3875,7 @@
       "category": "chart-table",
       "question": "Which AIonOS solution offerings are mapped for Adani Airports?",
       "answerable": true,
-      "expectedFiles": [
-        "9166a939-Adani_Airports_v1.0_-_Solution_Master.pptx"
-      ],
+      "expectedFiles": ["9166a939-Adani_Airports_v1.0_-_Solution_Master.pptx"],
       "files": [
         {
           "rank": 1,
@@ -4087,9 +3939,7 @@
       "category": "chart-table",
       "question": "Which booking and payment channels are mapped in the InterGlobe Hotels diagram?",
       "answerable": true,
-      "expectedFiles": [
-        "e7bf75e3-InterGlobe_Hotels_Roadmap.pptx"
-      ],
+      "expectedFiles": ["e7bf75e3-InterGlobe_Hotels_Roadmap.pptx"],
       "files": [
         {
           "rank": 1,
@@ -4147,9 +3997,7 @@
       "category": "chart-table",
       "question": "What are the stages of the InterGlobe Hotels accounts-receivable engagement?",
       "answerable": true,
-      "expectedFiles": [
-        "e7bf75e3-InterGlobe_Hotels_Roadmap.pptx"
-      ],
+      "expectedFiles": ["e7bf75e3-InterGlobe_Hotels_Roadmap.pptx"],
       "files": [
         {
           "rank": 1,
@@ -4183,9 +4031,7 @@
       "category": "chart-table",
       "question": "Which AI-native banking focus areas does the Kotak deck show?",
       "answerable": true,
-      "expectedFiles": [
-        "9cea6d7f-250908_Kotak_AIonOS_v1.2.pptx"
-      ],
+      "expectedFiles": ["9cea6d7f-250908_Kotak_AIonOS_v1.2.pptx"],
       "files": [
         {
           "rank": 1,
@@ -4243,9 +4089,7 @@
       "category": "scope-mode",
       "question": "What did we quote Vodafone Oman for the data lake?",
       "answerable": true,
-      "expectedFiles": [
-        "53630d60-Commercial_Proposal_-_Vodafone_Datalake_7_Sept_2026_v2.0.pdf"
-      ],
+      "expectedFiles": ["53630d60-Commercial_Proposal_-_Vodafone_Datalake_7_Sept_2026_v2.0.pdf"],
       "files": [
         {
           "rank": 1,
@@ -4285,9 +4129,7 @@
       "category": "scope-mode",
       "question": "What did we present to Kotak Mahindra Bank?",
       "answerable": true,
-      "expectedFiles": [
-        "9cea6d7f-250908_Kotak_AIonOS_v1.2.pptx"
-      ],
+      "expectedFiles": ["9cea6d7f-250908_Kotak_AIonOS_v1.2.pptx"],
       "files": [
         {
           "rank": 1,
@@ -4333,9 +4175,7 @@
       "category": "scope-mode",
       "question": "What personalization work have we done for IndiGo?",
       "answerable": true,
-      "expectedFiles": [
-        "45364936-2411_-_IndiGo_MarTech_Personalization_using_Agentic_AI.pptx"
-      ],
+      "expectedFiles": ["45364936-2411_-_IndiGo_MarTech_Personalization_using_Agentic_AI.pptx"],
       "files": [
         {
           "rank": 1,
@@ -4393,9 +4233,7 @@
       "category": "scope-mode",
       "question": "What is United Next?",
       "answerable": true,
-      "expectedFiles": [
-        "2dfa09fc-United_Airlines_Strategic_Brief.docx"
-      ],
+      "expectedFiles": ["2dfa09fc-United_Airlines_Strategic_Brief.docx"],
       "files": [
         {
           "rank": 1,
@@ -4441,9 +4279,7 @@
       "category": "scope-mode",
       "question": "What did we quote Vodafone Oman for the data lake?",
       "answerable": true,
-      "expectedFiles": [
-        "53630d60-Commercial_Proposal_-_Vodafone_Datalake_7_Sept_2026_v2.0.pdf"
-      ],
+      "expectedFiles": ["53630d60-Commercial_Proposal_-_Vodafone_Datalake_7_Sept_2026_v2.0.pdf"],
       "files": [
         {
           "rank": 1,
@@ -4489,9 +4325,7 @@
       "category": "scope-mode",
       "question": "What personalization work have we done for IndiGo?",
       "answerable": true,
-      "expectedFiles": [
-        "45364936-2411_-_IndiGo_MarTech_Personalization_using_Agentic_AI.pptx"
-      ],
+      "expectedFiles": ["45364936-2411_-_IndiGo_MarTech_Personalization_using_Agentic_AI.pptx"],
       "files": [
         {
           "rank": 1,
@@ -4616,9 +4450,7 @@
       "category": "scope-mode",
       "question": "What does the Kotak deck propose for AI in banking?",
       "answerable": true,
-      "expectedFiles": [
-        "9cea6d7f-250908_Kotak_AIonOS_v1.2.pptx"
-      ],
+      "expectedFiles": ["9cea6d7f-250908_Kotak_AIonOS_v1.2.pptx"],
       "files": [
         {
           "rank": 1,
@@ -4676,9 +4508,7 @@
       "category": "scope-mode",
       "question": "How many aircraft is United taking in 2025?",
       "answerable": true,
-      "expectedFiles": [
-        "2dfa09fc-United_Airlines_Strategic_Brief.docx"
-      ],
+      "expectedFiles": ["2dfa09fc-United_Airlines_Strategic_Brief.docx"],
       "files": [
         {
           "rank": 1,
@@ -4712,9 +4542,7 @@
       "category": "scope-mode",
       "question": "What does the UPS Intellimates deck say about postal traffic?",
       "answerable": true,
-      "expectedFiles": [
-        "46fcbb41-UPS-II-AIonOS-The-Intellimates.pptx"
-      ],
+      "expectedFiles": ["46fcbb41-UPS-II-AIonOS-The-Intellimates.pptx"],
       "files": [
         {
           "rank": 1,
@@ -5274,9 +5102,7 @@
       "category": "projection",
       "question": "What marketing-effectiveness uplift does the MNC Financial Services deck propose?",
       "answerable": true,
-      "expectedFiles": [
-        "9b17a6e8-MNC_financial_040225_v1.0.pptx"
-      ],
+      "expectedFiles": ["9b17a6e8-MNC_financial_040225_v1.0.pptx"],
       "files": [
         {
           "rank": 1,
@@ -5328,9 +5154,7 @@
       "category": "projection",
       "question": "What ancillary revenue multiple is proposed in the MNC deck?",
       "answerable": true,
-      "expectedFiles": [
-        "9b17a6e8-MNC_financial_040225_v1.0.pptx"
-      ],
+      "expectedFiles": ["9b17a6e8-MNC_financial_040225_v1.0.pptx"],
       "files": [
         {
           "rank": 1,
@@ -5394,9 +5218,7 @@
       "category": "projection",
       "question": "What revenue target and timeframe does the MNC deck set for data exchanges?",
       "answerable": true,
-      "expectedFiles": [
-        "9b17a6e8-MNC_financial_040225_v1.0.pptx"
-      ],
+      "expectedFiles": ["9b17a6e8-MNC_financial_040225_v1.0.pptx"],
       "files": [
         {
           "rank": 1,
@@ -5448,9 +5270,7 @@
       "category": "projection",
       "question": "What CSAT improvement does the Intellimates deck claim?",
       "answerable": true,
-      "expectedFiles": [
-        "46fcbb41-UPS-II-AIonOS-The-Intellimates.pptx"
-      ],
+      "expectedFiles": ["46fcbb41-UPS-II-AIonOS-The-Intellimates.pptx"],
       "files": [
         {
           "rank": 1,
@@ -5514,9 +5334,7 @@
       "category": "projection",
       "question": "What data-preparation effort reduction does the Intellimates deck claim?",
       "answerable": true,
-      "expectedFiles": [
-        "46fcbb41-UPS-II-AIonOS-The-Intellimates.pptx"
-      ],
+      "expectedFiles": ["46fcbb41-UPS-II-AIonOS-The-Intellimates.pptx"],
       "files": [
         {
           "rank": 1,
@@ -5574,9 +5392,7 @@
       "category": "projection",
       "question": "What phases does the IndusInd AI transformation roadmap propose?",
       "answerable": true,
-      "expectedFiles": [
-        "8b9c8d4d-IndusInd_General_Insurance_AI_Maturity_19Sept.docx"
-      ],
+      "expectedFiles": ["8b9c8d4d-IndusInd_General_Insurance_AI_Maturity_19Sept.docx"],
       "files": [
         {
           "rank": 1,
@@ -5634,9 +5450,7 @@
       "category": "projection",
       "question": "What AI-in-banking blueprint does the Kotak deck propose?",
       "answerable": true,
-      "expectedFiles": [
-        "9cea6d7f-250908_Kotak_AIonOS_v1.2.pptx"
-      ],
+      "expectedFiles": ["9cea6d7f-250908_Kotak_AIonOS_v1.2.pptx"],
       "files": [
         {
           "rank": 1,
@@ -5700,9 +5514,7 @@
       "category": "projection",
       "question": "What has United actually saved through its AWS partnership?",
       "answerable": true,
-      "expectedFiles": [
-        "2dfa09fc-United_Airlines_Strategic_Brief.docx"
-      ],
+      "expectedFiles": ["2dfa09fc-United_Airlines_Strategic_Brief.docx"],
       "files": [
         {
           "rank": 1,
@@ -5730,9 +5542,7 @@
       "category": "projection",
       "question": "What measured CSAT improvement did United's generative-AI delay messaging produce?",
       "answerable": true,
-      "expectedFiles": [
-        "2dfa09fc-United_Airlines_Strategic_Brief.docx"
-      ],
+      "expectedFiles": ["2dfa09fc-United_Airlines_Strategic_Brief.docx"],
       "files": [
         {
           "rank": 1,
@@ -5772,9 +5582,7 @@
       "category": "projection",
       "question": "What NPL ratio did ACLEDA actually report in Q2 2026?",
       "answerable": true,
-      "expectedFiles": [
-        "c1d70c0d-ACLEDA_Bank_Account_Plan_Aug2026.docx"
-      ],
+      "expectedFiles": ["c1d70c0d-ACLEDA_Bank_Account_Plan_Aug2026.docx"],
       "files": [
         {
           "rank": 1,
@@ -5814,9 +5622,7 @@
       "category": "projection",
       "question": "How many personalised videos did the Bajaj Pulsar campaign actually generate?",
       "answerable": true,
-      "expectedFiles": [
-        "c772bed6-Case_study_-_Bajaj_Pulsar.pdf"
-      ],
+      "expectedFiles": ["c772bed6-Case_study_-_Bajaj_Pulsar.pdf"],
       "files": [
         {
           "rank": 1,
@@ -5862,9 +5668,7 @@
       "category": "chart-table",
       "question": "How many bookings had the IGH air-crew billing dashboard processed by 20 May 2025, and at what automation rate?",
       "answerable": true,
-      "expectedFiles": [
-        "IGH AR Agentic AI Solution V2.pptx"
-      ],
+      "expectedFiles": ["IGH AR Agentic AI Solution V2.pptx"],
       "files": [
         {
           "rank": 1,
@@ -5910,9 +5714,7 @@
       "category": "chart-table",
       "question": "What was the average processing time after automation versus before, and the reduction?",
       "answerable": true,
-      "expectedFiles": [
-        "IGH AR Agentic AI Solution V2.pptx"
-      ],
+      "expectedFiles": ["IGH AR Agentic AI Solution V2.pptx"],
       "files": [
         {
           "rank": 1,
@@ -5976,9 +5778,7 @@
       "category": "chart-table",
       "question": "How many AR staff labour hours per week were saved, and by what percentage?",
       "answerable": true,
-      "expectedFiles": [
-        "IGH AR Agentic AI Solution V2.pptx"
-      ],
+      "expectedFiles": ["IGH AR Agentic AI Solution V2.pptx"],
       "files": [
         {
           "rank": 1,
@@ -6012,9 +5812,7 @@
       "category": "chart-table",
       "question": "What revenue and profit did Oberoi report for 2025, and their year-on-year growth?",
       "answerable": true,
-      "expectedFiles": [
-        "Oberoi Hotels_0407.pptx"
-      ],
+      "expectedFiles": ["Oberoi Hotels_0407.pptx"],
       "files": [
         {
           "rank": 1,
@@ -6054,9 +5852,7 @@
       "category": "chart-table",
       "question": "What repeat guest rate does the Oberoi deck cite?",
       "answerable": true,
-      "expectedFiles": [
-        "Oberoi Hotels_0407.pptx"
-      ],
+      "expectedFiles": ["Oberoi Hotels_0407.pptx"],
       "files": [
         {
           "rank": 1,
@@ -6096,9 +5892,7 @@
       "category": "chart-table",
       "question": "What energy, deployment, cabling and CSAT improvements does IntelliSustain claim for Oberoi?",
       "answerable": true,
-      "expectedFiles": [
-        "Oberoi Hotels_0407.pptx"
-      ],
+      "expectedFiles": ["Oberoi Hotels_0407.pptx"],
       "files": [
         {
           "rank": 1,
@@ -6144,9 +5938,7 @@
       "category": "chart-table",
       "question": "How many hotels and keys does Oberoi plan to have by 2030?",
       "answerable": true,
-      "expectedFiles": [
-        "Oberoi Hotels_0407.pptx"
-      ],
+      "expectedFiles": ["Oberoi Hotels_0407.pptx"],
       "files": [
         {
           "rank": 1,
@@ -6186,9 +5978,7 @@
       "category": "chart-table",
       "question": "What ancillary revenue per passenger did JetBlue report in 2022, and what was its ancillary revenue that year?",
       "answerable": true,
-      "expectedFiles": [
-        "Fly++ IndiGo  25.06.24 (full proposal).pptx"
-      ],
+      "expectedFiles": ["Fly++ IndiGo  25.06.24 (full proposal).pptx"],
       "files": [
         {
           "rank": 1,
@@ -6210,9 +6000,7 @@
       "category": "chart-table",
       "question": "What total flight and total ancillaries does the IndiGo checkout example show?",
       "answerable": true,
-      "expectedFiles": [
-        "Fly++ IndiGo  25.06.24 (full proposal).pptx"
-      ],
+      "expectedFiles": ["Fly++ IndiGo  25.06.24 (full proposal).pptx"],
       "files": [
         {
           "rank": 1,
@@ -6270,9 +6058,7 @@
       "category": "multi-turn",
       "question": "And what impact did it have?",
       "answerable": true,
-      "expectedFiles": [
-        "IGH AR Agentic AI Solution V2.pptx"
-      ],
+      "expectedFiles": ["IGH AR Agentic AI Solution V2.pptx"],
       "files": [
         {
           "rank": 1,

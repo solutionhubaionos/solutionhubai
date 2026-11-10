@@ -9,7 +9,9 @@ async function enterInsights() {
   const beforeLoad = Route.options.beforeLoad;
   if (typeof beforeLoad !== "function") throw new Error("Missing Insights access check");
   // Exercise the actual route guard without a router or network connection.
-  return beforeLoad({ context: { queryClient: new QueryClient() } } as Parameters<typeof beforeLoad>[0]);
+  return beforeLoad({ context: { queryClient: new QueryClient() } } as Parameters<
+    typeof beforeLoad
+  >[0]);
 }
 
 describe("Insights access", () => {

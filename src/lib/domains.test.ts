@@ -3,7 +3,13 @@ import { isAllowedEmail } from "./domains";
 
 describe("isAllowedEmail", () => {
   it("allows all five company domains", () => {
-    for (const d of ["aionos.ai", "whilter.ai", "inetum.com", "cloudanalogy.com", "perpetuuitiaionos.com"]) {
+    for (const d of [
+      "aionos.ai",
+      "whilter.ai",
+      "inetum.com",
+      "cloudanalogy.com",
+      "perpetuuitiaionos.com",
+    ]) {
       expect(isAllowedEmail(`jane@${d}`)).toBe(true);
     }
   });
