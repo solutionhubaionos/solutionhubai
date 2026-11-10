@@ -21,6 +21,8 @@ bun run dev
 ```
 
 `npx tsc --noEmit` type-checks and `bun run build` produces the deployable output.
+`bun run eval:chat` runs the offline answer-quality eval (fixtures plus a mocked
+completion endpoint, no database or provider key).
 
 ## Environment
 
