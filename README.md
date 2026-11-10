@@ -57,6 +57,7 @@ drizzle/migrations/0015_ingestion_delay.sql
 drizzle/migrations/0016_backfill_existing_content.sql
 drizzle/migrations/0017_worker_rpc.sql
 drizzle/migrations/0018_worker_statement_timeout.sql
+drizzle/migrations/0019_chunk_provenance.sql
 ```
 
 Paste one file at a time and run it. The editor asks for confirmation on
@@ -82,6 +83,16 @@ Check progress in `.ingest.log` (`claimed`, `ready`, `empty`, `skipped`, `failed
 without a manual backfill. New uploads are queued by the database trigger with a
 120-second `not_before` delay; the worker honours that deadline.
 
+After deploying an extractor change, requeue only the files that have not been through
+that version:
+
+```sql
+select public.worker_requeue_all('<worker-extractor-version>');
+```
+
+The string must match the worker's `EXTRACTOR_VERSION`. Existing chunks stay searchable
+until each new run commits.
+
 ### What the migrations touch
 
 - `0010`–`0015` create new tables, indexes, functions and policies, and add two
@@ -94,6 +105,10 @@ without a manual backfill. New uploads are queued by the database trigger with a
 - `0018` only raises `statement_timeout` to 60 s on the chunk-write functions, so a
   large commit is not cut off by Supabase's 8 s cap for `authenticated`. It changes no
   table, row or privilege, and is safe to re-run.
+- `0019` adds `chunk_kind` and `metadata` to chunks and staging, adds
+  `ingestion_jobs.extractor_version`, and replaces the worker RPCs so they carry those
+  fields. It also adds `worker_requeue_all()`. Existing chunks get `chunk_kind = 'text'`
+  and `metadata = '{}'`; the migration is safe to re-run.
 - The worker reads `content_items` and the private Storage bucket, and writes only to the
   new `document_chunks` and `ingestion_jobs` tables plus the short-lived
   `ingestion_chunk_staging` table.
@@ -114,7 +129,8 @@ bun scripts/apply-sql.ts --dry-run \
   drizzle/migrations/0015_ingestion_delay.sql \
   drizzle/migrations/0016_backfill_existing_content.sql \
   drizzle/migrations/0017_worker_rpc.sql \
-  drizzle/migrations/0018_worker_statement_timeout.sql
+  drizzle/migrations/0018_worker_statement_timeout.sql \
+  drizzle/migrations/0019_chunk_provenance.sql
 ```
 
 Then run the same command without `--dry-run`. `verify-rag.ts` needs

@@ -4,7 +4,7 @@ How Solution Hub turns uploaded sales material (PDF / DOCX / PPTX) into retrieva
 passages, and how a question becomes a grounded, cited answer.
 
 Everything below is read from the code as it stands: `src/lib/rag/*`, `src/lib/chat/*`,
-`src/lib/documents/*`, `drizzle/migrations/0010–0018`, `scripts/*`, `evals/rag-eval.json`.
+`src/lib/documents/*`, `drizzle/migrations/0010–0019`, `scripts/*`, `evals/rag-eval.json`.
 
 ---
 
@@ -223,6 +223,8 @@ time, so moves, copies and company renames can never leave stale values on a pas
 | `heading`          | from DOCX headings                                                                                     |
 | `embedding`        | `vector(1536) not null`                                                                                |
 | `embedding_model`  | default `qwen/qwen3-embedding-8b`, so a model switch is visible, not guessed                           |
+| `chunk_kind`       | `text`, `table` or `figure` (`0019`); defaults to `text`, so old rows stay valid                       |
+| `metadata`         | `jsonb` provenance such as source image and model (`0019`); never document text                        |
 | `tsv`              | **generated column** `to_tsvector('english', content)` (`0012`), explicit regconfig keeps it immutable |
 
 Indexes:
@@ -234,21 +236,24 @@ Indexes:
 `queued | running | ready | empty | skipped | failed`, `attempts`, `chunk_count`,
 `embedding_model`, `dimensions`, `warnings jsonb`, `error`, timestamps, `content_hash`
 (`0012`), `not_before` (`0015`) with a partial index on `(not_before) where status='queued'`
-and a claim index `(status, created_at)`. Status semantics: `empty` = supported format
-yielded no usable text (probable scan), `skipped` = format not extracted.
+and a claim index `(status, created_at)`. `0019` adds `extractor_version`, which records
+the pipeline that produced the current chunks; `worker_requeue_all()` uses it to requeue
+only stale files. Status semantics: `empty` = supported format yielded no usable text
+(probable scan), `skipped` = format not extracted.
 
 **`public.chat_threads` / `public.chat_messages`** — owner-only chat history with a
 `citations jsonb` column so answers keep their sources.
 
-### 4.2 Atomic write — `replace_document_chunks` (`0012`, `0017`)
+### 4.2 Atomic write — `replace_document_chunks` (`0012`, `0017`, `0019`)
 
 `replace_document_chunks` is `security definer`, `search_path` pinned, and **executed only
 by `service_role`** (revoked from `public`, `anon`, `authenticated`). For one content item
 it validates the payload, then in a single call: `delete from document_chunks where
 content_id = …`, inserts all new rows from a `jsonb` array, counts them, and updates the
-job row (status, chunk_count, content_hash, warnings, `finished_at`). A retry can never
-duplicate passages, and a failure mid-way leaves the previous chunks intact because the
-caller is in one transaction.
+job row (status, chunk_count, content_hash, warnings, extractor_version, `finished_at`).
+`0019` adds `chunk_kind` and `metadata` to the payload; both default to `text` and `{}`
+when an older caller omits them. A retry can never duplicate passages, and a failure
+mid-way leaves the previous chunks intact because the caller is in one transaction.
 
 `0017` adds `worker_replace_document_chunks`, a `security definer` wrapper callable by an
 allowlisted worker. It checks `is_ingestion_worker()`, requires a `running` job for the
@@ -262,7 +267,23 @@ copies the whole staged set into `document_chunks`, and updates the job in one t
 If the worker dies before the commit, the old chunks stay intact and the next attempt clears
 the staging rows.
 
-### 4.3 Security model
+### 4.3 Re-ingest — `worker_requeue_all` (`0019`)
+
+An extractor change does not rewrite every file automatically. After deploying the new
+worker, call:
+
+```sql
+select public.worker_requeue_all('<worker-extractor-version>');
+```
+
+The argument must match the worker's `EXTRACTOR_VERSION`. The function creates jobs for
+content that has none, then requeues failed jobs, ready jobs with zero chunks, and jobs
+whose `extractor_version` differs. Running jobs are left alone. Existing chunks are not
+deleted here; each new run replaces them atomically on commit, so search keeps working
+during the re-ingest. The SQL editor has no `auth.uid()`, so it passes as the database
+owner; signed-in callers must be in `ingestion_worker_users`.
+
+### 4.4 Security model
 
 - `document_chunks`: RLS enabled; policy **"Allowed users read chunks"** requires
   `is_allowed_email(auth.jwt()->>'email')` **and** a visible parent `content_items` row.
@@ -448,11 +469,11 @@ Migration order matters: `0010` (tables, HNSW, first RPC) → `0011` (grants) �
 (tsvector, content hash, atomic replace) → `0013` (enqueue triggers) → `0014` (hybrid
 `search_chunks`) → `0015` (120 s delay) → `0016` (queue existing content, retry failed
 jobs) → `0017` (worker allowlist and RPCs) → `0018` (raises `statement_timeout` to 60 s
-on the chunk-write RPCs; Supabase's 8 s cap for `authenticated` aborted large commits).
-The worker refuses to start if `0017` is
-missing or the account is not in `ingestion_worker_users`, and `EMBEDDING_DIMENSIONS` in
-`config.ts` must stay equal to `vector(1536)` — changing one without the other silently
-breaks retrieval.
+on the chunk-write RPCs; Supabase's 8 s cap for `authenticated` aborted large commits) →
+`0019` (chunk kind/metadata, extractor version, re-ingest RPC). The worker refuses to
+start if `0017` is missing or the account is not in `ingestion_worker_users`, and
+`EMBEDDING_DIMENSIONS` in `config.ts` must stay equal to `vector(1536)` — changing one
+without the other silently breaks retrieval.
 
 ---
 
@@ -493,7 +514,7 @@ library member). Project ids are not hardcoded in application code; the local
 `supabase/config.toml` is only a CLI hint.
 
 1. Apply the migrations in the Lovable SQL editor
-   (**More → Database → Manage → SQL editor**), in order `0010` → `0018`. Paste one file at
+   (**More → Database → Manage → SQL editor**), in order `0010` → `0019`. Paste one file at
    a time. The editor asks for confirmation on destructive statements; these migrations
    are additive. If you have a self-hosted Postgres URL, you can instead dry-run the same
    list with `bun scripts/apply-sql.ts --dry-run …`, then apply it without `--dry-run`.
@@ -501,9 +522,11 @@ library member). Project ids are not hardcoded in application code; the local
    policies, and add two triggers to `content_items`; they do not change existing rows or
    columns. `0016` inserts/updates only the new `ingestion_jobs` table. `0017` creates
    `ingestion_worker_users`, `ingestion_chunk_staging` and the worker RPCs; the allowlist
-   insert adds one row to `ingestion_worker_users`. The worker reads `content_items` and
-   Storage, and writes only `document_chunks`, `ingestion_jobs` and the short-lived staging
-   table.
+   insert adds one row to `ingestion_worker_users`. `0019` adds the chunk provenance and
+   extractor-version columns, replaces the chunk-write RPCs, and adds
+   `worker_requeue_all()`; it backfills the two new chunk columns and is safe to re-run.
+   The worker reads `content_items` and Storage, and writes only `document_chunks`,
+   `ingestion_jobs` and the short-lived staging table.
 3. Add the worker account in the SQL editor:
 
    ```sql
@@ -520,6 +543,9 @@ library member). Project ids are not hardcoded in application code; the local
    `./scripts/install-ingest-cron.sh`. The cron entry runs `--cron` every minute; each tick
    waits for the exact `not_before` deadline, so a file is picked up 120 seconds after
    upload rather than on the next minute boundary.
-6. Verify with `.ingest.log` and the admin debug page at `/_authenticated/rag-debug`, which
+6. After deploying a new extractor, run
+   `select public.worker_requeue_all('<worker-extractor-version>');` in the SQL editor.
+   The value must match the worker's `EXTRACTOR_VERSION`.
+7. Verify with `.ingest.log` and the admin debug page at `/_authenticated/rag-debug`, which
    shows raw passages and both ranks. `verify-rag.ts` requires `SUPABASE_DB_URL`; the
    eval runners use Supabase REST and run against Lovable Cloud.
