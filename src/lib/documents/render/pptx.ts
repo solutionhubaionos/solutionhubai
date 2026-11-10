@@ -10,8 +10,7 @@
 import { strToU8, unzipSync, zipSync } from "fflate";
 import type { DocumentOutline } from "../types";
 import { DECK_SKELETON_BASE64 } from "../templates/deckSkeleton";
-
-const XML_HEADER = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+import { APP_XML, coreXml, escapeXml, XML_HEADER } from "./ooxml";
 const NS =
   'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" ' +
   'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ' +
@@ -27,14 +26,6 @@ function base64ToBytes(value: string): Uint8Array {
     bytes[index] = binary.charCodeAt(index);
   }
   return bytes;
-}
-
-function escapeXml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }
 
 type Box = { x: number; y: number; w: number; h: number };
@@ -164,12 +155,6 @@ const PACKAGE_RELS =
   `<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>` +
   `<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>` +
   `</Relationships>`;
-
-function coreXml(title: string): string {
-  return `${XML_HEADER}<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${escapeXml(title)}</dc:title><dc:creator>Solution Hub</dc:creator><cp:lastModifiedBy>Solution Hub</cp:lastModifiedBy><dcterms:created xsi:type="dcterms:W3CDTF">2026-01-01T00:00:00Z</dcterms:created></cp:coreProperties>`;
-}
-
-const APP_XML = `${XML_HEADER}<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>Solution Hub</Application></Properties>`;
 
 export function renderPptx(outline: DocumentOutline): { bytes: Uint8Array; pages: number } {
   const slides = [coverSlide(outline)];

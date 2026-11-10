@@ -20,7 +20,7 @@ cp .env.example .env   # fill in the values
 bun run dev
 ```
 
-`bun run test` runs the unit suite; `npx tsc --noEmit` type-checks.
+`npx tsc --noEmit` type-checks and `bun run build` produces the deployable output.
 
 ## Environment
 
@@ -117,8 +117,8 @@ bun scripts/apply-sql.ts --dry-run \
   drizzle/migrations/0018_worker_statement_timeout.sql
 ```
 
-Then run the same command without `--dry-run`. `verify-rag.ts` and `run-eval.ts`
-also need `SUPABASE_DB_URL`; they cannot run against Lovable Cloud.
+Then run the same command without `--dry-run`. `verify-rag.ts` needs
+`SUPABASE_DB_URL`; the eval runners use Supabase REST and run against Lovable Cloud.
 
 ## Useful scripts
 
@@ -131,7 +131,8 @@ also need `SUPABASE_DB_URL`; they cannot run against Lovable Cloud.
 | `bun scripts/extract-spike.ts spike-input`   | Dry-run extraction/chunking to `spike-output/`                       |
 | `bun scripts/download-library.ts`            | Download private library files for local checks                      |
 | `bun scripts/apply-sql.ts --dry-run <files>` | Run migrations, then roll back without committing (self-hosted only) |
-| `bun scripts/run-eval.ts`                    | Recall@k / MRR over `evals/rag-eval.json` (needs `SUPABASE_DB_URL`)  |
+| `bun scripts/run-eval.ts`                    | Recall@k / MRR over `evals/rag-eval.json` (Supabase REST by default) |
+| `bun scripts/run-answer-eval.ts`             | Citation, numeric and refusal scoring over the same set              |
 | `bun scripts/verify-rag.ts`                  | RLS, grants, indexes and delay smoke test (needs `SUPABASE_DB_URL`)  |
 
 `docs/rag-pipeline.md` describes the full pipeline and its design decisions.

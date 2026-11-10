@@ -2,7 +2,7 @@ import { queryOptions } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { matches, type ContentItem } from "./content";
 
-async function checkAdminAccess() {
+export async function checkAdminAccess() {
   const { data, error } = await supabase.rpc("is_content_admin");
   if (error) throw error;
   return data === true;

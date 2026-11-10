@@ -10,9 +10,6 @@ export const EMBEDDING_DIMENSIONS = 1536;
 /** Provider limit is 100 input texts per embeddings call. */
 export const EMBEDDING_BATCH_SIZE = 100;
 
-/** Recorded on every chunk so a model switch is visible, not guessed. */
-export const EMBEDDING_MODEL_KEY = EMBEDDING_MODEL;
-
 /**
  * Provider price per embedding token, derived from reported usage
  * (859 tokens cost $0.0000859). Only used when a batched response omits cost,

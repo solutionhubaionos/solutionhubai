@@ -2,8 +2,8 @@ import { useState } from "react";
 import { Trash2, Loader2 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
-import type { ContentItem } from "@/lib/content";
+import { checkAdminAccess } from "@/lib/admin-content";
+import { deleteContent, type ContentItem } from "@/lib/content";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -22,19 +22,8 @@ export function AdminDeleteFileDialog({ item }: { item: ContentItem }) {
   async function remove() {
     setBusy(true);
     try {
-      const { data: isAdmin, error: accessError } = await supabase.rpc("is_content_admin");
-      if (accessError) throw accessError;
-      if (!isAdmin) throw new Error("Administrator access required.");
-      const { error } = await supabase
-        .from("content_items")
-        .delete()
-        .eq("id", item.id)
-        .select("id")
-        .single();
-      if (error) throw error;
-      const { error: storageError } = await supabase.storage
-        .from("content")
-        .remove([item.file_path]);
+      if (!(await checkAdminAccess())) throw new Error("Administrator access required.");
+      const { storageError } = await deleteContent(item);
       if (storageError)
         toast.warning(
           "File removed from the library, but storage cleanup failed. Storage may still be in use.",

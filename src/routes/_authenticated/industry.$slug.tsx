@@ -6,7 +6,13 @@ import { Building2, Globe2, Search, House, ChevronRight } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { ContentCard } from "@/components/ContentCard";
 import { UploadDialog } from "@/components/UploadDialog";
-import { contentQuery, matches, sortByDate, type DateSort } from "@/lib/content";
+import {
+  contentQuery,
+  matches,
+  mergeCustomerNames,
+  sortByDate,
+  type DateSort,
+} from "@/lib/content";
 import { supabase } from "@/integrations/supabase/client";
 import { AddCustomerDialog } from "@/components/AddCustomerDialog";
 import { DateSortToggle } from "@/components/DateSortToggle";
@@ -76,9 +82,10 @@ function IndustryContent({ industry }: { industry: Industry }) {
       return data.map((c) => c.name);
     },
   });
-  const customers = [
-    ...new Set([...saved, ...(data.map((d) => d.customer_name).filter(Boolean) as string[])]),
-  ].sort((a, b) => a.localeCompare(b));
+  const customers = mergeCustomerNames(
+    saved,
+    data.map((item) => item.customer_name),
+  );
   const filtered = sortByDate(
     data.filter(
       (d) =>

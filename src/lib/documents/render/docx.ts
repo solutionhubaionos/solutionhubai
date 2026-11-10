@@ -5,17 +5,7 @@
  */
 import { strToU8, zipSync } from "fflate";
 import type { DocumentOutline } from "../types";
-
-const XML_HEADER = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
-
-function escapeXml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
-}
+import { APP_XML, coreXml, escapeXml, XML_HEADER } from "./ooxml";
 
 function paragraph(text: string, style: "Title" | "Heading1" | "Normal", before = 0): string {
   const styleXml = style === "Normal" ? "" : `<w:pStyle w:val="${style}"/>`;
@@ -34,12 +24,6 @@ const CONTENT_TYPES = `${XML_HEADER}<Types xmlns="http://schemas.openxmlformats.
 const PACKAGE_RELS = `${XML_HEADER}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>`;
 
 const DOCUMENT_RELS = `${XML_HEADER}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`;
-
-function coreXml(title: string): string {
-  return `${XML_HEADER}<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${escapeXml(title)}</dc:title><dc:creator>Solution Hub</dc:creator><cp:lastModifiedBy>Solution Hub</cp:lastModifiedBy><dcterms:created xsi:type="dcterms:W3CDTF">2026-01-01T00:00:00Z</dcterms:created></cp:coreProperties>`;
-}
-
-const APP_XML = `${XML_HEADER}<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>Solution Hub</Application></Properties>`;
 
 export function renderDocx(outline: DocumentOutline): { bytes: Uint8Array; pages: number } {
   const body: string[] = [paragraph(outline.title, "Title")];

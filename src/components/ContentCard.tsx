@@ -12,8 +12,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useRouteContext } from "@tanstack/react-router";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { supabase } from "@/integrations/supabase/client";
-import { type ContentItem, formatSize } from "@/lib/content";
+import { deleteContent, type ContentItem, formatSize } from "@/lib/content";
 import { FilePreviewDialog } from "@/components/FilePreviewDialog";
 import { MoveCopyDialog } from "@/components/MoveCopyDialog";
 import { contentTypeLabel, useIndustries } from "@/lib/industries";
@@ -48,21 +47,15 @@ export function ContentCard({
 
   async function remove() {
     if (!confirm(`Delete “${item.title}”?`)) return;
-    const { error } = await supabase
-      .from("content_items")
-      .delete()
-      .eq("id", item.id)
-      .select("id")
-      .single();
-    if (error) {
-      toast.error(error.message);
-      return;
+    try {
+      const { storageError } = await deleteContent(item);
+      if (storageError)
+        toast.warning("Content removed, but its stored file could not be cleaned up.");
+      else toast.success("Deleted");
+      qc.invalidateQueries({ queryKey: ["content"] });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not delete this file.");
     }
-    const { error: storageError } = await supabase.storage.from("content").remove([item.file_path]);
-    if (storageError)
-      toast.warning("Content removed, but its stored file could not be cleaned up.");
-    else toast.success("Deleted");
-    qc.invalidateQueries({ queryKey: ["content"] });
   }
 
   return (

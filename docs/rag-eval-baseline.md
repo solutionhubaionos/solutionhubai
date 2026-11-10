@@ -87,7 +87,6 @@ Answer (`bun run eval:answers`):
 ## Commands
 
 ```sh
-bun run test          # unit tests for the pure metric and scoring functions
 bun run typecheck     # tsc --noEmit
 bun run eval          # retrieval metrics; needs Supabase + provider env
 bun run eval:answers  # answer metrics; adds ANSWER_MODEL / JUDGE_MODEL overrides

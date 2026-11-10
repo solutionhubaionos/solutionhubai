@@ -14,7 +14,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
-import type { ContentItem } from "@/lib/content";
+import { mergeCustomerNames, type ContentItem } from "@/lib/content";
 import { useIndustries } from "@/lib/industries";
 
 type Mode = "move" | "copy";
@@ -49,10 +49,10 @@ export function MoveCopyDialog({ item, canMove }: { item: ContentItem; canMove: 
           .eq("industry", industry)
           .not("customer_name", "is", null),
       ]);
-      const names = new Set<string>();
-      a.data?.forEach((r) => names.add(r.name));
-      b.data?.forEach((r) => r.customer_name && names.add(r.customer_name));
-      return [...names].sort((x, y) => x.localeCompare(y));
+      return mergeCustomerNames(
+        a.data?.map((r) => r.name) ?? [],
+        b.data?.map((r) => r.customer_name) ?? [],
+      );
     },
   });
 

@@ -25,7 +25,7 @@ import {
   type AdminFilters,
 } from "@/lib/admin-content";
 import { industriesQuery } from "@/lib/industries";
-import { formatSize } from "@/lib/content";
+import { formatSize, mergeCustomerNames } from "@/lib/content";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -119,13 +119,12 @@ function AdminDashboard() {
   const pageCount = Math.max(1, Math.ceil(filtered.length / 25));
   const page = Math.min(search.page ?? 1, pageCount);
   const visible = filtered.slice((page - 1) * 25, page * 25);
-  const customers = [
-    ...new Set(
-      items
-        .filter((i) => !search.industry || i.industry === search.industry)
-        .flatMap((i) => (i.customer_name ? [i.customer_name] : [])),
-    ),
-  ].sort((a, b) => a.localeCompare(b));
+  const customers = mergeCustomerNames(
+    [],
+    items
+      .filter((i) => !search.industry || i.industry === search.industry)
+      .map((i) => i.customer_name),
+  );
   const invalidRange = Boolean(search.from && search.to && search.from > search.to);
   function update(patch: Partial<AdminFilters>) {
     void navigate({ search: (prev) => ({ ...prev, ...patch, page: 1 }), replace: true });
