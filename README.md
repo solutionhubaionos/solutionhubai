@@ -24,14 +24,15 @@ bun run dev
 
 ## Environment
 
-| Variable                                             | Used by                  | Purpose                                              |
-| ---------------------------------------------------- | ------------------------ | ---------------------------------------------------- |
-| `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`           | server                   | Auth, RLS-scoped queries and worker RPCs             |
-| `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` | browser                  | Same project, public keys                            |
-| `LIBRARY_USER_EMAIL`, `LIBRARY_USER_PASSWORD`        | worker                   | Member login for private Storage and the worker RPCs |
-| `TOKENFACTORY_API_BASE`, `TOKENFACTORY_API_KEY`      | worker, server functions | Embeddings and chat completions                      |
-| `SUPABASE_SERVICE_ROLE_KEY`                          | optional                 | Bypasses RLS; Lovable Cloud does not expose it       |
-| `SUPABASE_DB_URL`                                    | optional scripts         | Direct Postgres; Lovable Cloud does not expose it    |
+| Variable                                             | Used by                  | Purpose                                                                |
+| ---------------------------------------------------- | ------------------------ | ---------------------------------------------------------------------- |
+| `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`           | server                   | Auth, RLS-scoped queries and worker RPCs                               |
+| `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` | browser                  | Same project, public keys                                              |
+| `LIBRARY_USER_EMAIL`, `LIBRARY_USER_PASSWORD`        | worker                   | Member login for private Storage and the worker RPCs                   |
+| `TOKENFACTORY_API_BASE`, `TOKENFACTORY_API_KEY`      | worker, server functions | Embeddings and chat completions                                        |
+| `RAG_VISION`, `RAG_VISION_MODEL`                     | worker                   | Optional vision pass over image-only slides; off unless `RAG_VISION=1` |
+| `SUPABASE_SERVICE_ROLE_KEY`                          | optional                 | Bypasses RLS; Lovable Cloud does not expose it                         |
+| `SUPABASE_DB_URL`                                    | optional scripts         | Direct Postgres; Lovable Cloud does not expose it                      |
 
 Never put the service-role key or `SUPABASE_DB_URL` behind a `VITE_` prefix.
 

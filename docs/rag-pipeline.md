@@ -12,8 +12,9 @@ Everything below is read from the code as it stands: `src/lib/rag/*`, `src/lib/c
 
 Files land in the private `content` bucket; a database trigger queues an
 `ingestion_jobs` row that becomes claimable **120 seconds later**. A Bun worker claims the
-job, downloads the bytes, extracts text per page/slide/heading section, chunks each section
-into ~600-token passages with ~80 tokens of tail overlap, embeds them with
+job, downloads the bytes, extracts text per page/slide/heading section (tables and native
+charts become passages of their own, read straight from the package XML — no OCR), chunks
+it into ~600-token passages with ~80 tokens of tail overlap, embeds them with
 `qwen/qwen3-embedding-8b` (1536 dims) through a single OpenAI-compatible gateway, and writes
 them through allowlisted worker RPCs: ready chunks are staged and committed atomically,
 while empty/skipped jobs use `public.worker_replace_document_chunks`. Storage is **Postgres with
@@ -119,21 +120,39 @@ One entry point, `extractDocument(fileName, mimeType, bytes)`, returning section
 `emptyUnits` and warnings. Supported formats are exactly **pdf, docx, pptx**; anything else
 is marked `skipped` ("Format not extracted").
 
-| Format | Engine                                                                                              | Section unit                                                                       |
-| ------ | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| PDF    | `unpdf` (PDF.js), `mergePages: false`                                                               | one section per **page**, page number kept                                         |
-| DOCX   | `mammoth.convertToHtml` + custom style map (`Section Heading`, `Heading 0`, `Title` → `h1`)         | split on `<h1>…<h6>` headings, heading carried on the section                      |
-| PPTX   | `fflate.unzipSync` with a filter for `ppt/slides/*.xml` + notes only (image-heavy decks stay cheap) | one section per **slide**, speaker notes appended as `Notes: …`, slide number kept |
+| Format | Engine                                                                                                                                                     | Section unit                                                                       |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| PDF    | `unpdf` (PDF.js), `mergePages: false`                                                                                                                      | one section per **page**, page number kept                                         |
+| DOCX   | `mammoth.convertToHtml` + custom style map (`Section Heading`, `Heading 0`, `Title` → `h1`)                                                                | split on `<h1>…<h6>` headings, heading carried on the section                      |
+| PPTX   | `fflate.unzipSync`, two passes: slide/notes/chart/diagram XML first, then only the media a vision run asks for (this library ships 3.6 GB of slide images) | one section per **slide**, speaker notes appended as `Notes: …`, slide number kept |
+
+Sections carry a **kind** (`text`, `table`, `figure`) and a small `metadata` object. Tables and
+native charts come out of the package XML, so **no OCR or rasterisation is involved**:
+
+| Source       | Part                                                       | Section                                                                                                                                                |
+| ------------ | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| PPTX table   | `<a:tbl>` in the slide XML                                 | `table`, pipe-delimited rows, `{source:"table", slide, table, rows, columns}`                                                                          |
+| DOCX table   | `<table>` in mammoth's HTML                                | `table`, same row format                                                                                                                               |
+| Native chart | `ppt/charts/chartN.xml`, found through the slide's `.rels` | `table` when the series cache holds plotted values, otherwise `figure` with the series names and a note that the numbers live in the embedded workbook |
+| SmartArt     | `ppt/diagrams/dataN.xml`                                   | `text`, `{source:"diagram"}`                                                                                                                           |     | Picture alt | `<p:cNvPr descr="…">` | used only as the caption for a vision candidate. In this corpus it is machine-written shape prose (`Rectangle 5`, `A person sitting at a desk AI-generated content may be incorrect`), so it is never a passage on its own |
+| Picture only | `ppt/media/*`                                              | nothing; listed in `images` as a vision candidate (low-text slide, ≥ 24 KB) and used only when `RAG_VISION=1`                                          |
 
 Details worth knowing:
 
 - PPTX text is pulled from `<a:t>` runs inside `<a:p>` paragraphs, XML entities decoded;
-  broken media relationships are ignored so decks with bad links still extract.
+  broken media relationships are ignored so decks with bad links still extract. Table cells
+  are removed from the prose before it is read, so their text is never stored twice.
+- The slide's first prose line (≤ 120 characters) becomes the chunk heading.
+- `images` never holds bytes. `readMediaFiles()` inflates just those parts when the vision
+  pass runs, so a 400 MB deck still costs one small unzip.
 - `isLowText()` flags pages/slides with `< 20` non-whitespace characters
   (`MIN_USEFUL_CHARS`) — probable scans — and surfaces them as a warning
   ("N page(s) or slide(s) had almost no extractable text (possible scan)").
 - An extraction failure is returned as `{ ok: false, error }`, not thrown; the job then
   retries and eventually fails rather than writing garbage.
+- PDF stays **text-only**: no table or figure detection, because PDF.js exposes positioned
+  text runs and guessing columns from them produces confidently wrong cells. A scanned PDF
+  is reported as a low-text page, never filled in from imagination.
 - This module is deliberately free of Node/Deno specifics: it runs in the Bun worker today
   and was written to be portable to an Edge Function.
 
@@ -144,11 +163,12 @@ Pure and dependency-free by design.
 
 Parameters (defaults, overridable via `ChunkOptions`):
 
-| Knob              | Default | Meaning                                                  |
-| ----------------- | ------- | -------------------------------------------------------- |
-| `targetTokens`    | **600** | target chunk size → `targetChars = 600 × 4`              |
-| `overlapTokens`   | **80**  | tail text repeated into the next chunk                   |
-| `CHARS_PER_TOKEN` | **4**   | approximation used by `estimateTokens()` (`ceil(len/4)`) |
+| Knob              | Default | Meaning                                                          |
+| ----------------- | ------- | ---------------------------------------------------------------- |
+| `targetTokens`    | **600** | target chunk size → `targetChars = 600 × 4`                      |
+| `overlapTokens`   | **80**  | tail text repeated into the next chunk                           |
+| `minChars`        | **40**  | stubs below this are merged into their predecessor, not embedded |
+| `CHARS_PER_TOKEN` | **4**   | approximation used by `estimateTokens()` (`ceil(len/4)`)         |
 
 Algorithm:
 
@@ -156,16 +176,21 @@ Algorithm:
    `page` / `slide` / `heading` on a chunk are always truthful.
 2. Normalize: CRLF → LF, collapse trailing spaces, collapse 3+ newlines to 2.
 3. Split into units on sentence-ending punctuation followed by whitespace, and on newlines;
-   drop empties.
+   drop empties. Periods inside abbreviations and initialisms (`U.S.`, `e.g.`, `Inc.`, `J.`)
+   are shielded first, so they no longer split the sentence **or swallow the following
+   space** — the old splitter stored `U.S. funding` as `U.S.\nfunding`.
 4. Any unit longer than the target is split on **word boundaries** into pieces of at most
    `target − overlap − 1` characters (`splitOversizedUnit`).
 5. Greedily pack units into a chunk; when adding the next unit would exceed the target,
    flush and **seed the new chunk with the tail of the previous one** (`trailingText`, up to
    `overlapChars`, cut at a word boundary).
-6. On flush, prefix the section heading: `Heading\n\nbody` — so a heading split across a long
-   section appears on **every** resulting chunk.
+6. Never prefix the heading into the body: it stays in its own column and is added by the
+   embed-time context prefix instead. Repeating it cost ~15 tokens per chunk and pulled
+   every vector in a section toward the title.
 7. `chunkIndex` is the running index across the whole document (0-based), which is what the
    `unique (content_id, chunk_index)` constraint relies on.
+8. `table` and `figure` sections are line-oriented: a row is never cut in half, and a
+   continuation chunk repeats the header row so its values stay interpretable alone.
 
 What it is **not**: no semantic/embedding-based chunking, no sliding window with fixed step,
 no parent-child or small-to-big chunking, no per-chunk summary metadata. That is a deliberate
@@ -194,10 +219,35 @@ DEFAULT_MATCH_COUNT  = 8      MAX_MATCH_COUNT = 50
 - `embedTexts()` is shared by ingestion, the eval runner and query embedding; `embedQuery()`
   wraps it for exactly one input and refuses an empty string.
 
-**Idempotency:** before embedding, the worker hashes the chunk texts
-(`sha256` of contents joined with `\u0000`, `hashChunkContents`). If the hash matches the
-job's stored `content_hash` and `chunk_count > 0`, embeddings are reused and the job finishes
-as `ready (unchanged)`. A move, copy or re-run therefore costs nothing.
+- The text actually embedded is built by `embeddingTexts()`: `file · slide/page · heading ·
+kind`, a blank line, then the chunk body. The stored `content` stays clean for citations, so
+  a passage is embedded with the context it lost when it was cut out of the deck.
+
+**Idempotency:** before embedding, the worker hashes the pipeline version tuple
+(`EXTRACTOR_VERSION`, `CHUNKER_VERSION`, `EMBEDDING_MODEL`) together with every chunk's kind
+and text (`hashIngest`). If the hash matches the job's stored `content_hash` and
+`chunk_count > 0`, embeddings are reused and the job finishes as `ready (unchanged)`. A move
+or copy therefore costs nothing, while bumping any version forces a real re-embed.
+
+### 3.6 Vision pass — `src/lib/rag/vision.ts` (optional)
+
+A picture whose content exists only as pixels (a chart exported as a PNG, an image-only
+slide) cannot be read from the package XML. When `RAG_VISION=1` the worker takes the `images`
+candidates, inflates just those parts (`readMediaFiles`) and asks `RAG_VISION_MODEL`
+(default `google/gemma-4-31b-it`) for a transcription: title, axes, series and values marked
+approximate, tables as pipe rows.
+
+- Off by default. With the flag off the job finishes with a warning naming how many slides
+  carried content only as a picture, so the gap is visible instead of silent.
+- Capped at **8 images per file**, **24 KB minimum** and only on low-text slides, which keeps
+  decks with dozens of logos cheap.
+- The chunk is `figure` with `{source:"vision", image, model, approximate:true}`; numbers read
+  from pixels are never presented as exact.
+- A provider failure is a warning, not a job failure: the rest of the deck still indexes.
+- Verified against the gateway, not assumed: `deepseek/deepseek-v4.1-flash` returned a
+  784-character transcription with 10 numeric tokens from a chart-heavy slide, and
+  `google/gemma-4-31b-it` also accepted the image payload. So this needs no separate OCR
+  service — only the flag.
 
 ---
 

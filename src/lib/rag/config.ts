@@ -18,6 +18,18 @@ export const EMBEDDING_BATCH_SIZE = 100;
 export const EMBEDDING_USD_PER_TOKEN = 1e-7;
 
 /**
+ * Pipeline versions. Either one changes the content hash, so bumping it makes
+ * every file look new, and `worker_requeue_all('<version>')`
+ * (drizzle/migrations/0019) queues the whole library for re-ingestion.
+ * EXTRACTOR_VERSION must match the string passed to that function.
+ */
+export const EXTRACTOR_VERSION = "2026-11-10.1";
+export const CHUNKER_VERSION = "2026-11-10.1";
+
+/** Stub chunks below this size are merged into their predecessor, not embedded. */
+export const MIN_CHUNK_CHARS = 40;
+
+/**
  * Retrieval defaults. public.search_chunks (drizzle/migrations/0014) merges a
  * pgvector top-50 with a full-text top-50 using reciprocal rank fusion k=60, so
  * retrieve() only has to ask for the final result count.
