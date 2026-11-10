@@ -14,6 +14,7 @@ import { searchLibraryChunksAcrossScopes } from "../rag/search";
 import {
   buildContext,
   buildMessages,
+  finalizeAnswer,
   generateAnswer,
   noPassagesAnswer,
   type ChatSource,
@@ -52,6 +53,7 @@ export const askLibrary = createServerFn({ method: "POST" })
       .parse(data),
   )
   .handler(async ({ data, context }): Promise<AskLibraryResult> => {
+    const requestId = crypto.randomUUID();
     const apiKey = process.env["TOKENFACTORY_API_KEY"];
     const baseUrl = process.env["TOKENFACTORY_API_BASE"];
     if (!apiKey || !baseUrl) {
@@ -84,8 +86,25 @@ export const askLibrary = createServerFn({ method: "POST" })
 
       const built = buildContext(chunks);
       const messages = buildMessages(data.question, built, data.history ?? []);
-      const { answer } = await generateAnswer(messages, { apiKey, baseUrl });
-      return { ok: true, answer, sources: [...built.sources.values()], grounded: true };
+      const raw = await generateAnswer(messages, { apiKey, baseUrl });
+      const final = finalizeAnswer(raw.answer, built);
+
+      // Measure how often the model still narrates its own retrieval; never block.
+      if (final.metaPhrases.length > 0) {
+        console.warn("[CHAT] answer described its context", {
+          requestId,
+          question: data.question,
+          phrases: final.metaPhrases,
+        });
+      }
+      if (final.invalidMarkers.length > 0) {
+        console.warn("[CHAT] dropped citation markers", {
+          requestId,
+          invalidMarkers: final.invalidMarkers,
+        });
+      }
+
+      return { ok: true, answer: final.answer, sources: final.sources, grounded: true };
     } catch (error) {
       console.error("[CHAT] turn failed", error instanceof Error ? error.message : error);
       return { ok: false, error: "AI Search could not answer that. Please try again." };

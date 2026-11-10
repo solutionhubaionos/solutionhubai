@@ -206,7 +206,11 @@ function Bubble({
                 : "bg-card text-foreground"
             }`}
           >
-            {message.content}
+            <AnswerText
+              text={message.content}
+              sources={message.sources ?? []}
+              anchorPrefix={message.id}
+            />
           </div>
         )}
         {message.document && (
@@ -216,14 +220,65 @@ function Bubble({
             onCancel={() => onCancelDocument(message.id)}
           />
         )}
-        {message.sources && message.sources.length > 0 && <SourceList sources={message.sources} />}
+        {message.sources && message.sources.length > 0 && (
+          <SourceList sources={message.sources} anchorPrefix={message.id} />
+        )}
       </div>
     </div>
   );
 }
 
+/**
+ * Answer prose with citation markers rendered as small links to the matching
+ * source chip. Markers whose number is not in `sources` are left as plain text;
+ * the server already dropped unknown ones, so this is only a guard.
+ */
+function AnswerText({
+  text,
+  sources,
+  anchorPrefix,
+}: {
+  text: string;
+  sources: ChatSource[];
+  anchorPrefix: string;
+}) {
+  const known = new Set(sources.map((source) => source.citation));
+  if (known.size === 0) return <>{text}</>;
+
+  const nodes: ReactNode[] = [];
+  let cursor = 0;
+  for (const match of text.matchAll(/\[\s*(\d+(?:\s*[,;]\s*\d+)*)\s*\]/g)) {
+    const start = match.index ?? 0;
+    if (start > cursor) nodes.push(text.slice(cursor, start));
+    cursor = start + match[0].length;
+
+    const numbers = [...new Set((match[1] ?? "").split(/[,;]/).map(Number))].filter((number) =>
+      known.has(number),
+    );
+    if (numbers.length === 0) {
+      nodes.push(match[0]);
+      continue;
+    }
+    nodes.push(
+      numbers.map((number) => (
+        <sup key={`${start}-${number}`} className="mx-0.5">
+          <a
+            href={`#source-${anchorPrefix}-${number}`}
+            className={`${FOCUS} rounded bg-primary/10 px-1 py-0.5 text-[10px] font-semibold text-primary no-underline transition-colors hover:bg-primary/20`}
+            aria-label={`Source ${number}`}
+          >
+            [{number}]
+          </a>
+        </sup>
+      )),
+    );
+  }
+  nodes.push(text.slice(cursor));
+  return <>{nodes}</>;
+}
+
 /** Cited passages, one chip per retrieved passage, each opening the real file. */
-function SourceList({ sources }: { sources: ChatSource[] }) {
+function SourceList({ sources, anchorPrefix }: { sources: ChatSource[]; anchorPrefix: string }) {
   return (
     <div className="space-y-2">
       <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -231,7 +286,11 @@ function SourceList({ sources }: { sources: ChatSource[] }) {
       </p>
       <ul className="flex flex-wrap gap-1.5">
         {sources.map((source) => (
-          <li key={source.chunkId}>
+          <li
+            key={source.chunkId}
+            id={`source-${anchorPrefix}-${source.citation}`}
+            className="scroll-mt-24"
+          >
             <SourceChip source={source} />
           </li>
         ))}

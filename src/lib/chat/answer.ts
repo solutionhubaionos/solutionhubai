@@ -16,6 +16,7 @@ import {
   MAX_HISTORY_MESSAGES,
 } from "../rag/config";
 import { isTitleOnlyChunk } from "../rag/chunk-quality";
+import { findMetaPhrases, processCitationMarkers } from "./citations";
 
 /** One numbered source, matching the [n] markers the answer is asked to use. */
 export type ChatSource = {
@@ -91,8 +92,8 @@ function sourceHeader(chunk: RetrievedChunk, citation: number, titleOnly: boolea
 
 /** Deck title and section heading, repeated with the text so a chunk stands alone. */
 function contextPrefix(chunk: RetrievedChunk): string {
-  const label = [chunk.title, chunk.heading].filter(
-    (part): part is string => Boolean(part && part.trim()),
+  const label = [chunk.title, chunk.heading].filter((part): part is string =>
+    Boolean(part && part.trim()),
   );
   return label.length > 0 ? `Deck: ${label.join(" · ")}\n` : "";
 }
@@ -215,6 +216,34 @@ export async function generateAnswer(
   const answer = body.choices?.[0]?.message?.content?.trim() ?? "";
   if (!answer) throw new Error("Answer provider returned an empty answer");
   return { answer };
+}
+
+export type FinalAnswer = {
+  answer: string;
+  /** Only the sources the answer actually cited, renumbered from 1 in order. */
+  sources: ChatSource[];
+  invalidMarkers: number[];
+  metaPhrases: string[];
+};
+
+/**
+ * Turns raw model output into the answer and Sources list the UI shows. Both are
+ * written here, from the same map, so a display number always points at the
+ * document the text meant.
+ */
+export function finalizeAnswer(raw: string, context: BuiltContext): FinalAnswer {
+  const processed = processCitationMarkers(raw, new Set(context.sources.keys()));
+  const sources = processed.cited.flatMap((number, index) => {
+    const source = context.sources.get(number);
+    return source ? [{ ...source, citation: index + 1 }] : [];
+  });
+
+  return {
+    answer: processed.text,
+    sources,
+    invalidMarkers: processed.invalid,
+    metaPhrases: findMetaPhrases(processed.text),
+  };
 }
 
 /** Used when retrieval finds nothing: no model call, no chance to invent. */
