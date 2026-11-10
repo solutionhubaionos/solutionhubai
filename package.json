@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit",
     "eval": "bun scripts/run-eval.ts",
     "eval:answers": "bun scripts/run-answer-eval.ts",
+    "eval:chat": "bun scripts/run-chat-eval.ts",
     "ingest": "bun scripts/ingest-worker.ts",
     "ingest:cron": "bun scripts/ingest-worker.ts --cron"
   },
