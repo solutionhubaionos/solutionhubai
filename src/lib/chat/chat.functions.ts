@@ -12,8 +12,8 @@ import { DEFAULT_MATCH_COUNT } from "../rag/config";
 import { embedQuery } from "../rag/embeddings";
 import { searchLibraryChunksAcrossScopes } from "../rag/search";
 import {
+  buildContext,
   buildMessages,
-  collectSources,
   generateAnswer,
   noPassagesAnswer,
   type ChatSource,
@@ -82,9 +82,10 @@ export const askLibrary = createServerFn({ method: "POST" })
         return { ok: true, answer: noPassagesAnswer(), sources: [], grounded: false };
       }
 
-      const messages = buildMessages(data.question, chunks, data.history ?? []);
+      const built = buildContext(chunks);
+      const messages = buildMessages(data.question, built, data.history ?? []);
       const { answer } = await generateAnswer(messages, { apiKey, baseUrl });
-      return { ok: true, answer, sources: collectSources(chunks), grounded: true };
+      return { ok: true, answer, sources: [...built.sources.values()], grounded: true };
     } catch (error) {
       console.error("[CHAT] turn failed", error instanceof Error ? error.message : error);
       return { ok: false, error: "AI Search could not answer that. Please try again." };

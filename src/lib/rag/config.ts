@@ -51,3 +51,17 @@ export const QUERY_INSTRUCT_PREFIX =
  */
 export const ANSWER_MODEL = "deepseek/deepseek-v4.1-flash";
 export const ANSWER_MAX_TOKENS = 700;
+
+/**
+ * Chat context and prompt budget. One place for the knobs the answer quality
+ * depends on, so they can be tuned without touching retrieval or citation code.
+ */
+
+/** Characters of a chunk sent to the model; the full chunk stays for the UI. */
+export const MAX_CONTEXT_CHARS = 1400;
+
+/** Turns of conversation history sent with the answer request. */
+export const MAX_HISTORY_MESSAGES = 6;
+
+/** At or below this many meaningful tokens a chunk is treated as a title slide. */
+export const TITLE_ONLY_MAX_TOKENS = 25;

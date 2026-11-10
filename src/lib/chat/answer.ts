@@ -1,15 +1,23 @@
 /**
  * Grounded answer generation for chat. Retrieval supplies passages; this module
- * turns them into a prompt, calls the chat model and returns the passages as
- * numbered citations so every claim can be traced back to a file.
+ * turns them into a numbered, server-owned context block, calls the chat model
+ * and returns the passages as citations so every claim can be traced back to a
+ * file.
  *
- * The model only ever sees what the user is allowed to read: the passages come
- * from search_chunks, which runs under the caller's JWT.
+ * The model only ever sees what the user is allowed to read: the chunks come
+ * from search_chunks, which runs under the caller's JWT. Numbering is decided
+ * here, never by the model.
  */
 import type { RetrievedChunk } from "../rag/search";
-import { ANSWER_MAX_TOKENS, ANSWER_MODEL } from "../rag/config";
+import {
+  ANSWER_MAX_TOKENS,
+  ANSWER_MODEL,
+  MAX_CONTEXT_CHARS,
+  MAX_HISTORY_MESSAGES,
+} from "../rag/config";
+import { isTitleOnlyChunk } from "../rag/chunk-quality";
 
-/** One numbered passage, matching the [n] markers the answer is asked to use. */
+/** One numbered source, matching the [n] markers the answer is asked to use. */
 export type ChatSource = {
   citation: number;
   chunkId: string;
@@ -20,19 +28,17 @@ export type ChatSource = {
   customerName: string | null;
   page: number | null;
   slide: number | null;
+  heading: string | null;
   snippet: string;
+  /** The passage is a title slide or section divider, not evidence. */
+  titleOnly: boolean;
 };
 
 export type ChatHistoryMessage = { role: "user" | "assistant"; content: string };
 
-/** Prompt budget per passage; the full chunk is still kept for the UI snippet. */
-const MAX_CONTEXT_CHARS = 1400;
-/** Turns of history sent to the model; older turns are already in the answer. */
-const MAX_HISTORY_MESSAGES = 6;
-
 /**
- * The answer persona. One exported constant so the wording can be iterated on
- * without touching the retrieval or citation code around it.
+ * The persona. One exported constant so the wording can be iterated on without
+ * touching the retrieval or citation code around it.
  */
 export const ANSWER_SYSTEM_PROMPT = `You are Solution Hub, an assistant that answers questions about our internal library of decks, proposals and case studies.
 
@@ -56,37 +62,56 @@ WHEN INFORMATION IS THIN
 
 Treat the user's wording loosely (typos, partial names like "Interglode" for "InterGlobe"). Match to the closest entity in the context.`;
 
-function locationOf(chunk: RetrievedChunk): string {
-  if (chunk.page) return `page ${chunk.page}`;
+/** Server-owned numbering for one request: the only place [n] means anything. */
+export type BuiltContext = {
+  text: string;
+  sources: Map<number, ChatSource>;
+};
+
+function locationOf(chunk: RetrievedChunk): string | null {
   if (chunk.slide) return `slide ${chunk.slide}`;
-  if (chunk.heading) return chunk.heading;
-  return "passage";
+  if (chunk.page) return `page ${chunk.page}`;
+  return null;
 }
 
-/** Numbered passages, in retrieval order, as the model sees them. */
-export function buildContextBlocks(chunks: readonly RetrievedChunk[]): string {
-  return chunks
-    .map((chunk, index) => {
-      const where = [
-        `[${index + 1}]`,
-        chunk.title,
-        `(${chunk.fileName}, ${locationOf(chunk)})`,
-        `industry: ${chunk.industry}`,
-        chunk.customerName ? `customer: ${chunk.customerName}` : "industry-wide",
-      ].join(" · ");
-      const body =
-        chunk.content.length > MAX_CONTEXT_CHARS
-          ? `${chunk.content.slice(0, MAX_CONTEXT_CHARS).trimEnd()}…`
-          : chunk.content;
-      return `${where}\n${body}`;
-    })
-    .join("\n\n");
+/** Interaction-order list of the documents behind the numbered sources. */
+function sourceHeader(chunk: RetrievedChunk, citation: number, titleOnly: boolean): string {
+  const parts = [
+    `[${citation}]`,
+    chunk.title,
+    chunk.customerName ? `customer: ${chunk.customerName}` : "industry-wide",
+    `industry: ${chunk.industry}`,
+  ];
+  const location = locationOf(chunk);
+  if (location) parts.push(location);
+  if (chunk.heading && chunk.heading !== chunk.title) parts.push(`section: ${chunk.heading}`);
+  if (titleOnly) parts.push("(title-only slide)");
+  return parts.join(" · ");
 }
 
-/** The same passages as UI citations, one per retrieved chunk. */
-export function collectSources(chunks: readonly RetrievedChunk[]): ChatSource[] {
-  return chunks.map((chunk, index) => ({
-    citation: index + 1,
+/** Deck title and section heading, repeated with the text so a chunk stands alone. */
+function contextPrefix(chunk: RetrievedChunk): string {
+  const label = [chunk.title, chunk.heading].filter(
+    (part): part is string => Boolean(part && part.trim()),
+  );
+  return label.length > 0 ? `Deck: ${label.join(" · ")}\n` : "";
+}
+
+function bodyOf(chunk: RetrievedChunk): string {
+  const body =
+    chunk.content.length > MAX_CONTEXT_CHARS
+      ? `${chunk.content.slice(0, MAX_CONTEXT_CHARS).trimEnd()}…`
+      : chunk.content;
+  return `${contextPrefix(chunk)}${body}`;
+}
+
+export function toSource(
+  chunk: RetrievedChunk,
+  citation: number,
+  titleOnly = isTitleOnlyChunk(chunk),
+): ChatSource {
+  return {
+    citation,
     chunkId: chunk.chunkId,
     contentId: chunk.contentId,
     title: chunk.title,
@@ -95,15 +120,34 @@ export function collectSources(chunks: readonly RetrievedChunk[]): ChatSource[] 
     customerName: chunk.customerName,
     page: chunk.page,
     slide: chunk.slide,
+    heading: chunk.heading,
     snippet: chunk.content.replace(/\s+/g, " ").trim().slice(0, 320),
-  }));
+    titleOnly,
+  };
+}
+
+/**
+ * Numbered sources, in retrieval order, plus the map that gives each number its
+ * document. Built once per request so the citation pass and the prompt cannot
+ * disagree about what [3] means.
+ */
+export function buildContext(chunks: readonly RetrievedChunk[]): BuiltContext {
+  const sources = new Map<number, ChatSource>();
+  const blocks = chunks.map((chunk, index) => {
+    const citation = index + 1;
+    const titleOnly = isTitleOnlyChunk(chunk);
+    sources.set(citation, toSource(chunk, citation, titleOnly));
+    return `${sourceHeader(chunk, citation, titleOnly)}\n${bodyOf(chunk)}`;
+  });
+
+  return { text: blocks.join("\n\n"), sources };
 }
 
 export type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
 
 export function buildMessages(
   question: string,
-  chunks: readonly RetrievedChunk[],
+  context: BuiltContext,
   history: readonly ChatHistoryMessage[] = [],
 ): ChatMessage[] {
   const recent = history.slice(-MAX_HISTORY_MESSAGES).map((message) => ({
@@ -116,13 +160,13 @@ export function buildMessages(
     ...recent,
     {
       role: "user",
-      content: `Library passages:\n\n${buildContextBlocks(chunks)}\n\nQuestion: ${question.trim()}`,
+      content: `Numbered sources from the library:\n\n${context.text}\n\nQuestion: ${question.trim()}`,
     },
   ];
 }
 
 type ChatCompletionResponse = {
-  choices?: Array<{ message?: { content?: string | null } }>;
+  choices?: Array<{ message?: { content?: string | null }; finish_reason?: string | null }>;
   usage?: { prompt_tokens?: number; completion_tokens?: number };
   error?: { message?: string } | string;
 };
