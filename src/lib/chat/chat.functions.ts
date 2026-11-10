@@ -8,7 +8,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { DEFAULT_MATCH_COUNT } from "../rag/config";
+import { DEFAULT_MATCH_COUNT, ENTITY_FILTER_THRESHOLD } from "../rag/config";
+import { resolveLibraryEntity, isComparativeQuestion } from "../rag/entities";
 import { embedQuery } from "../rag/embeddings";
 import { searchLibraryChunksAcrossScopes } from "../rag/search";
 import {
@@ -79,12 +80,38 @@ export const askLibrary = createServerFn({ method: "POST" })
         log: (event, meta) => console.log(`[CHAT] ${event}`, { requestId, ...meta }),
       });
 
+      // Resolve the customer the question names, tolerating typos and partial
+      // names. A confident match also becomes a retrieval scope, so misspelled
+      // metadata still surfaces the right documents.
+      const entity = await resolveLibraryEntity(context.supabase, rewrite.query);
+      if (entity) {
+        console.log("[CHAT] customer entity", {
+          requestId,
+          canonical: entity.canonical,
+          matchedName: entity.matchedName,
+          score: Number(entity.score.toFixed(3)),
+        });
+      }
+
+      const scopes = retrievalScopes(ctx);
+      if (
+        entity &&
+        entity.score >= ENTITY_FILTER_THRESHOLD &&
+        !isComparativeQuestion(data.question)
+      ) {
+        scopes.push({ customer: entity.canonical });
+      }
+
+      const searchText = entity
+        ? `${buildRetrievalQuery(rewrite.query, ctx)}\nCustomer: ${entity.canonical}`
+        : buildRetrievalQuery(rewrite.query, ctx);
+
       // One scoped search per selected industry/company pair, embedded once and
       // merged, so every pick contributes rather than only the first.
       const chunks = await searchLibraryChunksAcrossScopes(
         context.supabase,
-        buildRetrievalQuery(rewrite.query, ctx),
-        retrievalScopes(ctx),
+        searchText,
+        scopes,
         DEFAULT_MATCH_COUNT,
         (query) => embedQuery(query, { apiKey, baseUrl }),
       );

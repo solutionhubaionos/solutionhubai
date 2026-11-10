@@ -382,6 +382,19 @@ export type Database = {
         };
         Returns: number;
       };
+      match_customer_entities: {
+        Args: {
+          p_candidates: string[];
+          p_limit?: number;
+          p_threshold?: number;
+        };
+        Returns: Array<{
+          canonical: string;
+          matched_name: string;
+          score: number;
+          spellings: string[];
+        }>;
+      };
       search_chunks: {
         Args: {
           filter_customer?: string | null;
