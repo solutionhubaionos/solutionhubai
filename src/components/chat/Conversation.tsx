@@ -8,6 +8,7 @@ import type { ChatSource } from "@/lib/chat/answer";
 import type { ExampleCard } from "@/lib/chat/scope";
 import { FOCUS } from "./theme";
 import { DocumentCard } from "./DocumentCard";
+import { MarkdownAnswer } from "./MarkdownAnswer";
 import type { ChatMessageView } from "./types";
 
 /** Transcript. Owns its scroll anchor so new messages always land in view. */
@@ -19,6 +20,7 @@ export function Conversation({
   onExampleSelect,
   onGenerateDocument,
   onCancelDocument,
+  onDocumentModeChange,
   intake,
 }: {
   messages: ChatMessageView[];
@@ -28,6 +30,7 @@ export function Conversation({
   onExampleSelect: (prompt: string) => void;
   onGenerateDocument: (messageId: string) => void;
   onCancelDocument: (messageId: string) => void;
+  onDocumentModeChange: (messageId: string, mode: "proposal" | "pitch") => void;
   /** The guided sector/company picker, shown under the latest prompt. */
   intake?: ReactNode;
 }) {
@@ -80,6 +83,7 @@ export function Conversation({
             message={message}
             onGenerateDocument={onGenerateDocument}
             onCancelDocument={onCancelDocument}
+            onDocumentModeChange={onDocumentModeChange}
           />
         ))}
         {intake}
@@ -174,10 +178,12 @@ function Bubble({
   message,
   onGenerateDocument,
   onCancelDocument,
+  onDocumentModeChange,
 }: {
   message: ChatMessageView;
   onGenerateDocument: (messageId: string) => void;
   onCancelDocument: (messageId: string) => void;
+  onDocumentModeChange: (messageId: string, mode: "proposal" | "pitch") => void;
 }) {
   if (message.role === "user") {
     return (
@@ -200,13 +206,13 @@ function Bubble({
       <div className="min-w-0 max-w-[85%] space-y-3">
         {message.content.trim().length > 0 && (
           <div
-            className={`rounded-2xl rounded-bl-md border border-border px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
+            className={`rounded-2xl rounded-bl-md border border-border px-4 py-3 text-sm leading-relaxed ${
               message.notice
                 ? "bg-background italic text-muted-foreground"
                 : "bg-card text-foreground"
             }`}
           >
-            <AnswerText
+            <MarkdownAnswer
               text={message.content}
               sources={message.sources ?? []}
               anchorPrefix={message.id}
@@ -218,6 +224,7 @@ function Bubble({
             state={message.document}
             onGenerate={() => onGenerateDocument(message.id)}
             onCancel={() => onCancelDocument(message.id)}
+            onModeChange={(mode) => onDocumentModeChange(message.id, mode)}
           />
         )}
         {message.sources && message.sources.length > 0 && (
@@ -226,55 +233,6 @@ function Bubble({
       </div>
     </div>
   );
-}
-
-/**
- * Answer prose with citation markers rendered as small links to the matching
- * source chip. Markers whose number is not in `sources` are left as plain text;
- * the server already dropped unknown ones, so this is only a guard.
- */
-function AnswerText({
-  text,
-  sources,
-  anchorPrefix,
-}: {
-  text: string;
-  sources: ChatSource[];
-  anchorPrefix: string;
-}) {
-  const known = new Set(sources.map((source) => source.citation));
-  if (known.size === 0) return <>{text}</>;
-
-  const nodes: ReactNode[] = [];
-  let cursor = 0;
-  for (const match of text.matchAll(/\[\s*(\d+(?:\s*[,;]\s*\d+)*)\s*\]/g)) {
-    const start = match.index ?? 0;
-    if (start > cursor) nodes.push(text.slice(cursor, start));
-    cursor = start + match[0].length;
-
-    const numbers = [...new Set((match[1] ?? "").split(/[,;]/).map(Number))].filter((number) =>
-      known.has(number),
-    );
-    if (numbers.length === 0) {
-      nodes.push(match[0]);
-      continue;
-    }
-    nodes.push(
-      numbers.map((number) => (
-        <sup key={`${start}-${number}`} className="mx-0.5">
-          <a
-            href={`#source-${anchorPrefix}-${number}`}
-            className={`${FOCUS} rounded bg-primary/10 px-1 py-0.5 text-[10px] font-semibold text-primary no-underline transition-colors hover:bg-primary/20`}
-            aria-label={`Source ${number}`}
-          >
-            [{number}]
-          </a>
-        </sup>
-      )),
-    );
-  }
-  nodes.push(text.slice(cursor));
-  return <>{nodes}</>;
 }
 
 /** Cited passages, one chip per retrieved passage, each opening the real file. */
