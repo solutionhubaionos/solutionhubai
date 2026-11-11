@@ -2,6 +2,9 @@
 
 export type DocumentType = "pdf" | "docx" | "pptx";
 
+/** Proposal = narrative document. Pitch = 8-12 takeaway-led slides. */
+export type DocumentMode = "proposal" | "pitch";
+
 export type DocumentFormat = {
   label: string;
   noun: string;
@@ -10,10 +13,10 @@ export type DocumentFormat = {
 };
 
 export const DOCUMENT_FORMATS: Record<DocumentType, DocumentFormat> = {
-  pdf: { label: "PDF", noun: "one-pager", extension: "pdf", mimeType: "application/pdf" },
+  pdf: { label: "PDF", noun: "proposal", extension: "pdf", mimeType: "application/pdf" },
   docx: {
     label: "Word document",
-    noun: "brief",
+    noun: "proposal",
     extension: "docx",
     mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   },
@@ -31,6 +34,8 @@ export const DOCUMENT_FORMATS: Record<DocumentType, DocumentFormat> = {
  */
 export type DocumentDraft = {
   type: DocumentType;
+  /** Defaults to "pitch" for PPTX and "proposal" for PDF/DOCX. */
+  mode: DocumentMode;
   title: string;
   subtitle: string;
   audience: string | null;
@@ -42,12 +47,166 @@ export type DocumentDraft = {
   prompt: string;
 };
 
-export type DocumentOutlineSection = { heading: string; bullets: string[] };
-
-export type DocumentOutline = {
+/** Cover-page facts, kept even when a renderer wants to draw them differently. */
+export type DocumentCover = {
   title: string;
   subtitle: string;
-  sections: DocumentOutlineSection[];
+  client: string | null;
+  industry: string | null;
+  date: string;
+  request: string;
+};
+
+/** One passage as it appears in the Sources section, with citation metadata. */
+export type SourceRecord = {
+  chunkId: string;
+  contentId: string;
+  title: string;
+  fileName: string;
+  filePath: string;
+  industry: string;
+  customerName: string | null;
+  page: number | null;
+  slide: number | null;
+  heading: string | null;
+  /** content_items.content_type, when the export could read the library row. */
+  contentType?: string;
+  /** content_items.created_at, when the export could read the library row. */
+  date?: string;
+};
+
+export type SourceLabel = string;
+
+type BlockBase = { sources: string[] };
+
+export type TableBlock = {
+  type: "table";
+  caption?: string;
+  headers: string[];
+  rows: string[][];
+  sources: string[];
+};
+
+export type MetricItem = {
+  label: string;
+  value: string;
+  unit?: string;
+  context?: string;
+  source: string;
+};
+
+export type TimelineItem = {
+  label: string;
+  timeframe: string;
+  detail: string;
+  sources: string[];
+};
+
+export type ComparisonBlock = {
+  type: "comparison";
+  title?: string;
+  criteria: string[];
+  options: { name: string; values: string[] }[];
+  sources: string[];
+};
+
+export type ListItem = { text: string; level?: number; sources?: string[] };
+
+export type Block =
+  | { type: "heading"; level: 2 | 3; text: string }
+  | ({ type: "paragraph"; text: string } & BlockBase)
+  | ({ type: "bullet_list"; items: ListItem[] } & BlockBase)
+  | ({ type: "numbered_list"; items: ListItem[] } & BlockBase)
+  | TableBlock
+  | { type: "metrics"; items: MetricItem[]; sources: string[] }
+  | ({ type: "callout"; tone: "info" | "warning" | "success"; text: string } & BlockBase)
+  | { type: "quote"; text: string; attribution: string; source: string }
+  | { type: "timeline"; items: TimelineItem[]; sources: string[] }
+  | ComparisonBlock;
+
+export type DocumentSection = {
+  /** Stable outline id, also used by the trace record. */
+  id: string;
+  kind: SectionKind;
+  title: string;
+  blocks: Block[];
+  /** 2-4 sentences for PPTX speaker notes, with chunk references. */
+  speakerNotes: string;
+  /** Retrieval was too thin to write from; rendered with [To be confirmed]. */
+  flagged: boolean;
+  warnings: string[];
+};
+
+export type SectionKind =
+  | "executive_summary"
+  | "problem"
+  | "solution"
+  | "approach"
+  | "proof"
+  | "timeline"
+  | "deliverables"
+  | "assumptions"
+  | "pricing"
+  | "next_steps"
+  | "why_us"
+  | "how_it_works"
+  | "results"
+  | "ask";
+
+/** The validated JSON model every renderer consumes. No renderer has prose. */
+export type DocumentModel = {
+  mode: DocumentMode;
+  format: DocumentType;
+  cover: DocumentCover;
+  sections: DocumentSection[];
+  sources: SourceRecord[];
+  openItems: string[];
+  warnings: string[];
+};
+
+export type ExportBrief = {
+  documentTitle: string;
+  request: string;
+  mode: DocumentMode;
+  client: string | null;
+  industry: string | null;
+  sector: string | null;
+  audience: string | null;
+  problem: string | null;
+  goals: string[];
+  constraints: string[];
+  budget: string | null;
+  timeline: string | null;
+  tone: string;
+  include: string[];
+  exclude: string[];
+  decisions: string[];
+  citedDocuments: { contentId: string | null; title: string }[];
+  /** Figures the user asserted in chat; checked against sources, never trusted. */
+  chatFigures: string[];
+  openItems: string[];
+};
+
+export type DocumentTraceSection = {
+  id: string;
+  kind: SectionKind;
+  title: string;
+  query: string;
+  chunkIds: string[];
+  labels: string[];
+  topScore: number | null;
+  weak: boolean;
+  warnings: string[];
+};
+
+/** Per-export audit record. Returned to the caller and logged, not persisted. */
+export type DocumentTrace = {
+  generatedAt: string;
+  brief: ExportBrief;
+  sections: DocumentTraceSection[];
+  usedChunkIds: string[];
+  openItems: string[];
+  warnings: string[];
 };
 
 export type GeneratedDocument = {
@@ -56,6 +215,12 @@ export type GeneratedDocument = {
   base64: string;
   bytes: number;
   pages: number;
+};
+
+export type DocumentBuildResult = {
+  model: DocumentModel;
+  trace: DocumentTrace;
+  usedFallback: boolean;
 };
 
 export type DocumentDraftStatus = "proposed" | "generating" | "ready" | "cancelled" | "error";
@@ -67,6 +232,9 @@ export type DocumentDraftState = {
   error?: string | null;
   file?: GeneratedDocument | null;
   sourceCount?: number;
+  openItems?: string[];
+  warnings?: string[];
+  trace?: DocumentTrace | null;
 };
 
 /** Safe download name: lower-case words joined by single hyphens. */

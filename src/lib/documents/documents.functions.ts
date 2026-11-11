@@ -1,37 +1,58 @@
 /**
  * Document generation endpoint. Runs only after the user confirms a draft: the
- * worker retrieves passages with the caller's JWT (so RLS still decides what
- * the document may contain), asks the model for an outline, then renders the
- * file in memory and returns it as base64.
+ * worker builds a brief from the whole conversation, retrieves per section with
+ * the caller's JWT (RLS still decides what the document may contain), validates
+ * the structured output, then renders the file in memory as base64.
  *
  * Renderers are imported dynamically so the client bundle never pulls in the
- * zip writer, and nothing is written to Storage or the library.
+ * zip or PDF writers, and nothing is written to Storage or the library.
  */
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { DEFAULT_MATCH_COUNT } from "../rag/config";
-import { embedQuery } from "../rag/embeddings";
-import { searchLibraryChunks, type RetrievedChunk } from "../rag/search";
-import { composeDocument, fallbackOutline } from "./compose";
-import { DOCUMENT_FORMATS, documentFileName, type GeneratedDocument } from "./types";
+import { buildDocument } from "./build";
+import {
+  DOCUMENT_FORMATS,
+  documentFileName,
+  type GeneratedDocument,
+  type DocumentTrace,
+} from "./types";
 
 export type GenerateDocumentResult =
-  | { ok: true; file: GeneratedDocument; sourceCount: number; usedFallback: boolean }
+  | {
+      ok: true;
+      file: GeneratedDocument;
+      sourceCount: number;
+      usedFallback: boolean;
+      openItems: string[];
+      warnings: string[];
+      trace: DocumentTrace;
+    }
   | { ok: false; error: string };
 
 const historySchema = z
   .array(
     z.object({
       role: z.enum(["user", "assistant"]),
-      content: z.string().trim().min(1).max(4000),
+      content: z.string().trim().min(1).max(6000),
+      sources: z
+        .array(
+          z.object({
+            title: z.string().trim().min(1).max(200),
+            contentId: z.string().uuid().nullish(),
+            chunkId: z.string().uuid().nullish(),
+          }),
+        )
+        .max(12)
+        .optional(),
     }),
   )
-  .max(10)
+  .max(40)
   .optional();
 
 const draftSchema = z.object({
   type: z.enum(["pdf", "docx", "pptx"]),
+  mode: z.enum(["proposal", "pitch"]),
   title: z.string().trim().min(3).max(120),
   subtitle: z.string().trim().max(200),
   audience: z.string().trim().max(80).nullable(),
@@ -43,56 +64,6 @@ const draftSchema = z.object({
   prompt: z.string().trim().max(500),
 });
 
-/**
- * Search text for retrieval: the confirmed draft plus the questions the user
- * asked in the chat, so the file reflects the conversation as well as the
- * library.
- */
-function retrievalQuery(
-  draft: z.infer<typeof draftSchema>,
-  history: readonly { role: "user" | "assistant"; content: string }[] = [],
-): string {
-  const asked = history
-    .filter((turn) => turn.role === "user")
-    .slice(-3)
-    .map((turn) => turn.content);
-  return [
-    draft.title,
-    draft.subtitle,
-    draft.client,
-    draft.industry,
-    draft.sector,
-    ...draft.outline,
-    ...asked,
-  ]
-    .filter((value): value is string => Boolean(value))
-    .join(". ")
-    .slice(0, 400);
-}
-
-async function passagesFor(
-  supabase: Parameters<typeof searchLibraryChunks>[0],
-  draft: z.infer<typeof draftSchema>,
-  history: readonly { role: "user" | "assistant"; content: string }[],
-  apiKey: string,
-  baseUrl: string,
-): Promise<RetrievedChunk[]> {
-  try {
-    return await searchLibraryChunks(
-      supabase,
-      retrievalQuery(draft, history),
-      draft.industrySlug ? { industry: draft.industrySlug } : {},
-      DEFAULT_MATCH_COUNT,
-      (query) => embedQuery(query, { apiKey, baseUrl }),
-    );
-  } catch (error) {
-    // A retrieval miss must not block the demo: the outline falls back to the
-    // confirmed headings and says so in its warnings.
-    console.error("[DOC] retrieval failed", error instanceof Error ? error.message : String(error));
-    return [];
-  }
-}
-
 export const generateDocument = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data: unknown) =>
@@ -103,58 +74,64 @@ export const generateDocument = createServerFn({ method: "POST" })
     const history = data.history ?? [];
     const apiKey = process.env["TOKENFACTORY_API_KEY"];
     const baseUrl = process.env["TOKENFACTORY_API_BASE"];
-    const providerReady = Boolean(apiKey && baseUrl);
+    if (!apiKey || !baseUrl) {
+      console.error("[DOC] Provider credentials are not configured");
+      return { ok: false, error: "Document generation needs the AI provider configured." };
+    }
 
     try {
-      const passages = providerReady
-        ? await passagesFor(context.supabase, draft, history, apiKey!, baseUrl!)
-        : [];
-
-      let usedFallback = true;
-      let outline = fallbackOutline(draft, passages);
-      if (providerReady) {
-        try {
-          const composed = await composeDocument(draft, passages, {
-            apiKey: apiKey!,
-            baseUrl: baseUrl!,
-            history,
-          });
-          outline = composed.outline;
-          usedFallback = false;
-        } catch (error) {
-          console.error(
-            "[DOC] composition fell back",
-            error instanceof Error ? error.message : String(error),
-          );
-        }
-      }
+      const built = await buildDocument({
+        draft,
+        history,
+        client: context.supabase,
+        provider: { apiKey, baseUrl },
+        log: (event, meta) => console.log(`[DOC] ${event}`, meta),
+      });
 
       let bytes: Uint8Array;
       let pages: number;
       if (draft.type === "pdf") {
         const { renderPdf } = await import("./render/pdf");
-        ({ bytes, pages } = renderPdf(outline));
+        ({ bytes, pages } = await renderPdf(built.model));
       } else if (draft.type === "docx") {
         const { renderDocx } = await import("./render/docx");
-        ({ bytes, pages } = renderDocx(outline));
+        ({ bytes, pages } = renderDocx(built.model));
       } else {
         const { renderPptx } = await import("./render/pptx");
-        ({ bytes, pages } = renderPptx(outline));
+        ({ bytes, pages } = renderPptx(built.model));
       }
 
       const file: GeneratedDocument = {
-        fileName: documentFileName(outline.title || draft.title, draft.type),
+        fileName: documentFileName(built.model.cover.title || draft.title, draft.type),
         mimeType: DOCUMENT_FORMATS[draft.type].mimeType,
         base64: Buffer.from(bytes).toString("base64"),
         bytes: bytes.byteLength,
         pages,
       };
 
-      return { ok: true, file, sourceCount: passages.length, usedFallback };
+      console.log("[DOC] trace", {
+        brief: built.trace.brief,
+        sections: built.trace.sections.map((section) => ({
+          id: section.id,
+          query: section.query,
+          chunks: section.chunkIds.length,
+          weak: section.weak,
+        })),
+      });
+
+      return {
+        ok: true,
+        file,
+        sourceCount: built.model.sources.length,
+        usedFallback: built.usedFallback,
+        openItems: built.model.openItems,
+        warnings: built.model.warnings,
+        trace: built.trace,
+      };
     } catch (error) {
       console.error(
         "[DOC] generation failed",
-        error instanceof Error ? error.message : String(error),
+        error instanceof Error ? (error.stack ?? error.message) : String(error),
       );
       return { ok: false, error: "Could not build that document. Please try again." };
     }
