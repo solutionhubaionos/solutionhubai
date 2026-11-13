@@ -44,13 +44,16 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { documentFormat } from "../src/lib/document-format";
-import { extractDocument } from "../src/lib/rag/extract";
+import { EXTRACTOR_VERSION } from "../src/lib/rag/config";
+import { extractDocument, readMediaFiles } from "../src/lib/rag/extract";
 import {
   buildChunkRows,
   embedTexts,
-  hashChunkContents,
+  embeddingTexts,
+  hashIngest,
   type EmbeddedChunk,
 } from "../src/lib/rag/ingest";
+import { describeImage } from "../src/lib/rag/vision";
 
 const BUCKET = "content";
 const SUPPORTED = new Set(["pdf", "docx", "pptx"]);
@@ -123,9 +126,18 @@ if (!process.env.TOKENFACTORY_API_BASE || !process.env.TOKENFACTORY_API_KEY) {
 }
 
 const embedConfig = {
-  apiKey: process.env.TOKENFACTORY_API_KEY,
-  baseUrl: process.env.TOKENFACTORY_API_BASE,
+  apiKey: process.env.TOKENFACTORY_API_KEY!,
+  baseUrl: process.env.TOKENFACTORY_API_BASE!,
 };
+
+/**
+ * Vision is opt-in. Slides whose only content is a picture need a model that can
+ * read it; without one they stay text-only rather than guessed at.
+ */
+const visionEnabled = process.env.RAG_VISION === "1";
+const visionModel = process.env.RAG_VISION_MODEL ?? "google/gemma-4-31b-it";
+/** Cost guard: a deck with forty screenshots gets its first eight described. */
+const VISION_MAX_IMAGES = 8;
 
 let supabase: SupabaseClient | null = null;
 let localFiles: Map<string, string> | null = null;
@@ -238,6 +250,7 @@ async function finish(
     p_chunk_count: patch.chunkCount,
     p_content_hash: patch.contentHash ?? null,
     p_warnings: patch.warnings,
+    p_extractor_version: EXTRACTOR_VERSION,
   });
   if (error) throw new Error(`Could not finish job ${job.id}: ${error.message}`);
 }
@@ -266,6 +279,7 @@ async function commitStaging(jobId: string, contentHash: string, warnings: strin
     p_content_hash: contentHash,
     p_status: "ready",
     p_warnings: warnings,
+    p_extractor_version: EXTRACTOR_VERSION,
   });
   if (error) throw new Error(`Could not commit chunks: ${error.message}`);
   return Number(data ?? 0);
@@ -296,6 +310,7 @@ async function replaceChunks(
     p_content_hash: contentHash,
     p_status: status,
     p_warnings: warnings,
+    p_extractor_version: EXTRACTOR_VERSION,
   });
   if (error) throw new Error(`Could not replace chunks: ${error.message}`);
   return Number(data ?? 0);
@@ -386,15 +401,61 @@ async function processJob(job: Job, counters: Counters) {
   const extracted = await extractDocument(job.file_name, job.mime_type ?? "", bytes);
   if (!extracted.ok) throw new Error(extracted.error);
 
-  const rows = buildChunkRows(
-    extracted.document.format,
-    extracted.document.sections,
-    job.file_name,
-  );
+  const sections = [...extracted.document.sections];
   const warnings = [
     ...extracted.document.warnings,
     ...lowTextWarning(extracted.document.emptyUnits.length),
   ];
+
+  // Pictures that carry content but no text: describe them only when a vision
+  // model is configured, and mark the result as approximate.
+  const images = extracted.document.images.slice(0, VISION_MAX_IMAGES);
+  if (images.length > 0) {
+    if (!visionEnabled) {
+      warnings.push(
+        `${images.length} slide(s) hold content only as a picture; set RAG_VISION=1 to describe them`,
+      );
+    } else {
+      const media = readMediaFiles(
+        bytes,
+        images.map((image) => image.path),
+      );
+      let described = 0;
+      for (const image of images) {
+        const data = media.get(image.path);
+        if (!data || data.byteLength === 0) continue;
+        try {
+          const description = await describeImage(data, image.mimeType, {
+            ...embedConfig,
+            model: visionModel,
+          });
+          sections.push({
+            text: description,
+            pageOrSlide: image.pageOrSlide,
+            heading: image.altText,
+            kind: "figure",
+            metadata: {
+              source: "vision",
+              image: image.path,
+              model: visionModel,
+              approximate: true,
+            },
+          });
+          described += 1;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          warnings.push(`vision failed on ${image.path}: ${message.slice(0, 120)}`);
+        }
+      }
+      if (described > 0) {
+        warnings.push(
+          `${described} picture(s) described by ${visionModel}; their numbers are approximate`,
+        );
+      }
+    }
+  }
+
+  const rows = buildChunkRows(extracted.document.format, sections, job.file_name);
 
   if (rows.length === 0) {
     await replaceChunks(job, [], null, "empty", warnings);
@@ -403,7 +464,7 @@ async function processJob(job: Job, counters: Counters) {
     return;
   }
 
-  const contentHash = hashChunkContents(rows.map((row) => row.content));
+  const contentHash = hashIngest(rows);
   if (contentHash === job.content_hash && job.chunk_count > 0) {
     // Text unchanged (a move, or a re-run): keep the existing vectors.
     await finish(job, {
@@ -416,10 +477,7 @@ async function processJob(job: Job, counters: Counters) {
     return;
   }
 
-  const embedded = await embedTexts(
-    rows.map((row) => row.content),
-    embedConfig,
-  );
+  const embedded = await embedTexts(embeddingTexts(rows, job.file_name), embedConfig);
   const payload: EmbeddedChunk[] = rows.map((row, index) => ({
     ...row,
     embedding: embedded.embeddings[index],

@@ -110,6 +110,7 @@ export function buildDraft(input: {
 
   return {
     type: input.type,
+    mode: input.type === "pptx" ? "pitch" : "proposal",
     title,
     subtitle,
     audience,

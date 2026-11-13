@@ -1,7 +1,7 @@
 /**
  * The confirmation card. A draft is never generated until the user presses
- * Generate, and the card states that plainly; once the file exists it becomes
- * the download.
+ * Generate, and the card states that plainly. Mode (proposal or pitch deck) is
+ * chosen here, and the finished card exposes the source audit per section.
  */
 import {
   AlertTriangle,
@@ -17,7 +17,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { DocumentPreviewDialog } from "./DocumentPreviewDialog";
 import { downloadDocument } from "@/lib/documents/download";
-import { DOCUMENT_FORMATS, formatBytes, type DocumentDraftState } from "@/lib/documents/types";
+import {
+  DOCUMENT_FORMATS,
+  formatBytes,
+  type DocumentDraftState,
+  type DocumentMode,
+} from "@/lib/documents/types";
 import { FOCUS } from "./theme";
 
 const ICONS = { pdf: File, docx: FileText, pptx: Presentation } as const;
@@ -30,14 +35,21 @@ function Chip({ children }: { children: string }) {
   );
 }
 
+const MODES: { id: DocumentMode; label: string; hint: string }[] = [
+  { id: "proposal", label: "Proposal", hint: "Narrative document with evidence and next steps" },
+  { id: "pitch", label: "Pitch deck", hint: "8-9 takeaway slides with speaker notes" },
+];
+
 export function DocumentCard({
   state,
   onGenerate,
   onCancel,
+  onModeChange,
 }: {
   state: DocumentDraftState;
   onGenerate: () => void;
   onCancel: () => void;
+  onModeChange: (mode: DocumentMode) => void;
 }) {
   const { draft, status, file } = state;
   const format = DOCUMENT_FORMATS[draft.type];
@@ -56,6 +68,9 @@ export function DocumentCard({
           : status === "error"
             ? "Generation failed"
             : "Ready to build";
+
+  const openItems = state.openItems ?? [];
+  const warnings = state.warnings ?? [];
 
   return (
     <div className="overflow-hidden rounded-2xl border border-border bg-card">
@@ -88,20 +103,60 @@ export function DocumentCard({
         </div>
       )}
 
+      {status === "proposed" && (
+        <div className="px-4 pt-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Format
+          </p>
+          <div
+            role="radiogroup"
+            aria-label="Document mode"
+            className="mt-1.5 grid grid-cols-2 gap-2"
+          >
+            {MODES.map((mode) => {
+              const active = draft.mode === mode.id;
+              return (
+                <button
+                  key={mode.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => onModeChange(mode.id)}
+                  className={`${FOCUS} rounded-xl border px-3 py-2 text-left transition-colors ${
+                    active
+                      ? "border-primary bg-primary/5"
+                      : "border-border bg-card hover:bg-secondary/60"
+                  }`}
+                >
+                  <span className="block text-xs font-semibold text-foreground">{mode.label}</span>
+                  <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">
+                    {mode.hint}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="px-4 py-3">
         <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
           Outline
         </p>
         <ol className="mt-1.5 space-y-1">
-          {draft.outline.map((heading, index) => (
-            <li key={heading} className="flex gap-2 text-xs text-muted-foreground">
+          {draft.outline.map((outlineHeading, index) => (
+            <li key={outlineHeading} className="flex gap-2 text-xs text-muted-foreground">
               <span className="w-4 shrink-0 text-right tabular-nums text-muted-foreground/70">
                 {index + 1}.
               </span>
-              <span className="min-w-0 truncate">{heading}</span>
+              <span className="min-w-0 truncate">{outlineHeading}</span>
             </li>
           ))}
         </ol>
+        <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
+          The final structure is generated from this conversation and the library, so headings may
+          be tailored. Nothing is generated until you confirm.
+        </p>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 border-t border-border px-4 py-3">
@@ -114,14 +169,14 @@ export function DocumentCard({
               <X /> Cancel
             </Button>
             <span className="text-[11px] text-muted-foreground">
-              Nothing is generated until you confirm.
+              Every claim is checked against the cited passages.
             </span>
           </>
         )}
 
         {status === "generating" && (
           <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
-            <Loader2 size={14} className="animate-spin" /> Composing from your library…
+            <Loader2 size={14} className="animate-spin" /> Briefing, retrieving and composing…
           </span>
         )}
 
@@ -143,7 +198,7 @@ export function DocumentCard({
               {file.fileName} · {formatBytes(file.bytes)} · {file.pages}{" "}
               {draft.type === "pptx" ? "slides" : "pages"}
               {typeof state.sourceCount === "number"
-                ? ` · built from ${state.sourceCount} passage${state.sourceCount === 1 ? "" : "s"}`
+                ? ` · ${state.sourceCount} source${state.sourceCount === 1 ? "" : "s"}`
                 : ""}
             </span>
           </>
@@ -177,6 +232,66 @@ export function DocumentCard({
           </>
         )}
       </div>
+
+      {status === "ready" && openItems.length > 0 && (
+        <div className="border-t border-border bg-amber-50/60 px-4 py-3">
+          <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-amber-700">
+            <AlertTriangle size={12} /> Open items to confirm before sending
+          </p>
+          <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-[11px] leading-snug text-amber-900">
+            {openItems.slice(0, 8).map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {status === "ready" && warnings.length > 0 && (
+        <details className="border-t border-border px-4 py-2.5 text-[11px] text-muted-foreground">
+          <summary className="cursor-pointer font-medium">
+            Generation notes ({warnings.length})
+          </summary>
+          <ul className="mt-1.5 list-disc space-y-0.5 pl-4">
+            {warnings.slice(0, 8).map((warning) => (
+              <li key={warning}>{warning}</li>
+            ))}
+          </ul>
+        </details>
+      )}
+
+      {status === "ready" && state.trace && (
+        <details className="border-t border-border px-4 py-2.5 text-[11px] text-muted-foreground">
+          <summary className="cursor-pointer font-medium">
+            Source audit — {state.trace.sections.length} sections, {state.trace.usedChunkIds.length}{" "}
+            passages
+          </summary>
+          <div className="mt-2 space-y-2">
+            {state.trace.brief.client || state.trace.brief.industry ? (
+              <p>
+                Brief: {state.trace.brief.client ?? "client not stated"} ·{" "}
+                {state.trace.brief.industry ?? "industry not stated"}
+              </p>
+            ) : null}
+            <ul className="space-y-1.5">
+              {state.trace.sections.map((section) => (
+                <li
+                  key={section.id}
+                  className="rounded-lg border border-border bg-secondary/30 p-2"
+                >
+                  <p className="font-medium text-foreground">{section.title}</p>
+                  <p className="mt-0.5">
+                    {section.chunkIds.length} passage{section.chunkIds.length === 1 ? "" : "s"}
+                    {section.weak ? " · marked for completion" : ""}
+                  </p>
+                  <p className="mt-0.5 font-mono text-[10px] leading-snug break-words">
+                    query: {section.query}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </details>
+      )}
     </div>
   );
 }

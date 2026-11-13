@@ -67,6 +67,8 @@ const RAIL_WIDTH = 64;
 const FULL_WIDTH = 280;
 /** Turns of history sent with each question; older turns stay in the transcript. */
 const HISTORY_TURNS = 6;
+/** Exports read the whole conversation, not just the recent chat turns. */
+const DOCUMENT_HISTORY_TURNS = 40;
 
 type ChatThread = {
   id: string;
@@ -227,6 +229,9 @@ function ChatPage() {
         status: "ready",
         file: result.file,
         sourceCount: result.sourceCount,
+        openItems: result.openItems,
+        warnings: result.warnings,
+        trace: result.trace,
       });
       downloadDocument(result.file);
     },
@@ -246,8 +251,20 @@ function ChatPage() {
         .filter(
           (message) => !message.notice && !message.document && message.content.trim().length > 0,
         )
-        .slice(-HISTORY_TURNS)
-        .map((message) => ({ role: message.role, content: message.content }));
+        .slice(-DOCUMENT_HISTORY_TURNS)
+        .map((message) => ({
+          role: message.role,
+          content: message.content,
+          ...(message.sources && message.sources.length > 0
+            ? {
+                sources: message.sources.map((source) => ({
+                  title: source.title,
+                  contentId: source.contentId,
+                  chunkId: source.chunkId,
+                })),
+              }
+            : {}),
+        }));
       updateDocument(messageId, { status: "generating", error: null });
       documentGeneration.mutate({ messageId, draft: target.document.draft, history });
     },
@@ -258,6 +275,26 @@ function ChatPage() {
     (messageId: string) => updateDocument(messageId, { status: "cancelled" }),
     [updateDocument],
   );
+
+  /** Proposal / pitch deck is chosen on the card, before anything is built. */
+  const changeDocumentMode = useCallback((messageId: string, mode: "proposal" | "pitch") => {
+    setThreads((previous) =>
+      previous.map((thread) => ({
+        ...thread,
+        messages: thread.messages.map((message) =>
+          message.id === messageId && message.document
+            ? {
+                ...message,
+                document: {
+                  ...message.document,
+                  draft: { ...message.document.draft, mode },
+                },
+              }
+            : message,
+        ),
+      })),
+    );
+  }, []);
 
   /** Starts a draft from the "+" menu or the suggestion using current context. */
   const startDocument = useCallback(
@@ -718,6 +755,7 @@ function ChatPage() {
                 onExampleSelect={useExample}
                 onGenerateDocument={generateForMessage}
                 onCancelDocument={cancelDocument}
+                onDocumentModeChange={changeDocumentMode}
                 intake={picker}
               />
             </div>

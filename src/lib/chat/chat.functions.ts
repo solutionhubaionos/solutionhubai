@@ -8,16 +8,20 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { DEFAULT_MATCH_COUNT } from "../rag/config";
+import { ENTITY_FILTER_THRESHOLD, RETRIEVAL_CANDIDATES } from "../rag/config";
+import { resolveLibraryEntity, isComparativeQuestion, normalizeEntityKey } from "../rag/entities";
 import { embedQuery } from "../rag/embeddings";
+import { selectRelevantChunks } from "../rag/relevance";
 import { searchLibraryChunksAcrossScopes } from "../rag/search";
 import {
+  buildContext,
   buildMessages,
-  collectSources,
+  finalizeAnswer,
   generateAnswer,
   noPassagesAnswer,
   type ChatSource,
 } from "./answer";
+import { rewriteQuery } from "./rewrite";
 import { buildRetrievalQuery, retrievalScopes } from "./scope";
 
 export type AskLibraryResult =
@@ -52,6 +56,7 @@ export const askLibrary = createServerFn({ method: "POST" })
       .parse(data),
   )
   .handler(async ({ data, context }): Promise<AskLibraryResult> => {
+    const requestId = crypto.randomUUID();
     const apiKey = process.env["TOKENFACTORY_API_KEY"];
     const baseUrl = process.env["TOKENFACTORY_API_BASE"];
     if (!apiKey || !baseUrl) {
@@ -68,23 +73,88 @@ export const askLibrary = createServerFn({ method: "POST" })
     };
 
     try {
+      // A follow-up is rewritten into a standalone query before it is embedded;
+      // both forms go to the log so a bad rewrite can be traced.
+      const rewrite = await rewriteQuery(data.question, data.history ?? [], {
+        apiKey,
+        baseUrl,
+        log: (event, meta) => console.log(`[CHAT] ${event}`, { requestId, ...meta }),
+      });
+
+      // Resolve the customer the question names, tolerating typos and partial
+      // names. A confident match also becomes a retrieval scope, so misspelled
+      // metadata still surfaces the right documents.
+      const entity = await resolveLibraryEntity(context.supabase, rewrite.query);
+      if (entity) {
+        console.log("[CHAT] customer entity", {
+          requestId,
+          canonical: entity.canonical,
+          matchedName: entity.matchedName,
+          score: Number(entity.score.toFixed(3)),
+        });
+      }
+
+      const scopes = retrievalScopes(ctx);
+      if (
+        entity &&
+        entity.score >= ENTITY_FILTER_THRESHOLD &&
+        !isComparativeQuestion(data.question)
+      ) {
+        scopes.push({ customer: entity.canonical });
+      }
+
+      const searchText = entity
+        ? `${buildRetrievalQuery(rewrite.query, ctx)}\nCustomer: ${entity.canonical}`
+        : buildRetrievalQuery(rewrite.query, ctx);
+
       // One scoped search per selected industry/company pair, embedded once and
       // merged, so every pick contributes rather than only the first.
-      const chunks = await searchLibraryChunksAcrossScopes(
+      const candidates = await searchLibraryChunksAcrossScopes(
         context.supabase,
-        buildRetrievalQuery(data.question, ctx),
-        retrievalScopes(ctx),
-        DEFAULT_MATCH_COUNT,
+        searchText,
+        scopes,
+        RETRIEVAL_CANDIDATES,
         (query) => embedQuery(query, { apiKey, baseUrl }),
       );
+
+      // Retrieval hands back a fixed candidate list; only passages that clear
+      // the score floor (and the resolved customer) are worth prompting with.
+      const chunks = selectRelevantChunks(candidates, {
+        entityKeys: (entity?.spellings ?? []).map(normalizeEntityKey),
+        comparative: isComparativeQuestion(data.question),
+      });
+      console.log("[CHAT] retrieval", {
+        requestId,
+        candidates: candidates.length,
+        selected: chunks.length,
+        documents: [...new Set(chunks.map((chunk) => chunk.contentId))].length,
+      });
 
       if (chunks.length === 0) {
         return { ok: true, answer: noPassagesAnswer(), sources: [], grounded: false };
       }
 
-      const messages = buildMessages(data.question, chunks, data.history ?? []);
-      const { answer } = await generateAnswer(messages, { apiKey, baseUrl });
-      return { ok: true, answer, sources: collectSources(chunks), grounded: true };
+      const built = buildContext(chunks);
+      const messages = buildMessages(data.question, built, data.history ?? []);
+      const raw = await generateAnswer(messages, { apiKey, baseUrl, requestId });
+      const final = finalizeAnswer(raw.answer, built);
+
+      // Measure how often the model still narrates its own retrieval; never block.
+      if (final.metaPhrases.length > 0) {
+        console.warn("[CHAT] answer described its context", {
+          requestId,
+          question: data.question,
+          phrases: final.metaPhrases,
+        });
+      }
+      if (final.invalidMarkers.length > 0) {
+        console.warn("[CHAT] dropped citation markers", {
+          requestId,
+          invalidMarkers: final.invalidMarkers,
+        });
+      }
+
+      return { ok: true, answer: final.answer, sources: final.sources, grounded: true };
     } catch (error) {
       console.error("[CHAT] turn failed", error instanceof Error ? error.message : error);
       return { ok: false, error: "AI Search could not answer that. Please try again." };

@@ -8,6 +8,7 @@ import type { ChatSource } from "@/lib/chat/answer";
 import type { ExampleCard } from "@/lib/chat/scope";
 import { FOCUS } from "./theme";
 import { DocumentCard } from "./DocumentCard";
+import { MarkdownAnswer } from "./MarkdownAnswer";
 import type { ChatMessageView } from "./types";
 
 /** Transcript. Owns its scroll anchor so new messages always land in view. */
@@ -19,6 +20,7 @@ export function Conversation({
   onExampleSelect,
   onGenerateDocument,
   onCancelDocument,
+  onDocumentModeChange,
   intake,
 }: {
   messages: ChatMessageView[];
@@ -28,6 +30,7 @@ export function Conversation({
   onExampleSelect: (prompt: string) => void;
   onGenerateDocument: (messageId: string) => void;
   onCancelDocument: (messageId: string) => void;
+  onDocumentModeChange: (messageId: string, mode: "proposal" | "pitch") => void;
   /** The guided sector/company picker, shown under the latest prompt. */
   intake?: ReactNode;
 }) {
@@ -80,6 +83,7 @@ export function Conversation({
             message={message}
             onGenerateDocument={onGenerateDocument}
             onCancelDocument={onCancelDocument}
+            onDocumentModeChange={onDocumentModeChange}
           />
         ))}
         {intake}
@@ -174,10 +178,12 @@ function Bubble({
   message,
   onGenerateDocument,
   onCancelDocument,
+  onDocumentModeChange,
 }: {
   message: ChatMessageView;
   onGenerateDocument: (messageId: string) => void;
   onCancelDocument: (messageId: string) => void;
+  onDocumentModeChange: (messageId: string, mode: "proposal" | "pitch") => void;
 }) {
   if (message.role === "user") {
     return (
@@ -200,13 +206,17 @@ function Bubble({
       <div className="min-w-0 max-w-[85%] space-y-3">
         {message.content.trim().length > 0 && (
           <div
-            className={`rounded-2xl rounded-bl-md border border-border px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
+            className={`rounded-2xl rounded-bl-md border border-border px-4 py-3 text-sm leading-relaxed ${
               message.notice
                 ? "bg-background italic text-muted-foreground"
                 : "bg-card text-foreground"
             }`}
           >
-            {message.content}
+            <MarkdownAnswer
+              text={message.content}
+              sources={message.sources ?? []}
+              anchorPrefix={message.id}
+            />
           </div>
         )}
         {message.document && (
@@ -214,16 +224,19 @@ function Bubble({
             state={message.document}
             onGenerate={() => onGenerateDocument(message.id)}
             onCancel={() => onCancelDocument(message.id)}
+            onModeChange={(mode) => onDocumentModeChange(message.id, mode)}
           />
         )}
-        {message.sources && message.sources.length > 0 && <SourceList sources={message.sources} />}
+        {message.sources && message.sources.length > 0 && (
+          <SourceList sources={message.sources} anchorPrefix={message.id} />
+        )}
       </div>
     </div>
   );
 }
 
 /** Cited passages, one chip per retrieved passage, each opening the real file. */
-function SourceList({ sources }: { sources: ChatSource[] }) {
+function SourceList({ sources, anchorPrefix }: { sources: ChatSource[]; anchorPrefix: string }) {
   return (
     <div className="space-y-2">
       <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -231,7 +244,11 @@ function SourceList({ sources }: { sources: ChatSource[] }) {
       </p>
       <ul className="flex flex-wrap gap-1.5">
         {sources.map((source) => (
-          <li key={source.chunkId}>
+          <li
+            key={source.chunkId}
+            id={`source-${anchorPrefix}-${source.citation}`}
+            className="scroll-mt-24"
+          >
             <SourceChip source={source} />
           </li>
         ))}

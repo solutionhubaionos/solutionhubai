@@ -7,7 +7,14 @@ const TRUSTED_ORIGINS = new Set([
 export function passwordRedirect(origin: string) {
   const url = new URL(origin);
   const local = url.protocol === "http:" && url.hostname === "localhost" && url.port === "8080";
-  if ((!TRUSTED_ORIGINS.has(url.origin) && !local) || url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
+  if (
+    (!TRUSTED_ORIGINS.has(url.origin) && !local) ||
+    url.username ||
+    url.password ||
+    url.pathname !== "/" ||
+    url.search ||
+    url.hash
+  ) {
     throw new Error("Untrusted password reset destination");
   }
   return `${url.origin}/reset-password`;

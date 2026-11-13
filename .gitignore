@@ -36,6 +36,9 @@ spike-input-sample/
 .ingest.log
 .ingest.lock
 
+# Eval outputs with generated answers stay local; retrieval JSON has no document text
+evals/results/answers-*.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

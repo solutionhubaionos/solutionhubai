@@ -13,19 +13,35 @@ export const requestPasswordLink = createServerFn({ method: "POST" })
     const redirectTo = passwordRedirect(data.origin);
     const email = data.email.trim().toLowerCase();
     if (!isAllowedEmail(email)) {
-      return { ok: false as const, error: "This email domain is not permitted to access Solution Hub." };
+      return {
+        ok: false as const,
+        error: "This email domain is not permitted to access Solution Hub.",
+      };
     }
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { getRequest } = await import("@tanstack/react-start/server");
     const address = getRequest().headers.get("cf-connecting-ip");
     const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(email));
-    const emailKey = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-    const networkDigest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(address ?? "unknown"));
-    const networkKey = Array.from(new Uint8Array(networkDigest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-    const { data: permitted, error: limitError } = await supabaseAdmin.rpc("consume_request_quota", {
-      _kind: "password", _subject: emailKey, _network: networkKey,
-    });
-    if (limitError || !permitted) return { ok: false as const, error: "Too many requests. Please try again later." };
+    const emailKey = Array.from(new Uint8Array(digest), (byte) =>
+      byte.toString(16).padStart(2, "0"),
+    ).join("");
+    const networkDigest = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(address ?? "unknown"),
+    );
+    const networkKey = Array.from(new Uint8Array(networkDigest), (byte) =>
+      byte.toString(16).padStart(2, "0"),
+    ).join("");
+    const { data: permitted, error: limitError } = await supabaseAdmin.rpc(
+      "consume_request_quota",
+      {
+        _kind: "password",
+        _subject: emailKey,
+        _network: networkKey,
+      },
+    );
+    if (limitError || !permitted)
+      return { ok: false as const, error: "Too many requests. Please try again later." };
     const { error: createErr } = await supabaseAdmin.auth.admin.createUser({
       email,
       email_confirm: false,

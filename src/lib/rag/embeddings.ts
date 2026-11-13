@@ -8,6 +8,7 @@ import {
   EMBEDDING_DIMENSIONS,
   EMBEDDING_MODEL,
   EMBEDDING_USD_PER_TOKEN,
+  QUERY_INSTRUCT_PREFIX,
 } from "./config";
 
 export type EmbedOptions = {
@@ -17,7 +18,15 @@ export type EmbedOptions = {
   model?: string;
   dimensions?: number;
   batchSize?: number;
+  /** Adds the Qwen3 query instruction; documents must never set this. */
+  instruct?: boolean;
 };
+
+/** The exact text sent to the embedding model for a query. */
+export function queryEmbeddingText(text: string, instruct: boolean): string {
+  const query = text.trim();
+  return instruct ? `${QUERY_INSTRUCT_PREFIX}${query}` : query;
+}
 
 export type EmbeddingResult = {
   embeddings: number[][];
@@ -116,7 +125,7 @@ export async function embedQuery(
   text: string,
   options: Omit<EmbedOptions, "batchSize">,
 ): Promise<number[]> {
-  const query = text.trim();
+  const query = queryEmbeddingText(text, options.instruct ?? false);
   if (!query) throw new Error("Cannot embed an empty query");
   const { embeddings } = await embedTexts([query], options);
   const vector = embeddings[0];

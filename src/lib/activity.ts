@@ -10,7 +10,9 @@ export async function logActivity(e: Event) {
     const { data } = await supabase.auth.getSession();
     const user = data.session?.user;
     if (!user) return;
-    await supabase.from("activity_events").insert({ ...e, user_id: user.id, user_email: user.email ?? null });
+    await supabase
+      .from("activity_events")
+      .insert({ ...e, user_id: user.id, user_email: user.email ?? null });
   } catch {
     /* ignore */
   }

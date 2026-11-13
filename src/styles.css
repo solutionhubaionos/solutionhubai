@@ -68,7 +68,12 @@
   --ink: oklch(0.2 0.04 225);
   --ink-foreground: oklch(0.97 0.01 85);
   --gradient-ink: linear-gradient(180deg, oklch(0.2 0.04 225 / 0.1), oklch(0.16 0.04 225 / 0.92));
-  --gradient-hero: linear-gradient(100deg, oklch(0.16 0.04 225 / 0.95) 0%, oklch(0.18 0.04 225 / 0.7) 45%, oklch(0.2 0.04 225 / 0.1) 100%);
+  --gradient-hero: linear-gradient(
+    100deg,
+    oklch(0.16 0.04 225 / 0.95) 0%,
+    oklch(0.18 0.04 225 / 0.7) 45%,
+    oklch(0.2 0.04 225 / 0.1) 100%
+  );
   --shadow-card: 0 18px 40px -22px oklch(0.2 0.05 220 / 0.45);
   --sidebar: oklch(0.98 0.005 85);
   --sidebar-foreground: oklch(0.22 0.04 220);
@@ -89,7 +94,10 @@
     color: var(--color-foreground);
     font-family: var(--font-sans);
   }
-  h1, h2, h3, h4 {
+  h1,
+  h2,
+  h3,
+  h4 {
     font-family: var(--font-display);
     letter-spacing: -0.02em;
   }

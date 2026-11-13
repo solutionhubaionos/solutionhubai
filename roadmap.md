@@ -1,4 +1,5 @@
 # Roadmap
+
 - [x] Add progressive rendering to library and industry content and pagination to Insights activity
 - [x] Make file titles open the inline viewer by default; viewer trigger and progressive rendering tests pass
 - [x] Restrict Insights navigation, direct access and report data to admins; route tests pass and database admin guard verified

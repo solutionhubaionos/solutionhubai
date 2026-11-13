@@ -20,18 +20,21 @@ cp .env.example .env   # fill in the values
 bun run dev
 ```
 
-`bun run test` runs the unit suite; `npx tsc --noEmit` type-checks.
+`npx tsc --noEmit` type-checks and `bun run build` produces the deployable output.
+`bun run eval:chat` runs the offline answer-quality eval (fixtures plus a mocked
+completion endpoint, no database or provider key).
 
 ## Environment
 
-| Variable                                             | Used by                  | Purpose                                              |
-| ---------------------------------------------------- | ------------------------ | ---------------------------------------------------- |
-| `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`           | server                   | Auth, RLS-scoped queries and worker RPCs             |
-| `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` | browser                  | Same project, public keys                            |
-| `LIBRARY_USER_EMAIL`, `LIBRARY_USER_PASSWORD`        | worker                   | Member login for private Storage and the worker RPCs |
-| `TOKENFACTORY_API_BASE`, `TOKENFACTORY_API_KEY`      | worker, server functions | Embeddings and chat completions                      |
-| `SUPABASE_SERVICE_ROLE_KEY`                          | optional                 | Bypasses RLS; Lovable Cloud does not expose it       |
-| `SUPABASE_DB_URL`                                    | optional scripts         | Direct Postgres; Lovable Cloud does not expose it    |
+| Variable                                             | Used by                  | Purpose                                                                |
+| ---------------------------------------------------- | ------------------------ | ---------------------------------------------------------------------- |
+| `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`           | server                   | Auth, RLS-scoped queries and worker RPCs                               |
+| `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` | browser                  | Same project, public keys                                              |
+| `LIBRARY_USER_EMAIL`, `LIBRARY_USER_PASSWORD`        | worker                   | Member login for private Storage and the worker RPCs                   |
+| `TOKENFACTORY_API_BASE`, `TOKENFACTORY_API_KEY`      | worker, server functions | Embeddings and chat completions                                        |
+| `RAG_VISION`, `RAG_VISION_MODEL`                     | worker                   | Optional vision pass over image-only slides; off unless `RAG_VISION=1` |
+| `SUPABASE_SERVICE_ROLE_KEY`                          | optional                 | Bypasses RLS; Lovable Cloud does not expose it                         |
+| `SUPABASE_DB_URL`                                    | optional scripts         | Direct Postgres; Lovable Cloud does not expose it                      |
 
 Never put the service-role key or `SUPABASE_DB_URL` behind a `VITE_` prefix.
 
@@ -57,6 +60,9 @@ drizzle/migrations/0015_ingestion_delay.sql
 drizzle/migrations/0016_backfill_existing_content.sql
 drizzle/migrations/0017_worker_rpc.sql
 drizzle/migrations/0018_worker_statement_timeout.sql
+drizzle/migrations/0019_chunk_provenance.sql
+drizzle/migrations/0020_entity_matching.sql
+drizzle/migrations/0021_customer_name_typo.sql
 ```
 
 Paste one file at a time and run it. The editor asks for confirmation on
@@ -82,6 +88,16 @@ Check progress in `.ingest.log` (`claimed`, `ready`, `empty`, `skipped`, `failed
 without a manual backfill. New uploads are queued by the database trigger with a
 120-second `not_before` delay; the worker honours that deadline.
 
+After deploying an extractor change, requeue only the files that have not been through
+that version:
+
+```sql
+select public.worker_requeue_all('<worker-extractor-version>');
+```
+
+The string must match the worker's `EXTRACTOR_VERSION`. Existing chunks stay searchable
+until each new run commits.
+
 ### What the migrations touch
 
 - `0010`–`0015` create new tables, indexes, functions and policies, and add two
@@ -94,6 +110,10 @@ without a manual backfill. New uploads are queued by the database trigger with a
 - `0018` only raises `statement_timeout` to 60 s on the chunk-write functions, so a
   large commit is not cut off by Supabase's 8 s cap for `authenticated`. It changes no
   table, row or privilege, and is safe to re-run.
+- `0019` adds `chunk_kind` and `metadata` to chunks and staging, adds
+  `ingestion_jobs.extractor_version`, and replaces the worker RPCs so they carry those
+  fields. It also adds `worker_requeue_all()`. Existing chunks get `chunk_kind = 'text'`
+  and `metadata = '{}'`; the migration is safe to re-run.
 - The worker reads `content_items` and the private Storage bucket, and writes only to the
   new `document_chunks` and `ingestion_jobs` tables plus the short-lived
   `ingestion_chunk_staging` table.
@@ -114,11 +134,14 @@ bun scripts/apply-sql.ts --dry-run \
   drizzle/migrations/0015_ingestion_delay.sql \
   drizzle/migrations/0016_backfill_existing_content.sql \
   drizzle/migrations/0017_worker_rpc.sql \
-  drizzle/migrations/0018_worker_statement_timeout.sql
+  drizzle/migrations/0018_worker_statement_timeout.sql \
+  drizzle/migrations/0019_chunk_provenance.sql \
+  drizzle/migrations/0020_entity_matching.sql \
+  drizzle/migrations/0021_customer_name_typo.sql
 ```
 
-Then run the same command without `--dry-run`. `verify-rag.ts` and `run-eval.ts`
-also need `SUPABASE_DB_URL`; they cannot run against Lovable Cloud.
+Then run the same command without `--dry-run`. `verify-rag.ts` needs
+`SUPABASE_DB_URL`; the eval runners use Supabase REST and run against Lovable Cloud.
 
 ## Useful scripts
 
@@ -131,7 +154,8 @@ also need `SUPABASE_DB_URL`; they cannot run against Lovable Cloud.
 | `bun scripts/extract-spike.ts spike-input`   | Dry-run extraction/chunking to `spike-output/`                       |
 | `bun scripts/download-library.ts`            | Download private library files for local checks                      |
 | `bun scripts/apply-sql.ts --dry-run <files>` | Run migrations, then roll back without committing (self-hosted only) |
-| `bun scripts/run-eval.ts`                    | Recall@k / MRR over `evals/rag-eval.json` (needs `SUPABASE_DB_URL`)  |
+| `bun scripts/run-eval.ts`                    | Recall@k / MRR over `evals/rag-eval.json` (Supabase REST by default) |
+| `bun scripts/run-answer-eval.ts`             | Citation, numeric and refusal scoring over the same set              |
 | `bun scripts/verify-rag.ts`                  | RLS, grants, indexes and delay smoke test (needs `SUPABASE_DB_URL`)  |
 
 `docs/rag-pipeline.md` describes the full pipeline and its design decisions.
