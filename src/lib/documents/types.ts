@@ -44,7 +44,17 @@ export type DocumentDraft = {
   client: string | null;
   sector: string | null;
   outline: string[];
+  /**
+   * The confirmed slide plan (title + layout + section tag). When present it is
+   * the contract: generation uses these titles and layouts verbatim.
+   */
+  outlinePlan?: SlidePlan[] | undefined;
   prompt: string;
+  /**
+   * Explicit consent to render only the sections that had evidence when the
+   * quality gate blocks a full document. Never set by default.
+   */
+  allowPartial?: boolean | undefined;
 };
 
 /** Cover-page facts, kept even when a renderer wants to draw them differently. */
@@ -76,6 +86,42 @@ export type SourceRecord = {
 };
 
 export type SourceLabel = string;
+
+/** One slide's composition. The model picks the layout that fits the content. */
+export type SlideLayout =
+  | "cover"
+  | "summary"
+  | "bullets"
+  | "text"
+  | "table"
+  | "comparison"
+  | "kpis"
+  | "chart"
+  | "flow"
+  | "timeline"
+  | "raci";
+
+export type SlidePlan = {
+  title: string;
+  layout: SlideLayout;
+  /** Optional section tag rendered in the slide header. */
+  section?: string | undefined;
+};
+
+export type ChartType = "bar" | "stacked_bar" | "line" | "pie" | "doughnut";
+
+export type ChartSpec = {
+  type: ChartType;
+  title: string;
+  unit?: string;
+  categories: string[];
+  series: { name: string; values: number[] }[];
+  /** sourced = values verbatim in cited passages; assumption = code model only. */
+  basis: "sourced" | "assumption";
+};
+
+export type KpiItem = { label: string; value: string; note?: string; refs?: number[] };
+export type FlowStep = { label: string; detail?: string };
 
 type BlockBase = { sources: string[] };
 
@@ -122,13 +168,18 @@ export type Block =
   | ({ type: "callout"; tone: "info" | "warning" | "success"; text: string } & BlockBase)
   | { type: "quote"; text: string; attribution: string; source: string }
   | { type: "timeline"; items: TimelineItem[]; sources: string[] }
-  | ComparisonBlock;
+  | ComparisonBlock
+  | { type: "chart"; chart: ChartSpec; caption?: string; sources: string[]; illustrative?: boolean }
+  | { type: "kpis"; items: KpiItem[]; sources: string[] }
+  | { type: "flow"; steps: FlowStep[]; sources: string[] };
 
 export type DocumentSection = {
   /** Stable outline id, also used by the trace record. */
   id: string;
   kind: SectionKind;
   title: string;
+  /** The composition the model chose for this slide. */
+  layout?: SlideLayout;
   blocks: Block[];
   /** 2-4 sentences for PPTX speaker notes, with chunk references. */
   speakerNotes: string;
@@ -151,7 +202,14 @@ export type SectionKind =
   | "why_us"
   | "how_it_works"
   | "results"
-  | "ask";
+  | "ask"
+  | "parties"
+  | "pointers"
+  | "shortcomings"
+  | "economics"
+  | "governance"
+  | "open_questions"
+  | "journey";
 
 /** The validated JSON model every renderer consumes. No renderer has prose. */
 export type DocumentModel = {
@@ -167,6 +225,11 @@ export type DocumentModel = {
 export type ExportBrief = {
   documentTitle: string;
   request: string;
+  /** What the document is about, derived from the conversation, not the UI. */
+  subject?: string | null;
+  partiesInvolved?: string[];
+  keyTopics?: string[];
+  keyEntities?: string[];
   mode: DocumentMode;
   client: string | null;
   industry: string | null;
@@ -217,10 +280,34 @@ export type GeneratedDocument = {
   pages: number;
 };
 
+/** Why a section cannot ship, kept separate so the UI can say what happened. */
+export type SectionFailure =
+  "no_passages" | "provider_error" | "token_limit" | "timeout" | "schema_invalid";
+
+export type DocumentGateSection = {
+  id: string;
+  title: string;
+  passages: number;
+  generated: boolean;
+  /** Why the section cannot ship, or null when it can. */
+  reason: SectionFailure | null;
+  /** The raw error or retrieval note behind `reason`, for the trace and the UI. */
+  detail: string | null;
+};
+
+/** Pre-render quality gate: a thin document is refused, never padded. */
+export type DocumentGate = {
+  coverage: number;
+  blocked: boolean;
+  sections: DocumentGateSection[];
+  message: string;
+};
+
 export type DocumentBuildResult = {
   model: DocumentModel;
   trace: DocumentTrace;
   usedFallback: boolean;
+  gate: DocumentGate;
 };
 
 export type DocumentDraftStatus = "proposed" | "generating" | "ready" | "cancelled" | "error";
@@ -229,6 +316,8 @@ export type DocumentDraftStatus = "proposed" | "generating" | "ready" | "cancell
 export type DocumentDraftState = {
   draft: DocumentDraft;
   status: DocumentDraftStatus;
+  /** Set while the LLM outline for the confirm card is being planned. */
+  planning?: boolean;
   error?: string | null;
   file?: GeneratedDocument | null;
   sourceCount?: number;

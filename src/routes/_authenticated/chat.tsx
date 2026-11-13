@@ -39,7 +39,7 @@ import { Conversation } from "@/components/chat/Conversation";
 import { SelectionCard } from "@/components/chat/SelectionCard";
 import type { ChatMessageView } from "@/components/chat/types";
 import { downloadDocument } from "@/lib/documents/download";
-import { generateDocument } from "@/lib/documents/documents.functions";
+import { generateDocument, planDocument } from "@/lib/documents/documents.functions";
 import { buildDraft, detectDocumentType } from "@/lib/documents/intent";
 import {
   DOCUMENT_FORMATS,
@@ -243,6 +243,80 @@ function ChatPage() {
     },
   });
 
+  /**
+   * The confirm card shows the outline the model planned from the conversation,
+   * not the sector template. Planning runs once per proposed card (and again
+   * when the mode changes); Generate always uses whatever is on the card.
+   */
+  const documentPlanning = useMutation({
+    mutationFn: (payload: {
+      messageId: string;
+      draft: DocumentDraft;
+      mode: DocumentDraft["mode"];
+      history: {
+        role: "user" | "assistant";
+        content: string;
+        sources?: { title: string; contentId?: string | null; chunkId?: string | null }[];
+      }[];
+    }) =>
+      planDocument({
+        data: {
+          prompt: payload.draft.prompt,
+          type: payload.draft.type,
+          mode: payload.mode,
+          context,
+          industryNames: industryNameBySlug,
+          history: payload.history,
+        },
+      }),
+    onSuccess: (result, payload) => {
+      if (!result.ok) return;
+      updateDocument(payload.messageId, {
+        draft: {
+          ...payload.draft,
+          mode: payload.mode,
+          title: result.title,
+          outline: result.outline,
+          outlinePlan: result.outlinePlan,
+        },
+      });
+    },
+  });
+
+  useEffect(() => {
+    if (!activeThread) return;
+    const history = activeThread.messages
+      .filter(
+        (message) => !message.notice && !message.document && message.content.trim().length > 0,
+      )
+      .slice(-DOCUMENT_HISTORY_TURNS)
+      .map((message) => ({
+        role: message.role,
+        content: message.content,
+        ...(message.sources && message.sources.length > 0
+          ? {
+              sources: message.sources.map((source) => ({
+                title: source.title,
+                contentId: source.contentId,
+                chunkId: source.chunkId,
+              })),
+            }
+          : {}),
+      }));
+
+    for (const message of activeThread.messages) {
+      const document = message.document;
+      if (!document || document.status !== "proposed" || document.planning) continue;
+      updateDocument(message.id, { planning: true });
+      documentPlanning.mutate({
+        messageId: message.id,
+        draft: document.draft,
+        mode: document.draft.mode,
+        history,
+      });
+    }
+  }, [activeThread, documentPlanning, updateDocument]);
+
   const generateForMessage = useCallback(
     (messageId: string) => {
       const target = activeThread?.messages.find((message) => message.id === messageId);
@@ -288,6 +362,7 @@ function ChatPage() {
                 document: {
                   ...message.document,
                   draft: { ...message.document.draft, mode },
+                  planning: false,
                 },
               }
             : message,

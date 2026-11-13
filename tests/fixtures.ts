@@ -5,10 +5,10 @@
  * without a database or network.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Database } from "../../src/integrations/supabase/types";
-import type { ExportHistoryMessage } from "../../src/lib/documents/brief";
-import type { DocumentDraft } from "../../src/lib/documents/types";
-import type { RetrievedChunk } from "../../src/lib/rag/search";
+import type { Database } from "../src/integrations/supabase/types";
+import type { ExportHistoryMessage } from "../src/lib/documents/brief";
+import type { DocumentDraft } from "../src/lib/documents/types";
+import type { RetrievedChunk } from "../src/lib/rag/search";
 
 const BASE = {
   vectorRank: 1,
@@ -242,6 +242,100 @@ const BASE_CHUNKS: RetrievedChunk[] = [
     industry: "retail",
     customerName: "Northwind Retail",
   },
+  // The document the first retrieval missed: it exists with customer "Zurich
+  // Airport" and a file name that never says "Zurich" as a customer.
+  {
+    ...BASE,
+    chunkId: "chunk-za1",
+    contentId: "doc-zhr",
+    content:
+      "Zurich Airport's AI-on-OS programme connects flight, passenger and retail data into one operating layer. The airport reports a single view of turnarounds across 3 terminals and 41 gates.",
+    slide: 4,
+    page: null,
+    heading: "Operating layer",
+    title: "250317_ZRH_Airport_AIonOS_v1.0",
+    fileName: "250317_ZRH_Airport_AIonOS_v1.0.pptx",
+    filePath: "library/250317_ZRH_Airport_AIonOS_v1.0.pptx",
+    industry: "airports",
+    customerName: "Zurich Airport",
+  },
+  {
+    ...BASE,
+    chunkId: "chunk-za2",
+    contentId: "doc-zhr",
+    content:
+      "The data exchange treats airlines, hotels and ground handlers as data contributors. Each partner keeps ownership of its feed while the airport publishes shared operational events.",
+    slide: 7,
+    page: null,
+    heading: "Data exchange",
+    title: "250317_ZRH_Airport_AIonOS_v1.0",
+    fileName: "250317_ZRH_Airport_AIonOS_v1.0.pptx",
+    filePath: "library/250317_ZRH_Airport_AIonOS_v1.0.pptx",
+    industry: "airports",
+    customerName: "Zurich Airport",
+  },
+  {
+    ...BASE,
+    chunkId: "chunk-za3",
+    contentId: "doc-zhr",
+    content:
+      "Turnaround visibility improved by 18% in the pilot and 250 airport staff moved to the new console. The programme is being extended to retail and hotel partners in 2027.",
+    slide: 11,
+    page: null,
+    heading: "Outcomes",
+    title: "250317_ZRH_Airport_AIonOS_v1.0",
+    fileName: "250317_ZRH_Airport_AIonOS_v1.0.pptx",
+    filePath: "library/250317_ZRH_Airport_AIonOS_v1.0.pptx",
+    industry: "airports",
+    customerName: "Zurich Airport",
+  },
+  // The hotel-procurement deck the first answer did find; kept alongside Zurich
+  // so the multi-entity assertion has both families to retrieve.
+  {
+    ...BASE,
+    chunkId: "chunk-ih1",
+    contentId: "doc-igl-hotel",
+    content:
+      "InterGlobe Hotels moved hotel procurement into one marketplace covering 46 properties. Suppliers publish rates and availability once, and property teams buy from the same catalogue.",
+    slide: 3,
+    page: null,
+    heading: "Procurement marketplace",
+    title: "InterGlobe Hotels — hotel procurement marketplace",
+    fileName: "interglobe-hotel-procurement.pptx",
+    filePath: "library/interglobe-hotel-procurement.pptx",
+    industry: "hospitality",
+    customerName: "InterGlobe Hotels",
+  },
+  {
+    ...BASE,
+    chunkId: "chunk-ih2",
+    contentId: "doc-igl-hotel",
+    content:
+      "Supplier onboarding fell from 21 days to 5 days after the marketplace replaced email-based rate collection. The programme covered 380 suppliers in the first year.",
+    slide: 6,
+    page: null,
+    heading: "Supplier onboarding",
+    title: "InterGlobe Hotels — hotel procurement marketplace",
+    fileName: "interglobe-hotel-procurement.pptx",
+    filePath: "library/interglobe-hotel-procurement.pptx",
+    industry: "hospitality",
+    customerName: "InterGlobe Hotels",
+  },
+  {
+    ...BASE,
+    chunkId: "chunk-ih3",
+    contentId: "doc-igl-hotel",
+    content:
+      "Procurement savings reached 9% on room rates across the portfolio. A shared booking feed lets hotel partners contribute availability to the InterGlobe travel app.",
+    slide: 9,
+    page: null,
+    heading: "Outcomes",
+    title: "InterGlobe Hotels — hotel procurement marketplace",
+    fileName: "interglobe-hotel-procurement.pptx",
+    filePath: "library/interglobe-hotel-procurement.pptx",
+    industry: "hospitality",
+    customerName: "InterGlobe Hotels",
+  },
 ];
 
 /**
@@ -331,7 +425,17 @@ export function draftFor(
     industrySlug: industry,
     client,
     sector: null,
-    outline: ["Current state", "Proposal", "Proof", "Next steps"],
+    // The confirmed outline the user agreed to on the confirm screen. It is the
+    // only section plan the builder may use.
+    outline: [
+      "Manual claiming is capping growth",
+      "One intake queue changes the economics",
+      "What you receive",
+      "Comparable work, measured",
+      "The commercial shape",
+      "Our approach over the first eight weeks",
+      "The decision we need",
+    ],
     prompt: `Create a ${mode} for ${client}`,
   };
 }
@@ -380,28 +484,162 @@ function toRow(chunk: RetrievedChunk): SearchRow {
   };
 }
 
+function normalizeName(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Cheap stand-in for pg_trgm similarity(), enough to exercise resolution. */
+function nameSimilarity(name: string, candidates: readonly string[]): number {
+  const key = normalizeName(name);
+  let best = 0;
+  for (const candidate of candidates) {
+    const other = normalizeName(candidate);
+    if (!key || !other) continue;
+    if (key === other) {
+      best = 1;
+      continue;
+    }
+    if (key.includes(other) || other.includes(key)) {
+      best = Math.max(best, 0.9);
+      continue;
+    }
+    const a = new Set(key.split(" "));
+    const b = new Set(other.split(" "));
+    const shared = [...a].filter((word) => b.has(word)).length;
+    if (shared > 0) best = Math.max(best, 0.4 + (0.5 * shared) / Math.max(a.size, b.size));
+  }
+  return best;
+}
+
 export function createMockSupabase(
   chunks: readonly RetrievedChunk[],
   queries: string[],
   options: { fixedResult?: readonly RetrievedChunk[] } = {},
 ): SupabaseClient<Database> {
+  const source = () => options.fixedResult ?? chunks;
+
+  const tableQuery = (table: string) => {
+    const filters: { ids?: string[]; inColumn?: string; terms?: string[] } = {};
+    const builder = {
+      select: () => builder,
+      eq: (column: string, value: unknown) => {
+        if (column === "content_id" || column === "id") {
+          filters.ids = [String(value)];
+          filters.inColumn = column;
+        }
+        return builder;
+      },
+      in: (column: string, values: readonly unknown[]) => {
+        filters.ids = values.map(String);
+        filters.inColumn = column;
+        return builder;
+      },
+      or: (expression: string) => {
+        filters.terms = [...expression.matchAll(/%([^%]*)%/g)].map((match) => match[1] ?? "");
+        return builder;
+      },
+      order: () => builder,
+      limit: () => builder,
+      maybeSingle: async () => ({ data: null, error: null }),
+      then: (resolve: (value: { data: unknown[]; error: null }) => unknown) => {
+        if (table === "content_items") {
+          if (filters.inColumn === "id") {
+            return resolve({
+              data: (filters.ids ?? []).map((id) => ({
+                id,
+                content_type: "deck",
+                created_at: "2026-01-01T00:00:00.000Z",
+              })),
+              error: null,
+            });
+          }
+          const terms = filters.terms ?? [];
+          const ids = [
+            ...new Set(
+              source()
+                .filter(
+                  (chunk) =>
+                    terms.length === 0 ||
+                    terms.some(
+                      (term) =>
+                        normalizeName(chunk.customerName ?? "").includes(normalizeName(term)) ||
+                        normalizeName(chunk.title).includes(normalizeName(term)) ||
+                        normalizeName(chunk.fileName).includes(normalizeName(term)),
+                    ),
+                )
+                .map((chunk) => chunk.contentId),
+            ),
+          ];
+          return resolve({ data: ids.map((id) => ({ id })), error: null });
+        }
+
+        const ids = filters.ids ?? [];
+        const rows = source()
+          .filter((chunk) => ids.includes(chunk.contentId))
+          .map((chunk) => ({
+            ...toRow(chunk),
+            id: chunk.chunkId,
+            chunk_index: 0,
+            content_items: {
+              title: chunk.title,
+              file_name: chunk.fileName,
+              file_path: chunk.filePath,
+              industry: chunk.industry,
+              customer_name: chunk.customerName,
+            },
+          }));
+        return resolve({ data: rows, error: null });
+      },
+    };
+    return builder;
+  };
+
   const client = {
-    rpc: async (_name: string, args: Record<string, unknown>) => {
+    rpc: async (name: string, args: Record<string, unknown>) => {
+      if (name === "match_customer_entities") {
+        const candidates = (args["p_candidates"] as string[] | undefined) ?? [];
+        const threshold = Number(args["p_threshold"] ?? 0.4);
+        const names = [
+          ...new Set(
+            source()
+              .map((chunk) => chunk.customerName)
+              .filter(Boolean) as string[],
+          ),
+        ];
+        const rows = names
+          .map((canonical) => ({
+            canonical,
+            matched_name: canonical,
+            score: nameSimilarity(canonical, candidates),
+            spellings: [canonical],
+          }))
+          .filter((row) => row.score >= threshold)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, Number(args["p_limit"] ?? 3));
+        return { data: rows, error: null };
+      }
+
       const query = String(args["query_text"] ?? "");
       queries.push(query);
-      const source = options.fixedResult ?? chunks;
-      const offset = hash(query) % Math.max(source.length, 1);
-      const rotated = [...source.slice(offset), ...source.slice(0, offset)];
+      const customer = typeof args["filter_customer"] === "string" ? args["filter_customer"] : null;
+      const industry = typeof args["filter_industry"] === "string" ? args["filter_industry"] : null;
+      // A scoped search returns only that scope's rows: if the spelling does not
+      // exist, the result is empty, exactly like the real database function.
+      const pool = source().filter(
+        (chunk) =>
+          (!customer || chunk.customerName === customer) &&
+          (!industry || chunk.industry === industry),
+      );
+      const offset = hash(query) % Math.max(pool.length, 1);
+      const rotated = [...pool.slice(offset), ...pool.slice(0, offset)];
       return { data: rotated.slice(0, 12).map(toRow), error: null };
     },
-    from: () => ({
-      select: () => ({
-        in: async () => ({ data: [], error: null }),
-        eq: () => ({
-          order: async () => ({ data: [], error: null }),
-        }),
-      }),
-    }),
+    from: tableQuery,
   };
   return client as unknown as SupabaseClient<Database>;
 }
@@ -418,6 +656,21 @@ function briefFrom(user: string): Record<string, unknown> {
   const client = interglobe ? "InterGlobe Aviation" : "Zurich Insurance";
   const industry = interglobe ? "aviation" : "insurance";
   return {
+    title: interglobe
+      ? "InterGlobe x IndiGo — pitch deck"
+      : "Zurich Insurance — claims transformation",
+    subject: interglobe
+      ? "InterGlobe x IndiGo partnership"
+      : "Zurich Insurance claims transformation",
+    partiesInvolved: interglobe
+      ? ["Adani Airports", "IndiGo", "InterGlobe Hotels"]
+      : ["Zurich Insurance"],
+    keyTopics: interglobe
+      ? ["crew operations", "Fly++ SPV", "JV versus tech partner"]
+      : ["claims assessment", "straight-through processing"],
+    keyEntities: interglobe
+      ? ["Adani Airports", "IndiGo", "InterGlobe Hotels", "Zurich Airport", "Fly++ SPV"]
+      : ["Zurich Insurance", "claims transformation"],
     client,
     industry,
     sector: industry,
@@ -564,6 +817,127 @@ function sectionFrom(user: string): Record<string, unknown> {
   };
 }
 
+type DeckPlan = { title: string; layout?: string; section?: string };
+
+/**
+ * Deck-shaped response for the one-call pipeline: one slide per plan entry,
+ * with the title, layout and refs the real model is asked for. Content is
+ * copied from the numbered passages in the prompt, so the normaliser and the
+ * sourcing checks run against real passage text.
+ */
+function deckFrom(user: string): Record<string, unknown> {
+  const planMatch =
+    /Plan \(contract; same titles and order\):\n(\[[\s\S]*?\])\n\nExport brief/.exec(user);
+  let plans: DeckPlan[] = [];
+  if (planMatch?.[1]) {
+    try {
+      const parsed: unknown = JSON.parse(planMatch[1]);
+      if (Array.isArray(parsed)) plans = parsed as DeckPlan[];
+    } catch {
+      plans = [];
+    }
+  }
+
+  const passagesStart = user.indexOf("Passages (the only sourced facts you may use):");
+  const assumptionsStart = user.indexOf("Assumptions model", passagesStart);
+  const passageText =
+    passagesStart >= 0
+      ? user.slice(passagesStart, assumptionsStart > 0 ? assumptionsStart : undefined)
+      : "";
+  const passages = passageText
+    .split("\n\n")
+    .map((block) => block.trim())
+    .filter((block) => /^\[\d+\]/.test(block))
+    .map((block, index) => {
+      const [header, ...rest] = block.split("\n");
+      return { ref: index + 1, header: header ?? "", content: rest.join(" ").trim() };
+    });
+  const fallback = passages[0]?.content ?? "The library has no passage for this slide.";
+  const table = (content: string, ref: number): Record<string, unknown> => {
+    const sentences = content
+      .split(/(?<=[.!?])\s+/)
+      .map((sentence) => sentence.trim())
+      .filter((sentence) => sentence.length > 20)
+      .slice(0, 3);
+    const rows = (sentences.length > 0 ? sentences : [content.slice(0, 160)]).map(
+      (sentence, index) => [`Point ${index + 1}`, sentence, `[${ref}]`],
+    );
+    return { headers: ["Point", "Detail", "Evidence"], rows };
+  };
+
+  const slides = plans.map((plan, index) => {
+    const passage = passages[index % Math.max(1, passages.length)];
+    const content = passage?.content || fallback;
+    const ref = passage?.ref ?? 1;
+    const layout = plan.layout ?? "bullets";
+    const sentences = content
+      .split(/(?<=[.!?])\s+/)
+      .map((sentence) => sentence.trim())
+      .filter((sentence) => sentence.length > 20);
+    const numeric = /(\d[\d,]*(?:\.\d+)?)\s*(%|days?|weeks?|months?|x)/i.exec(content);
+
+    const slide: Record<string, unknown> = {
+      title: plan.title,
+      section: plan.section,
+      layout,
+      notes: `Talking points for "${plan.title}", drawn from the cited passage.`,
+      refs: [ref],
+    };
+
+    if (layout === "chart" && numeric) {
+      slide["chart"] = {
+        type: "bar",
+        title: plan.title,
+        unit: numeric[2],
+        categories: ["Reported"],
+        series: [{ name: "Reported value", values: [Number(numeric[1]?.replace(/,/g, ""))] }],
+        basis: "sourced",
+      };
+    }
+    if (layout === "table" || layout === "raci" || layout === "comparison") {
+      slide["table"] = table(content, ref);
+    }
+    if (layout === "chart" && !slide["chart"]) slide["table"] = table(content, ref);
+    if (layout !== "text" && layout !== "summary" && layout !== "bullets") {
+      const points = sentences.slice(0, 2).map((sentence) => sentence.slice(0, 110));
+      if (points.length > 0) slide["bullets"] = points;
+    }
+    if (layout === "flow") {
+      slide["flow"] = [
+        { label: plan.title, detail: sentences[0]?.slice(0, 90) ?? content.slice(0, 90) },
+        { label: "Hand-off", detail: sentences[1]?.slice(0, 90) ?? "Documented in the passage." },
+      ];
+    }
+    if (layout === "timeline") {
+      slide["timeline"] = [
+        {
+          phase: "Phase 1",
+          when: "First",
+          items: [sentences[0]?.slice(0, 80) ?? content.slice(0, 80)],
+        },
+      ];
+    }
+    if (layout === "text" || layout === "summary" || layout === "bullets") {
+      slide["text"] = content.slice(0, 260);
+      slide["bullets"] = sentences.slice(0, 3).map((sentence) => sentence.slice(0, 110));
+      slide["table"] = table(content, ref);
+    }
+    if (
+      !slide["text"] &&
+      !slide["bullets"] &&
+      !slide["table"] &&
+      !slide["chart"] &&
+      !slide["flow"] &&
+      !slide["timeline"]
+    ) {
+      slide["text"] = content.slice(0, 240);
+    }
+    return slide;
+  });
+
+  return { slides };
+}
+
 export function createMockFetch(): typeof fetch {
   return (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url =
@@ -590,6 +964,8 @@ export function createMockFetch(): typeof fetch {
     let content: unknown;
     if (system.includes("extract a document brief")) content = briefFrom(user);
     else if (system.includes("You plan a client-ready sales document")) content = outlineFrom(user);
+    else if (system.includes("You write a client-ready sales deck")) content = deckFrom(user);
+    else if (system.includes("grounding auditor")) content = { unsupported: [] };
     else content = sectionFrom(user);
 
     return json({

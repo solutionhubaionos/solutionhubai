@@ -5,9 +5,9 @@
  * the old hard-coded outline.
  */
 import { describe, expect, test } from "bun:test";
-import { buildDocument } from "../../src/lib/documents/build";
-import { outlineFor } from "../../src/lib/documents/intent";
-import type { DocumentModel } from "../../src/lib/documents/types";
+import { buildDocument } from "../src/lib/documents/build";
+import { outlineFor } from "../src/lib/documents/intent";
+import type { DocumentModel } from "../src/lib/documents/types";
 import { CHUNKS, createMockFetch, createMockSupabase, deckHistory, draftFor } from "./fixtures";
 
 const STATIC_DECK_HEADINGS = new Set(
@@ -52,7 +52,8 @@ describe("export regression", () => {
       provider: { apiKey: "test", baseUrl: "https://mock.local", fetchImpl: createMockFetch() },
     });
 
-    expect(result.model.sections.length).toBeGreaterThanOrEqual(8);
+    expect(result.model.sections.length).toBe(draftFor().outline.length);
+    expect(result.gate.blocked).toBe(false);
     expect(regressionIssues(result.model)).toEqual([]);
   });
 
