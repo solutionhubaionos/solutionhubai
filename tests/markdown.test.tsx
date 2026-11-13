@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { MarkdownAnswer } from "../../src/components/chat/MarkdownAnswer";
-import type { ChatSource } from "../../src/lib/chat/answer";
+import { MarkdownAnswer } from "../src/components/chat/MarkdownAnswer";
+import type { ChatSource } from "../src/lib/chat/answer";
 
 const source: ChatSource = {
   citation: 1,

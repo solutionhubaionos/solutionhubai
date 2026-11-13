@@ -11,6 +11,7 @@
 import { createHash } from "node:crypto";
 import { chunkSections, type ChunkableSection, type ChunkKind } from "./chunk";
 import { CHUNKER_VERSION, EMBEDDING_MODEL, EXTRACTOR_VERSION, MIN_CHUNK_CHARS } from "./config";
+import { estimateTokens } from "./chunk";
 
 export { embedTexts } from "./embeddings";
 export type { EmbedOptions, EmbeddingResult } from "./embeddings";
@@ -29,26 +30,73 @@ export type ChunkRow = {
 
 export type EmbeddedChunk = ChunkRow & { embedding: number[] };
 
+/** Provenance every chunk should carry, whether it is embedded or searched. */
+export type ChunkContext = {
+  title?: string | null | undefined;
+  customerName?: string | null | undefined;
+  industry?: string | null | undefined;
+};
+
+/**
+ * The contextual header stored with a chunk: "Customer: X | Industry: Y |
+ * Document: Z | Slide: 4". It goes into `content`, which means the generated
+ * `tsv` indexes it for full-text search, and the same text is embedded. A
+ * passage therefore knows whose deck it came from even when the body never
+ * repeats the customer name.
+ */
+export function chunkContextHeader(
+  where: { page?: number | null | undefined; slide?: number | null | undefined },
+  context: ChunkContext = {},
+): string {
+  const document = (context.title ?? "").trim();
+  // Without any provenance, a page/slide label alone duplicates a column the
+  // chunk already carries; leave the stored text untouched.
+  if (!document && !context.customerName && !context.industry) return "";
+  const place =
+    where.slide !== null && where.slide !== undefined
+      ? `Slide: ${where.slide}`
+      : where.page !== null && where.page !== undefined
+        ? `Page: ${where.page}`
+        : null;
+  return [
+    context.customerName ? `Customer: ${context.customerName.trim()}` : null,
+    context.industry ? `Industry: ${context.industry.trim()}` : null,
+    document ? `Document: ${document}` : null,
+    place,
+  ]
+    .filter((part): part is string => Boolean(part))
+    .join(" | ");
+}
+
 /**
  * Turns extracted sections into database rows. PDF page numbers land in `page`,
  * slide numbers in `slide`; DOCX has neither and keeps only its heading.
+ * When provenance is known it is prepended, so both the embedding and the
+ * full-text index carry customer, industry and document context.
  */
 export function buildChunkRows(
   format: string,
   sections: readonly ChunkableSection[],
   sourceFile: string,
+  context: ChunkContext = {},
 ): ChunkRow[] {
-  return chunkSections(sections, { sourceFile, minChars: MIN_CHUNK_CHARS }).map((chunk) => ({
-    chunk_index: chunk.chunkIndex,
-    content: chunk.content,
-    estimated_tokens: Math.max(chunk.estimatedTokens, 1),
-    page: format === "pdf" ? chunk.pageOrSlide : null,
-    slide: format === "pptx" ? chunk.pageOrSlide : null,
-    heading: chunk.heading,
-    embedding_model: EMBEDDING_MODEL,
-    chunk_kind: chunk.kind,
-    metadata: chunk.metadata,
-  }));
+  return chunkSections(sections, { sourceFile, minChars: MIN_CHUNK_CHARS }).map((chunk) => {
+    const page = format === "pdf" ? chunk.pageOrSlide : null;
+    const slide = format === "pptx" ? chunk.pageOrSlide : null;
+    const header = chunkContextHeader({ page, slide }, context);
+    const content = header ? `${header}\n\n${chunk.content}` : chunk.content;
+    return {
+      chunk_index: chunk.chunkIndex,
+      content,
+      estimated_tokens: Math.max(estimateTokens(content), 1),
+      page,
+      slide,
+      heading: chunk.heading,
+      embedding_model: EMBEDDING_MODEL,
+      chunk_kind: chunk.kind,
+      metadata: chunk.metadata,
+    };
+  });
 }
 
 /**
@@ -59,6 +107,9 @@ export function buildChunkRows(
 export function embeddingTexts(rows: readonly ChunkRow[], fileName: string): string[] {
   const document = fileName.replace(/\.[^.]+$/, "").trim();
   return rows.map((row) => {
+    // A row built with a contextual header already carries document and place;
+    // prefixing the file name again would only dilute the vector.
+    if (/^(?:Customer|Industry|Document):/m.test(row.content)) return row.content;
     const where = [
       row.slide !== null ? `slide ${row.slide}` : row.page !== null ? `page ${row.page}` : null,
       row.heading,

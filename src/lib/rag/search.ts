@@ -8,7 +8,14 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "../../integrations/supabase/types";
-import { DEFAULT_MATCH_COUNT, EMBEDDING_DIMENSIONS, MAX_MATCH_COUNT } from "./config";
+import {
+  DEFAULT_MATCH_COUNT,
+  EMBEDDING_DIMENSIONS,
+  ENTITY_MAX_ENTITIES,
+  ENTITY_MIN_CHUNKS,
+  MAX_MATCH_COUNT,
+  METADATA_FALLBACK_CHUNKS,
+} from "./config";
 
 export type RetrievalScope = {
   industry?: string | null | undefined;
@@ -143,6 +150,219 @@ export async function searchLibraryChunks(
     embedQuery: embed,
     search: (input) => searchScopedChunks(client, input),
   });
+}
+
+/** A resolved organisation and every spelling retrieval may filter by. */
+export type EntityScope = { canonical: string; spellings?: readonly string[] | undefined };
+
+/** Canonical name first, then aliases, de-duplicated case-insensitively. */
+export function entitySpellings(entity: EntityScope): string[] {
+  const seen = new Set<string>();
+  const values: string[] = [];
+  for (const value of [entity.canonical, ...(entity.spellings ?? [])]) {
+    const trimmed = value.trim();
+    const key = trimmed.toLowerCase();
+    if (!trimmed || seen.has(key)) continue;
+    seen.add(key);
+    values.push(trimmed);
+  }
+  return values;
+}
+
+/**
+ * Merges one general result set with one batch per entity. Each entity gets a
+ * reserved share of the slots first, so a single large document family cannot
+ * crowd the others out; the remaining slots go to the best scores overall.
+ */
+export function mergeEntityResults(
+  base: readonly RetrievedChunk[],
+  entityBatches: readonly (readonly RetrievedChunk[])[],
+  matchCount: number,
+): RetrievedChunk[] {
+  const byId = new Map<string, RetrievedChunk>();
+  const add = (chunk: RetrievedChunk) => {
+    const existing = byId.get(chunk.chunkId);
+    if (!existing || chunk.score > existing.score) byId.set(chunk.chunkId, chunk);
+  };
+
+  const quota = Math.max(
+    ENTITY_MIN_CHUNKS,
+    Math.ceil(matchCount / Math.max(1, entityBatches.length)),
+  );
+  for (const batch of entityBatches) {
+    [...batch]
+      .sort((a, b) => b.score - a.score)
+      .slice(0, quota)
+      .forEach(add);
+  }
+  [...base].sort((a, b) => b.score - a.score).forEach(add);
+  for (const batch of entityBatches) {
+    [...batch].sort((a, b) => b.score - a.score).forEach(add);
+  }
+
+  return [...byId.values()].sort((a, b) => b.score - a.score).slice(0, matchCount);
+}
+
+/**
+ * Hybrid search with one pass per named organisation, plus the caller's own
+ * scopes. The question is embedded once; each entity filters on its own known
+ * spelling, so "IndiGo" can reach a file whose customer_name says
+ * "InterGlobe Aviation" once entity resolution has linked the two.
+ */
+export async function searchLibraryChunksForEntities(
+  client: SupabaseClient<Database>,
+  query: string,
+  entities: readonly EntityScope[],
+  scopes: readonly RetrievalScope[],
+  k: number,
+  embed: (query: string) => Promise<number[]>,
+): Promise<RetrievedChunk[]> {
+  const queryText = query.trim();
+  if (!queryText) return [];
+
+  const matchCount = clampMatchCount(k);
+  const unique = new Map<string, EntityScope>();
+  for (const entity of entities) {
+    const key = entity.canonical.trim().toLowerCase();
+    if (key && !unique.has(key)) unique.set(key, entity);
+  }
+  const named = [...unique.values()].slice(0, ENTITY_MAX_ENTITIES);
+
+  const baseScopes = new Map<string, NormalizedScope>();
+  for (const scope of scopes.length > 0 ? scopes : [{}]) {
+    const normalized = normalizeScope(scope);
+    baseScopes.set(`${normalized.industry ?? ""}\u0000${normalized.customer ?? ""}`, normalized);
+  }
+
+  const embedding = await embed(queryText);
+  const [base, entityBatches] = await Promise.all([
+    Promise.all(
+      [...baseScopes.values()].map((scope) =>
+        searchScopedChunks(client, { embedding, queryText, scope, matchCount }),
+      ),
+    ),
+    Promise.all(
+      named.map(async (entity) => {
+        const spellings = entitySpellings(entity).slice(0, 3);
+        const batches = await Promise.all(
+          spellings.map((spelling) =>
+            searchScopedChunks(client, {
+              embedding,
+              queryText: `${queryText}\nCustomer: ${entity.canonical}`,
+              scope: { industry: null, customer: spelling },
+              matchCount,
+            }),
+          ),
+        );
+        return batches.flat();
+      }),
+    ),
+  ]);
+
+  return mergeEntityResults(base.flat(), entityBatches, matchCount);
+}
+
+/**
+ * Last resort before saying "I couldn't find it": look up documents by customer,
+ * title or file name and return their opening passages. This is metadata, not a
+ * semantic guess, so a named organisation that exists in the library can never
+ * be reported as absent.
+ */
+export async function metadataFallbackChunks(
+  client: SupabaseClient<Database>,
+  names: readonly string[],
+  limit: number = METADATA_FALLBACK_CHUNKS,
+): Promise<RetrievedChunk[]> {
+  const contentIds = new Set<string>();
+  const seen = new Set<string>();
+
+  // PostgREST's `or` filter is a small expression language: strip its control
+  // characters so a document name can never inject another condition.
+  const safe = (value: string) =>
+    value
+      .replace(/[%,()*]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  for (const name of names) {
+    const term = safe(name);
+    const key = term.toLowerCase();
+    if (term.length < 3 || seen.has(key)) continue;
+    seen.add(key);
+    try {
+      const { data, error } = await client
+        .from("content_items")
+        .select("id")
+        .or(`customer_name.ilike.%${term}%,title.ilike.%${term}%,file_name.ilike.%${term}%`)
+        .limit(6);
+      if (error || !data) continue;
+      for (const row of data as { id: string }[]) contentIds.add(row.id);
+    } catch {
+      // Metadata lookup is best-effort; retrieval still has the hybrid results.
+    }
+  }
+
+  if (contentIds.size === 0) return [];
+
+  type FallbackRow = {
+    id: string;
+    content_id: string;
+    content: string;
+    page: number | null;
+    slide: number | null;
+    heading: string | null;
+    content_items: {
+      title: string | null;
+      file_name: string | null;
+      file_path: string | null;
+      industry: string | null;
+      customer_name: string | null;
+    } | null;
+  };
+
+  try {
+    const { data, error } = await client
+      .from("document_chunks")
+      .select(
+        "id, content_id, content, page, slide, heading, content_items(title, file_name, file_path, industry, customer_name)",
+      )
+      .in("content_id", [...contentIds].slice(0, 8))
+      .order("chunk_index", { ascending: true })
+      .limit(Math.max(limit * 4, 24));
+    if (error || !data) return [];
+
+    const perDocument = new Map<string, number>();
+    const chunks: RetrievedChunk[] = [];
+    for (const row of data as unknown as FallbackRow[]) {
+      const item = row.content_items;
+      if (!item || row.content.trim().length < 40) continue;
+      const count = perDocument.get(row.content_id) ?? 0;
+      if (count >= 2) continue;
+      perDocument.set(row.content_id, count + 1);
+      chunks.push({
+        chunkId: row.id,
+        contentId: row.content_id,
+        content: row.content,
+        page: row.page,
+        slide: row.slide,
+        heading: row.heading,
+        title: item.title ?? row.heading ?? "Library document",
+        fileName: item.file_name ?? "",
+        filePath: item.file_path ?? "",
+        industry: item.industry ?? "",
+        customerName: item.customer_name,
+        vectorRank: null,
+        textRank: null,
+        // Deliberately below any fused score: metadata proves the document
+        // exists, not that this passage answers the question.
+        score: 0.001,
+      });
+      if (chunks.length >= limit) break;
+    }
+    return chunks;
+  } catch {
+    return [];
+  }
 }
 
 /**

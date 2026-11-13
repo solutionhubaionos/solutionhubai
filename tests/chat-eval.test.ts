@@ -1,9 +1,9 @@
 /**
- * `bun test evals/chat` — each eval check becomes its own test, so a failure
+ * `bun test tests/chat-eval.test.ts` — each eval check becomes its own test, so a failure
  * names the case and the rule that broke.
  */
 import { describe, expect, test } from "bun:test";
-import { runChatEval } from "./cases";
+import { runChatEval } from "../evals/chat/cases";
 
 const results = await runChatEval();
 

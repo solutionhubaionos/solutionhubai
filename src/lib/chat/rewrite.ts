@@ -10,11 +10,11 @@
 import {
   ANSWER_MODEL,
   QUERY_REWRITE_HISTORY_MESSAGES,
-  QUERY_REWRITE_MAX_TOKENS,
   QUERY_REWRITE_TIMEOUT_MS,
 } from "../rag/config";
 import type { ChatHistoryMessage } from "./answer";
-import { generateAnswer } from "./answer";
+import { completeWithBudget } from "../documents/provider";
+import { llmBudget } from "../documents/llm-budget";
 
 /** Standalone questions longer than this are never rewritten on a hunch. */
 const SHORT_QUESTION_WORDS = 5;
@@ -127,18 +127,25 @@ export async function rewriteQuery(
   }
 
   try {
-    const { answer } = await generateAnswer(
+    // Routed through the shared budget: reasoning is OFF for this call, because
+    // a small completion used to spend its whole max_tokens on reasoning and
+    // come back empty with finish_reason "length".
+    const outcome = await completeWithBudget(
       [{ role: "user", content: buildRewritePrompt(original, history) }],
       {
         apiKey: options.apiKey,
         baseUrl: options.baseUrl,
         model: options.model ?? ANSWER_MODEL,
-        maxTokens: QUERY_REWRITE_MAX_TOKENS,
         timeoutMs: options.timeoutMs ?? QUERY_REWRITE_TIMEOUT_MS,
         ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
+        attempts: 2,
+        ...(options.log ? { log: options.log } : {}),
       },
+      llmBudget("QUERY_REWRITE"),
+      0,
+      { label: "chat query rewrite" },
     );
-    const query = sanitizeRewrite(answer, original);
+    const query = sanitizeRewrite(outcome.content, original);
     options.log?.("query rewrite", { original, query, rewritten: query !== original });
     return { query, original, rewritten: query !== original, reason: "rewritten" };
   } catch (error) {

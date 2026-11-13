@@ -455,7 +455,22 @@ async function processJob(job: Job, counters: Counters) {
     }
   }
 
-  const rows = buildChunkRows(extracted.document.format, sections, job.file_name);
+  // Provenance is written into every chunk (and therefore into the full-text
+  // index) so a passage can be found by customer, industry or document name
+  // even when its body never repeats them.
+  const client = await getClient();
+  const metadata = await client
+    .from("content_items")
+    .select("title, customer_name, industry")
+    .eq("id", job.content_id)
+    .maybeSingle();
+  const context = {
+    title: metadata.data?.title ?? job.file_name.replace(/\.[^.]+$/, ""),
+    customerName: metadata.data?.customer_name ?? null,
+    industry: metadata.data?.industry ?? null,
+  };
+
+  const rows = buildChunkRows(extracted.document.format, sections, job.file_name, context);
 
   if (rows.length === 0) {
     await replaceChunks(job, [], null, "empty", warnings);

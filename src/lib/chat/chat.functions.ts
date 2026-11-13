@@ -8,11 +8,21 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { ENTITY_FILTER_THRESHOLD, RETRIEVAL_CANDIDATES } from "../rag/config";
-import { resolveLibraryEntity, isComparativeQuestion, normalizeEntityKey } from "../rag/entities";
+import { ENTITY_FILTER_THRESHOLD, RETRIEVAL_CANDIDATES, RETRIEVAL_MAX_K } from "../rag/config";
+import {
+  resolveLibraryEntities,
+  resolveLibraryEntity,
+  isComparativeQuestion,
+  normalizeEntityKey,
+  type ResolvedEntity,
+} from "../rag/entities";
 import { embedQuery } from "../rag/embeddings";
 import { selectRelevantChunks } from "../rag/relevance";
-import { searchLibraryChunksAcrossScopes } from "../rag/search";
+import {
+  metadataFallbackChunks,
+  searchLibraryChunksForEntities,
+  type EntityScope,
+} from "../rag/search";
 import {
   buildContext,
   buildMessages,
@@ -81,48 +91,91 @@ export const askLibrary = createServerFn({ method: "POST" })
         log: (event, meta) => console.log(`[CHAT] ${event}`, { requestId, ...meta }),
       });
 
-      // Resolve the customer the question names, tolerating typos and partial
-      // names. A confident match also becomes a retrieval scope, so misspelled
-      // metadata still surfaces the right documents.
-      const entity = await resolveLibraryEntity(context.supabase, rewrite.query);
-      if (entity) {
-        console.log("[CHAT] customer entity", {
+      // Resolve every organisation the question names, not just the best one.
+      // A follow-up like "Zurich airport and Interglobe hotels" must reach both
+      // document families; the previous single-entity filter dropped one.
+      const named = await resolveLibraryEntities(context.supabase, rewrite.query);
+
+      // Wizard picks are hints, but they still apply by default: resolve each
+      // selected company to the spelling the library actually stored, so a pick
+      // of "IndiGo" can reach a file filed under "InterGlobe Aviation".
+      const selected = (
+        await Promise.all(
+          ctx.clients.map((name) =>
+            resolveLibraryEntity(context.supabase, name, {
+              candidates: [name],
+              threshold: ENTITY_FILTER_THRESHOLD,
+            }),
+          ),
+        )
+      ).filter((entity): entity is ResolvedEntity => entity !== null);
+
+      const entities: ResolvedEntity[] = [];
+      const seenEntities = new Set<string>();
+      for (const entity of [...named, ...selected]) {
+        const key = normalizeEntityKey(entity.canonical) || normalizeEntityKey(entity.matchedName);
+        if (!key || seenEntities.has(key)) continue;
+        seenEntities.add(key);
+        entities.push(entity);
+      }
+      if (entities.length > 0) {
+        console.log("[CHAT] customer entities", {
           requestId,
-          canonical: entity.canonical,
-          matchedName: entity.matchedName,
-          score: Number(entity.score.toFixed(3)),
+          entities: entities.map((entity) => ({
+            canonical: entity.canonical,
+            matchedName: entity.matchedName,
+            score: Number(entity.score.toFixed(3)),
+          })),
         });
       }
 
+      // Selected companies stay a default scope; the named entities get their
+      // own searches inside searchLibraryChunksForEntities.
       const scopes = retrievalScopes(ctx);
-      if (
-        entity &&
-        entity.score >= ENTITY_FILTER_THRESHOLD &&
-        !isComparativeQuestion(data.question)
-      ) {
-        scopes.push({ customer: entity.canonical });
+      for (const entity of selected) {
+        scopes.push({ customer: entity.matchedName }, { customer: entity.canonical });
       }
 
-      const searchText = entity
-        ? `${buildRetrievalQuery(rewrite.query, ctx)}\nCustomer: ${entity.canonical}`
-        : buildRetrievalQuery(rewrite.query, ctx);
+      const corpus: EntityScope[] = entities.map((entity) => ({
+        canonical: entity.canonical,
+        spellings: entity.spellings,
+      }));
+      const searchText = buildRetrievalQuery(rewrite.query, ctx);
 
-      // One scoped search per selected industry/company pair, embedded once and
-      // merged, so every pick contributes rather than only the first.
-      const candidates = await searchLibraryChunksAcrossScopes(
+      // One pass per named/selected organisation plus the wizard scopes, all
+      // embedded once and merged with a per-entity quota, so one document family
+      // cannot crowd out the others.
+      const candidates = await searchLibraryChunksForEntities(
         context.supabase,
         searchText,
+        corpus,
         scopes,
         RETRIEVAL_CANDIDATES,
         (query) => embedQuery(query, { apiKey, baseUrl }),
       );
 
       // Retrieval hands back a fixed candidate list; only passages that clear
-      // the score floor (and the resolved customer) are worth prompting with.
-      const chunks = selectRelevantChunks(candidates, {
-        entityKeys: (entity?.spellings ?? []).map(normalizeEntityKey),
+      // the score floor (and belong to a named entity) are worth prompting with.
+      let chunks = selectRelevantChunks(candidates, {
+        entityKeys: entities
+          .flatMap((entity) => [entity.canonical, entity.matchedName, ...entity.spellings])
+          .map(normalizeEntityKey),
         comparative: isComparativeQuestion(data.question),
       });
+
+      // Before saying nothing was found, check the metadata: a named customer or
+      // file may exist even when the hybrid ranking returned no passage.
+      if (chunks.length === 0 && entities.length > 0) {
+        chunks = await metadataFallbackChunks(
+          context.supabase,
+          entities.flatMap((entity) => [entity.canonical, entity.matchedName]),
+          RETRIEVAL_MAX_K,
+        );
+        if (chunks.length > 0) {
+          console.log("[CHAT] metadata fallback", { requestId, chunks: chunks.length });
+        }
+      }
+
       console.log("[CHAT] retrieval", {
         requestId,
         candidates: candidates.length,
@@ -131,7 +184,12 @@ export const askLibrary = createServerFn({ method: "POST" })
       });
 
       if (chunks.length === 0) {
-        return { ok: true, answer: noPassagesAnswer(), sources: [], grounded: false };
+        return {
+          ok: true,
+          answer: noPassagesAnswer(entities.map((entity) => entity.canonical)),
+          sources: [],
+          grounded: false,
+        };
       }
 
       const built = buildContext(chunks);
