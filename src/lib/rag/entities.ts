@@ -9,7 +9,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "../../integrations/supabase/types";
-import { ENTITY_MAX_CANDIDATES, ENTITY_SIMILARITY_THRESHOLD } from "./config";
+import { ENTITY_MAX_CANDIDATES, ENTITY_MAX_ENTITIES, ENTITY_SIMILARITY_THRESHOLD } from "./config";
 
 export type EntityMatchRow = {
   canonical: string;
@@ -158,6 +158,83 @@ export function isComparativeQuestion(question: string): boolean {
   return /\b(compare|compared|comparison|versus|vs\.?|difference|differences|both|across|between)\b/i.test(
     question,
   );
+}
+
+/**
+ * Splits a question that names several organisations into one span per entity:
+ * "What about Zurich airport and Interglobe hotels?" -> ["Zurich airport",
+ * "Interglobe hotels"]. A single-name question returns [] so the caller falls
+ * back to whole-query resolution. Deliberately deterministic: no extra model
+ * call, no latency, and the same split every time.
+ */
+export function splitEntityMentions(query: string): string[] {
+  const cleaned = query
+    .replace(/[?!.]+\s*$/g, " ")
+    .replace(/^\s*(?:what|how|tell me|show me|compare)\b[^a-z0-9]*/i, "")
+    .replace(/\b(?:about|between|for|regarding|on)\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned) return [];
+
+  const parts = cleaned
+    .split(/\s*(?:,|&|\band\b|\bwith\b|\bvs\.?\b|\bx\b)\s*/i)
+    .map((part) => part.replace(/^\s*(?:the|our)\s+/i, "").trim())
+    .filter((part) => part.length >= 3 && part.split(/\s+/).length <= 6);
+
+  // Only a multi-entity question is split; otherwise the whole query is better
+  // than an arbitrary fragment of it.
+  return parts.length > 1 ? parts : [];
+}
+
+/** Stable identity for a resolved entity: alias spellings share one key. */
+function entityKey(entity: { canonical: string; matchedName: string }): string {
+  return normalizeEntityKey(entity.canonical) || normalizeEntityKey(entity.matchedName);
+}
+
+/**
+ * Resolves every organisation a question names, not just the best one. Each
+ * mention is matched separately, then the results are merged by canonical name,
+ * so "Zurich airport and Interglobe hotels" keeps both instead of silently
+ * narrowing to whichever scored higher.
+ */
+export async function resolveLibraryEntities(
+  client: SupabaseClient<Database>,
+  query: string,
+  options: { mentions?: string[]; threshold?: number; limit?: number } = {},
+): Promise<ResolvedEntity[]> {
+  const mentions = options.mentions ?? splitEntityMentions(query);
+  const attempts = [...new Set([...mentions, query].map((value) => value.trim()).filter(Boolean))];
+
+  const resolved = await Promise.all(
+    attempts.slice(0, 6).map((mention) =>
+      resolveLibraryEntity(client, mention, {
+        candidates: [mention, ...entityCandidates(mention)].slice(0, 12),
+        ...(options.threshold !== undefined ? { threshold: options.threshold } : {}),
+      }),
+    ),
+  );
+
+  const best = new Map<string, ResolvedEntity>();
+  for (const entity of resolved) {
+    if (!entity) continue;
+    const key = entityKey(entity);
+    if (!key) continue;
+    const existing = best.get(key);
+    if (!existing) {
+      best.set(key, entity);
+      continue;
+    }
+    const spellings = [...new Set([...existing.spellings, ...entity.spellings])];
+    if (entity.score > existing.score) {
+      best.set(key, { ...entity, spellings });
+    } else {
+      existing.spellings = spellings;
+    }
+  }
+
+  return [...best.values()]
+    .sort((a, b) => b.score - a.score)
+    .slice(0, Math.max(1, Math.min(options.limit ?? ENTITY_MAX_ENTITIES, 6)));
 }
 
 /**

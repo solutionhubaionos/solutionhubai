@@ -75,7 +75,7 @@ GROUNDING
 WHEN INFORMATION IS THIN
 - Say what you do know, then state the gap in one short sentence, e.g. "The detailed scope isn't available, only the title and section structure."
 - Never apologise at length, correct earlier replies, or talk about your own errors in the answer.
-- If nothing relevant exists, say so in one sentence and suggest a nearby topic that is in the library.
+- If nothing relevant exists, say "I couldn't find that in the retrieved passages" in one sentence and suggest a nearby topic that is in the library. Never say the library has nothing on an organisation or document that appears in the sources.
 
 Treat the user's wording loosely (typos, partial names like "Interglode" for "InterGlobe"). Match to the closest entity in the context.
 
@@ -209,7 +209,11 @@ export function buildMessages(
 
 type ChatCompletionResponse = {
   choices?: Array<{ message?: { content?: string | null }; finish_reason?: string | null }>;
-  usage?: { prompt_tokens?: number; completion_tokens?: number };
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    completion_tokens_details?: { reasoning_tokens?: number };
+  };
   error?: { message?: string } | string;
 };
 
@@ -239,7 +243,12 @@ export type GenerateResult = {
   /** How many follow-up completions were issued for a truncated answer. */
   continuations: number;
 };
-type Completion = { text: string; finishReason: string | null };
+type Completion = {
+  text: string;
+  finishReason: string | null;
+  reasoningTokens: number | null;
+  completionTokens: number | null;
+};
 
 /** One non-streaming completion; the provider's finish_reason is kept as-is. */
 async function completeOnce(
@@ -278,6 +287,8 @@ async function completeOnce(
   return {
     text: choice?.message?.content?.trim() ?? "",
     finishReason: choice?.finish_reason ?? null,
+    reasoningTokens: body.usage?.completion_tokens_details?.reasoning_tokens ?? null,
+    completionTokens: body.usage?.completion_tokens ?? null,
   };
 }
 
@@ -319,7 +330,10 @@ export async function generateAnswer(
       model,
       attempt: continuations + 1,
       finishReason: completion.finishReason,
+      reasoningTokens: completion.reasoningTokens,
+      completionTokens: completion.completionTokens,
       chars: completion.text.length,
+      maxTokens,
     });
 
     if (!completion.text) {
@@ -386,7 +400,20 @@ export function finalizeAnswer(raw: string, context: BuiltContext): FinalAnswer 
   };
 }
 
-/** Used when retrieval finds nothing: no model call, no chance to invent. */
-export function noPassagesAnswer(): string {
-  return "I couldn't find anything in the library that answers this. Try different wording, or clear the context filters so the search covers more of the library.";
+/**
+ * Used when retrieval finds nothing: no model call, no chance to invent. When a
+ * name was resolved from the question, say what was searched instead of
+ * claiming the library has nothing — the entity may exist and the retrieval
+ * may simply have missed it.
+ */
+export function noPassagesAnswer(names: readonly string[] = []): string {
+  const named = [...new Set(names.map((name) => name.trim()).filter(Boolean))].slice(0, 3);
+  if (named.length > 0) {
+    const list =
+      named.length === 1
+        ? named[0]
+        : `${named.slice(0, -1).join(", ")} and ${named[named.length - 1]}`;
+    return `I couldn't find passages about ${list} in what I retrieved. Try naming the customer exactly as it appears on the file, or clear the context filters so the search covers more of the library.`;
+  }
+  return "I couldn't find anything in the retrieved passages that answers this. Try different wording, or clear the context filters so the search covers more of the library.";
 }

@@ -92,8 +92,15 @@ export const MAX_CHUNKS_PER_SLIDE = 2;
  * standalone query; any failure falls back to the raw message.
  */
 export const QUERY_REWRITE_MODEL = "deepseek/deepseek-v4.1-flash";
-export const QUERY_REWRITE_MAX_TOKENS = 80;
-export const QUERY_REWRITE_TIMEOUT_MS = 2_500;
+/**
+ * The provider reasons by default and reasoning tokens count against
+ * max_tokens; 80 tokens came back empty. The rewrite now runs thinking-off
+ * through llmBudget("QUERY_REWRITE") (DOC_MAX_TOKENS_QUERY_REWRITE, default
+ * 1000); this constant documents the provider-side expectation.
+ */
+export const QUERY_REWRITE_MAX_TOKENS = 1_000;
+/** Thinking is off, so 20s is generous without letting the rewrite stall chat. */
+export const QUERY_REWRITE_TIMEOUT_MS = 20_000;
 export const QUERY_REWRITE_HISTORY_MESSAGES = 4;
 
 /**
@@ -103,3 +110,9 @@ export const QUERY_REWRITE_HISTORY_MESSAGES = 4;
 export const ENTITY_SIMILARITY_THRESHOLD = 0.4;
 export const ENTITY_FILTER_THRESHOLD = 0.86;
 export const ENTITY_MAX_CANDIDATES = 40;
+/** Entities resolved per question; beyond this a question is a survey, not a lookup. */
+export const ENTITY_MAX_ENTITIES = 4;
+/** Receives a share of the candidate slots so one document family cannot win all. */
+export const ENTITY_MIN_CHUNKS = 2;
+/** Metadata fallback returns this many passages when hybrid search found none. */
+export const METADATA_FALLBACK_CHUNKS = 8;
