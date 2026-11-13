@@ -6,15 +6,77 @@
 import { z } from "zod";
 import type { Block, SourceLabel } from "./types";
 
-const label = z
-  .string()
-  .trim()
-  .regex(/^S\d{1,3}$/, "source must be a label like S1");
+/**
+ * A citation may arrive as an S-label, a passage number, or wrapped in prose
+ * ("[S1]", "passage 2", "S1, S2"); models mix the formats even when the prompt
+ * is explicit, and a formatting slip must not fail a whole section.
+ */
+const label = z.preprocess(
+  (value) => {
+    if (typeof value === "number" && Number.isFinite(value)) return `S${Math.trunc(value)}`;
+    if (typeof value === "string") {
+      const match = /(\d{1,3})/.exec(value);
+      if (match) return `S${Number.parseInt(match[1] ?? "", 10)}`;
+    }
+    return value;
+  },
+  z
+    .string()
+    .trim()
+    .regex(/^S\d{1,3}$/, "source must be a label like S1")
+    .transform((value) => value.toUpperCase()),
+);
 
-const sourceList = z.array(label).max(12);
+/** Advisory text is shortened, never a reason to reject a whole section. */
+const clipped = (max: number, min = 0) =>
+  z
+    .string()
+    .trim()
+    .min(min)
+    .transform((value) => value.slice(0, max));
+
+/** Extra labels are noise, never a reason to lose a whole section. */
+const sourceList = z.array(label).transform((values) => values.slice(0, 12));
+
+const passageNumber = z.union([
+  z.number().int().min(1).max(80),
+  z
+    .string()
+    .trim()
+    .regex(/^\d{1,3}$/)
+    .transform((value) => Number.parseInt(value, 10)),
+  // The model often copies S-labels into passageRefs; accept them there too.
+  z
+    .string()
+    .trim()
+    .regex(/^S\d{1,3}$/i)
+    .transform((value) => Number.parseInt(value.slice(1), 10)),
+]);
+
+/** 1-based passage numbers; the model may cite these instead of S-labels. */
+const passageRefs = z.array(passageNumber).max(12);
+
+/**
+ * Blocks accept either S-labels or passage numbers, and sources may be omitted
+ * entirely: a model that emits no citation still parses, and resolveBlocks drops
+ * the factual block rather than rendering an unsourced claim.
+ */
+const grounding = {
+  sources: sourceList.default([]),
+  passageRefs: passageRefs.optional(),
+};
+
+/** Merge declared S-labels with passage numbers, which mean the same thing. */
+function labelsOf(block: GeneratedBlock): SourceLabel[] {
+  const declared = "sources" in block ? (block.sources ?? []) : [];
+  const refs = ("passageRefs" in block ? (block.passageRefs ?? []) : []).map(
+    (value) => `S${value}`,
+  );
+  return [...new Set([...declared, ...refs])];
+}
 
 const listItem = z.object({
-  text: z.string().trim().min(4).max(320),
+  text: clipped(320, 4),
   level: z.number().int().min(0).max(2).optional(),
   sources: sourceList.optional(),
 });
@@ -22,101 +84,140 @@ const listItem = z.object({
 export const generatedBlockSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("heading"),
-    level: z.union([z.literal(2), z.literal(3)]),
+    // Models routinely omit the level; a heading is never worth failing a
+    // whole section over.
+    level: z.union([z.literal(2), z.literal(3)]).default(2),
     text: z.string().trim().min(2).max(140),
   }),
   z.object({
     type: z.literal("paragraph"),
-    text: z.string().trim().min(20).max(1400),
-    sources: sourceList.min(1),
+    text: clipped(1_400, 20),
+    ...grounding,
   }),
   z.object({
     type: z.literal("bullet_list"),
-    items: z.array(listItem).min(2).max(8),
-    sources: sourceList.min(1),
+    items: z
+      .array(listItem)
+      .min(2)
+      .transform((items) => items.slice(0, 8)),
+    ...grounding,
   }),
   z.object({
     type: z.literal("numbered_list"),
-    items: z.array(listItem).min(2).max(8),
-    sources: sourceList.min(1),
+    items: z
+      .array(listItem)
+      .min(2)
+      .transform((items) => items.slice(0, 8)),
+    ...grounding,
   }),
   z.object({
     type: z.literal("table"),
-    caption: z.string().trim().max(200).optional(),
-    headers: z.array(z.string().trim().min(1).max(60)).min(2).max(6),
-    rows: z
-      .array(z.array(z.string().trim().max(240)).min(1).max(6))
+    caption: clipped(200).optional(),
+    headers: z
+      .array(z.string().trim().min(1).max(60))
       .min(2)
-      .max(10),
-    sources: sourceList.min(1),
+      .transform((headers: string[]) => headers.slice(0, 6)),
+    // A real table cell can carry a clause or two; 240 rejected valid tables and
+    // cost the whole section. Bounded, but generous enough for sourced detail.
+    rows: z
+      .array(
+        z
+          .array(z.string().trim().max(400))
+          .min(1)
+          .transform((row) => row.slice(0, 6)),
+      )
+      .min(2)
+      .transform((rows) => rows.slice(0, 10)),
+    ...grounding,
   }),
   z.object({
     type: z.literal("metrics"),
     items: z
       .array(
         z.object({
-          label: z.string().trim().min(2).max(80),
-          value: z.string().trim().min(1).max(40),
-          unit: z.string().trim().max(20).optional(),
-          context: z.string().trim().max(220).optional(),
-          source: label,
+          label: clipped(80, 2),
+          value: clipped(60, 1),
+          unit: clipped(20).optional(),
+          context: clipped(220).optional(),
+          // A metric without a usable citation is dropped in resolveBlocks; it
+          // must not reject the whole section (models put prose here).
+          source: label.optional(),
         }),
       )
       .min(1)
-      .max(4),
-    sources: sourceList.min(1),
+      .transform((items) => items.slice(0, 4)),
+    ...grounding,
   }),
   z.object({
     type: z.literal("callout"),
-    tone: z.enum(["info", "warning", "success"]),
-    text: z.string().trim().min(8).max(600),
-    sources: sourceList.min(1),
+    // Models routinely omit tone or invent one; a callout is never worth failing
+    // a whole section over, so unknown values fall back to "info".
+    tone: z
+      .preprocess(
+        (value) => (value === "warning" || value === "success" ? value : "info"),
+        z.enum(["info", "warning", "success"]),
+      )
+      .default("info"),
+    text: clipped(600, 8),
+    ...grounding,
   }),
   z.object({
     type: z.literal("quote"),
     text: z.string().trim().min(20).max(600),
-    attribution: z.string().trim().min(2).max(120),
-    source: label,
+    attribution: clipped(120, 2),
+    source: label.optional(),
+    passageRefs: passageRefs.optional(),
   }),
   z.object({
     type: z.literal("timeline"),
     items: z
       .array(
         z.object({
-          label: z.string().trim().min(2).max(80),
-          timeframe: z.string().trim().min(1).max(60),
-          detail: z.string().trim().min(8).max(300),
-          sources: sourceList.min(1),
+          // Models regularly drop the label or timeframe; the resolve step
+          // falls back rather than losing the whole timeline.
+          label: clipped(80, 2).optional(),
+          timeframe: clipped(60, 1).optional(),
+          detail: clipped(300, 8).optional(),
+          ...grounding,
         }),
       )
       .min(2)
-      .max(6),
-    sources: sourceList.min(1),
+      .transform((items) => items.slice(0, 6)),
+    ...grounding,
   }),
   z.object({
     type: z.literal("comparison"),
-    title: z.string().trim().max(160).optional(),
-    criteria: z.array(z.string().trim().min(2).max(80)).min(1).max(6),
+    title: clipped(160).optional(),
+    criteria: z
+      .array(clipped(80, 2))
+      .min(1)
+      .transform((criteria) => criteria.slice(0, 6)),
     options: z
       .array(
         z.object({
-          name: z.string().trim().min(2).max(80),
-          values: z.array(z.string().trim().max(160)).min(1).max(6),
+          name: clipped(80, 2),
+          values: z
+            .array(clipped(160))
+            .min(1)
+            .transform((values) => values.slice(0, 6)),
         }),
       )
       .min(2)
-      .max(4),
-    sources: sourceList.min(1),
+      .transform((options) => options.slice(0, 4)),
+    ...grounding,
   }),
 ]);
 
 export type GeneratedBlock = z.infer<typeof generatedBlockSchema>;
 
 export const sectionOutputSchema = z.object({
-  blocks: z.array(generatedBlockSchema).min(1).max(12),
+  blocks: z
+    .array(generatedBlockSchema)
+    .min(1)
+    .transform((blocks) => blocks.slice(0, 12)),
   /** 2-4 sentences; used as PPTX speaker notes and kept in the trace. */
-  speakerNotes: z.string().trim().max(1400).default(""),
-  openItems: z.array(z.string().trim().min(3).max(220)).max(8).default([]),
+  speakerNotes: clipped(1_400).default(""),
+  openItems: z.array(clipped(220, 3)).max(8).default([]),
 });
 
 export type SectionOutput = z.infer<typeof sectionOutputSchema>;
@@ -134,17 +235,23 @@ export function extractJsonObject(raw: string): unknown {
 }
 
 function sourcesOf(block: GeneratedBlock): SourceLabel[] {
+  const labels = labelsOf(block);
   switch (block.type) {
     case "heading":
       return [];
     case "metrics":
-      return [...new Set([...block.items.map((item) => item.source), ...block.sources])];
+      return [
+        ...new Set([
+          ...block.items.flatMap((item) => (item.source ? [item.source] : [])),
+          ...labels,
+        ]),
+      ];
     case "quote":
-      return [block.source];
+      return [...new Set([...(block.source ? [block.source] : []), ...labels])];
     case "timeline":
-      return [...new Set([...block.sources, ...block.items.flatMap((item) => item.sources)])];
+      return [...new Set([...labels, ...block.items.flatMap((item) => item.sources)])];
     default:
-      return block.sources;
+      return labels;
   }
 }
 
@@ -179,14 +286,14 @@ export function resolveBlocks(
         resolved.push({ type: "heading", level: block.level, text: block.text });
         break;
       case "paragraph": {
-        const sources = ids(block.sources, true);
+        const sources = ids(sourcesOf(block), true);
         if (sources.length === 0) continue;
         resolved.push({ type: "paragraph", text: block.text, sources });
         break;
       }
       case "bullet_list":
       case "numbered_list": {
-        const sources = ids(block.sources, true);
+        const sources = ids(sourcesOf(block), true);
         if (sources.length === 0) continue;
         const items = block.items.map((item) => {
           const own = item.sources ? ids(item.sources, false) : [];
@@ -199,7 +306,7 @@ export function resolveBlocks(
         break;
       }
       case "table": {
-        const sources = ids(block.sources, true);
+        const sources = ids(sourcesOf(block), true);
         if (sources.length === 0) continue;
         resolved.push({
           type: "table",
@@ -211,9 +318,9 @@ export function resolveBlocks(
         break;
       }
       case "metrics": {
-        const sources = ids(block.sources, true);
+        const sources = ids(sourcesOf(block), true);
         const items = block.items.flatMap((item) => {
-          const [source] = ids([item.source], false);
+          const [source] = item.source ? ids([item.source], false) : [];
           if (!source) return [];
           return [
             {
@@ -234,13 +341,13 @@ export function resolveBlocks(
         break;
       }
       case "callout": {
-        const sources = ids(block.sources, true);
+        const sources = ids(sourcesOf(block), true);
         if (sources.length === 0) continue;
         resolved.push({ type: "callout", tone: block.tone, text: block.text, sources });
         break;
       }
       case "quote": {
-        const [source] = ids([block.source], false);
+        const [source] = ids(sourcesOf(block), false);
         if (!source) continue;
         resolved.push({
           type: "quote",
@@ -251,12 +358,21 @@ export function resolveBlocks(
         break;
       }
       case "timeline": {
-        const sources = ids(block.sources, true);
+        const sources = ids(sourcesOf(block), true);
         const items = block.items.flatMap((item) => {
-          const own = ids(item.sources, false);
-          if (own.length === 0) return [];
+          // An item without its own citation inherits the block's, and a missing
+          // label/timeframe/detail falls back rather than dropping the row.
+          const own = item.sources ? ids(item.sources, false) : [];
+          const itemSources = own.length > 0 ? own : sources;
+          if (itemSources.length === 0) return [];
+          const timeframe = item.timeframe?.trim() || item.label?.trim() || "Phase";
           return [
-            { label: item.label, timeframe: item.timeframe, detail: item.detail, sources: own },
+            {
+              label: item.label?.trim() || timeframe,
+              timeframe,
+              detail: item.detail?.trim() || item.label?.trim() || timeframe,
+              sources: itemSources,
+            },
           ];
         });
         if (items.length === 0) continue;
@@ -268,7 +384,7 @@ export function resolveBlocks(
         break;
       }
       case "comparison": {
-        const sources = ids(block.sources, true);
+        const sources = ids(sourcesOf(block), true);
         if (sources.length === 0) continue;
         resolved.push({
           type: "comparison",

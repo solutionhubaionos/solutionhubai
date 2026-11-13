@@ -3,11 +3,17 @@
  * section goal and the passages retrieved for that section, and returns strict
  * JSON blocks with source labels. Prose is never accepted without a source.
  */
-import { sectionOutputSchema, blockLabels, resolveBlocks } from "./blocks";
+import { sectionOutputSchema, blockLabels, extractJsonObject, resolveBlocks } from "./blocks";
 import type { Block, DocumentSection, ExportBrief } from "./types";
 import type { SectionPlan } from "./outline";
 import type { RetrievedChunk } from "../rag/search";
-import { completeText, type ProviderOptions } from "./provider";
+import {
+  CompletionError,
+  completeWithBudget,
+  failureReasonOf,
+  type ProviderOptions,
+} from "./provider";
+import { llmBudget } from "./llm-budget";
 
 export type SectionGeneration = {
   section: DocumentSection;
@@ -16,15 +22,19 @@ export type SectionGeneration = {
   rawCharacters: number;
 };
 
-const SECTION_SYSTEM = [
+export const SECTION_SYSTEM = [
   "You write one section of a client-ready sales document for Solution Hub.",
   "Return JSON only, no markdown fences.",
   'Shape: {"blocks":[block...],"speakerNotes":string,"openItems":string[]}.',
   "Allowed blocks: heading, paragraph, bullet_list, numbered_list, table, metrics, callout, quote, timeline, comparison.",
-  "Every factual block must carry sources: short labels (S1, S2) supplied with the passages. Metrics items and quotes need their own source. Headings need no source.",
-  "Use ONLY the numbered passages and the brief. Never invent clients, numbers, outcomes, dates, quotes or product names.",
+  "Every factual block must carry passageRefs: the numbers of the passages it uses, for example [1,3]. A block may use sources with S-labels instead. Metrics items and quotes need their own passage reference. Headings need none.",
+  "Use ONLY facts stated in the numbered passages and the brief. No outside knowledge. Never invent clients, numbers, outcomes, dates, quotes or product names.",
+  "No number, count, percentage, price or date may appear unless it is stated verbatim in a cited passage, or comes from the server's labelled assumptions output. Never estimate, extrapolate or round into a new claim.",
+  "Describe each company only as its own passages describe it. Do not add reputation, market position, scale or capability the passages do not state.",
   "Specific beats vague: use a figure with its unit, baseline and timeframe only when a passage states it. If it does not, omit the claim.",
-  'If the passages cannot support the section, write one callout with text starting "[To be confirmed]" and list the gap in openItems. Do not pad.',
+  'If no passage supports any part of the section, write one callout with text starting "[To be confirmed]" and list the gap in openItems. Do not pad.',
+  "When the passages describe the parties but not the exact combined offer, write about each party's documented capability and the proposed structure instead of a placeholder; never invent the combined offer's performance.",
+  "A section is never only a heading: return at least one paragraph, list, table, metric or callout that carries passageRefs.",
   "Write in British English, active voice, confident and concise. No filler, no meta commentary, no reference to passages or sources in the prose.",
   "Do not write a document title, cover, contents or sources section; the server adds those.",
 ].join(" ");
@@ -96,7 +106,7 @@ function passagesForPrompt(chunks: readonly RetrievedChunk[]): string {
     .join("\n\n");
 }
 
-function userPrompt(
+export function sectionUserPrompt(
   plan: SectionPlan,
   brief: ExportBrief,
   chunks: readonly RetrievedChunk[],
@@ -105,7 +115,7 @@ function userPrompt(
   const modeRules =
     brief.mode === "proposal"
       ? "Mode: proposal. Write complete, substantive prose. Headings only if this section has two or more distinct subsections."
-      : "Mode: pitch deck slide. One idea only, a headline that states the takeaway, at most 5 short bullets (under 14 words each). Prefer a metrics or table block when data exists. Speaker notes carry the detail.";
+      : "Mode: pitch deck slide. One idea only, a headline that states the takeaway, plus at least one supporting block: at most 5 short bullets (under 14 words each). Prefer a metrics or table block when data exists. Speaker notes carry the detail.";
 
   return [
     `Section: ${plan.title}`,
@@ -124,7 +134,10 @@ function userPrompt(
       : "",
     "",
     "Quality rules:",
-    "- Every paragraph, list, table, callout and metric cites the S-labels that support it.",
+    "- Every paragraph, list, table, callout and metric cites supporting passages with passageRefs (or S-labels).",
+    "- Headings alone are not a section: include at least one sourced block below the headline.",
+    "- Use ONLY the numbered passages above plus the brief. No outside knowledge, no general market context.",
+    "- Describe a company only as the passages do; do not add scale, reputation or capability they do not state.",
     "- A number may appear only if it appears verbatim in a cited passage. Include units and baselines.",
     "- A quote may appear only if it is verbatim from a cited passage, with attribution to the document.",
     "- No repeated point inside the section. No internal notes, no 'as an AI', no lorem ipsum.",
@@ -174,30 +187,10 @@ function deterministicNotes(section: DocumentSection, chunks: readonly Retrieved
   return `Supporting detail is drawn from ${where}. Keep the discussion anchored on the measured outcomes rather than the narrative.`;
 }
 
-/**
- * Generates one section; throws on unparseable output so the caller can retry
- * with the validator's complaints.
- */
-export async function generateSection(
-  plan: SectionPlan,
-  brief: ExportBrief,
-  chunks: readonly RetrievedChunk[],
-  options: ProviderOptions,
-  previousErrors: readonly string[] = [],
-): Promise<SectionGeneration> {
-  const raw = await completeText(
-    [
-      { role: "system", content: SECTION_SYSTEM },
-      { role: "user", content: userPrompt(plan, brief, chunks, previousErrors) },
-    ],
-    options,
-    brief.mode === "proposal" ? 2300 : 1500,
-    0.25,
-  );
-
-  let parsed: ReturnType<typeof sectionOutputSchema.parse>;
+/** Strict parse first, then the tolerant reader for fenced or chatty output. */
+function parseSectionOutput(raw: string): ReturnType<typeof sectionOutputSchema.parse> {
   try {
-    parsed = sectionOutputSchema.parse(
+    return sectionOutputSchema.parse(
       JSON.parse(
         raw
           .trim()
@@ -205,25 +198,90 @@ export async function generateSection(
           .replace(/```$/, ""),
       ),
     );
+  } catch {
+    return sectionOutputSchema.parse(extractJsonObject(raw));
+  }
+}
+
+/** A parse/zod failure is schema_invalid; provider and token failures keep theirs. */
+function asSchemaFailure(error: unknown): Error {
+  const reason = failureReasonOf(error);
+  if (reason === "provider_error" || reason === "token_limit" || reason === "timeout") {
+    return error instanceof Error ? error : new Error(String(error));
+  }
+  return new CompletionError(
+    "schema_invalid",
+    `section output did not match the schema: ${error instanceof Error ? error.message : String(error)}`,
+  );
+}
+
+/**
+ * Generates one section; throws on unparseable output so the caller can retry
+ * with the validator's complaints.
+ */ export async function generateSection(
+  plan: SectionPlan,
+  brief: ExportBrief,
+  chunks: readonly RetrievedChunk[],
+  options: ProviderOptions,
+  previousErrors: readonly string[] = [],
+): Promise<SectionGeneration> {
+  let parsed: ReturnType<typeof sectionOutputSchema.parse>;
+  const budget = llmBudget("SECTION");
+  const messages = [
+    { role: "system" as const, content: SECTION_SYSTEM },
+    { role: "user" as const, content: sectionUserPrompt(plan, brief, chunks, previousErrors) },
+  ];
+  const outcome = await completeWithBudget(messages, options, budget, 0.25, {
+    label: plan.id,
+  });
+  const raw = outcome.content;
+  try {
+    parsed = parseSectionOutput(raw);
   } catch (error) {
-    // A fenced or chatty response still gets one chance via the tolerant reader.
-    const start = raw.indexOf("{");
-    const end = raw.lastIndexOf("}");
-    if (start === -1 || end <= start) throw new Error("section response contained no JSON");
-    let value: unknown;
+    // One repair attempt: hand the invalid payload and the exact complaint back
+    // to the model before failing the section. Truncated output never reaches
+    // here because completeWithBudget treats a "length" finish as a failure.
+    const complaint = error instanceof Error ? error.message : String(error);
+    // Surface the exact rejection: a systematic schema mismatch is a bug to
+    // fix, not noise, and hiding it made every section pay for a silent repair.
+    options.log?.("section schema repair", {
+      section: plan.id,
+      error: complaint.slice(0, 400),
+    });
+    let repaired: string;
     try {
-      value = JSON.parse(raw.slice(start, end + 1));
-    } catch {
-      throw new Error(`section response was not valid JSON: ${String(error)}`);
+      const repair = await completeWithBudget(
+        [
+          ...messages,
+          { role: "assistant", content: raw.slice(0, 4000) },
+          {
+            role: "user",
+            content: `That JSON was rejected: ${complaint}. Return the corrected JSON object only. Keep every fact and passage reference unchanged, and do not add anything the passages do not support.`,
+          },
+        ],
+        options,
+        budget,
+        0,
+        { label: `${plan.id}:repair` },
+      );
+      repaired = repair.content;
+    } catch (failure) {
+      throw asSchemaFailure(failure);
     }
-    parsed = sectionOutputSchema.parse(value);
+    try {
+      parsed = parseSectionOutput(repaired);
+    } catch (repairError) {
+      throw asSchemaFailure(repairError);
+    }
   }
 
   const labelToChunk = new Map<string, string>(
     chunks.map((chunk, index) => [`S${index + 1}`, chunk.chunkId]),
   );
 
-  // Reject labels the server did not issue rather than letting them through.
+  // Labels the server never issued are dropped by resolveBlocks below (the
+  // block loses its citation and is discarded), so a stray "S16" costs one
+  // block, not the whole section. It is logged because it signals drift.
   const unknownLabels = new Set<string>();
   for (const block of parsed.blocks) {
     for (const label of blockLabels(block)) {
@@ -231,11 +289,17 @@ export async function generateSection(
     }
   }
   if (unknownLabels.size > 0) {
-    throw new Error(`section cited unknown sources: ${[...unknownLabels].join(", ")}`);
+    options.log?.("section unknown labels", {
+      section: plan.id,
+      labels: [...unknownLabels],
+      supplied: labelToChunk.size,
+    });
   }
 
+  // Zero usable blocks is a grounding failure the caller retries with the
+  // validator's complaints. Throwing here used to skip that retry and turn the
+  // section into a placeholder on the first attempt.
   const resolved = resolveBlocks(parsed.blocks, labelToChunk);
-  if (resolved.blocks.length === 0) throw new Error("section cited no usable blocks");
 
   const provisional: DocumentSection = {
     id: plan.id,

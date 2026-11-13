@@ -7,7 +7,15 @@
  * A4 portrait for proposals; 16:9 landscape for pitch mode with one section per
  * page, so a PDF export of a deck reads like slides.
  */
-import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
+import {
+  PDFDocument,
+  StandardFonts,
+  rgb,
+  type PDFFont,
+  type PDFImage,
+  type PDFPage,
+} from "pdf-lib";
+import { chartPng } from "../chart-image";
 import type { Block, DocumentModel, DocumentSection } from "../types";
 import { DOCUMENT_THEME as THEME, hexToRgb } from "../theme";
 
@@ -27,6 +35,8 @@ type Ctx = {
   pages: PDFPage[];
   citations: Map<string, number>;
   isSlide: boolean;
+  /** Charts rasterised once per render and shared by every page that uses them. */
+  chartImages: Map<Block, PDFImage>;
 };
 
 const color = (hex: string) => rgb(...hexToRgb(hex));
@@ -538,6 +548,23 @@ function drawTimeline(
   });
 }
 
+function drawChart(ctx: Ctx, block: Extract<Block, { type: "chart" }>, image: PDFImage): void {
+  const maxWidth = ctx.width - ctx.margin * 2;
+  const width = ctx.isSlide ? maxWidth : Math.min(maxWidth, 470);
+  const height = (width * 675) / 1200;
+  space(ctx, height + 26);
+  ctx.page.drawImage(image, { x: ctx.margin, y: ctx.y - height, width, height });
+  ctx.y -= height + 6;
+  const caption = block.illustrative
+    ? `${block.chart.title} (illustrative - replace with actuals)`
+    : block.chart.title;
+  text(ctx, withCitations(caption, block.sources, ctx), {
+    size: 8.5,
+    color: THEME.colors.muted,
+    gap: 8,
+  });
+}
+
 function drawBlock(ctx: Ctx, block: Block): void {
   switch (block.type) {
     case "heading":
@@ -586,6 +613,46 @@ function drawBlock(ctx: Ctx, block: Block): void {
       drawTable(ctx, headers, rows, block.title, block.sources);
       break;
     }
+    case "chart": {
+      const image = ctx.chartImages.get(block);
+      if (image) {
+        drawChart(ctx, block, image);
+        break;
+      }
+      // A chart that could not be rasterised still shows its data.
+      drawTable(
+        ctx,
+        ["Category", ...block.chart.series.map((series) => series.name)],
+        block.chart.categories.map((category, index) => [
+          category,
+          ...block.chart.series.map((series) => String(series.values[index] ?? "")),
+        ]),
+        block.chart.title,
+        block.sources,
+      );
+      break;
+    }
+    case "kpis":
+      drawTable(
+        ctx,
+        ["Measure", "Value"],
+        block.items.map((item) => [
+          item.note ? `${item.label} - ${item.note}` : item.label,
+          item.value,
+        ]),
+        undefined,
+        block.sources,
+      );
+      break;
+    case "flow":
+      drawTable(
+        ctx,
+        ["Step", "Detail"],
+        block.steps.map((step, index) => [`${index + 1}. ${step.label}`, step.detail ?? ""]),
+        undefined,
+        block.sources,
+      );
+      break;
   }
 }
 
@@ -806,7 +873,18 @@ export async function renderPdf(
     pages: [cover],
     citations,
     isSlide,
+    chartImages: new Map(),
   };
+
+  // Embed the charts before any page is written: pdf-lib images are reusable
+  // across pages, and a failure here falls back to a table in drawBlock.
+  for (const section of model.sections) {
+    for (const block of section.blocks) {
+      if (block.type !== "chart") continue;
+      const png = chartPng(block.chart);
+      if (png) ctx.chartImages.set(block, await doc.embedPng(png));
+    }
+  }
 
   drawCover(ctx, model);
 

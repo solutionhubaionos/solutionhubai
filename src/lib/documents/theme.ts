@@ -30,6 +30,9 @@ export const DOCUMENT_THEME = {
   fonts: {
     heading: "Calibri",
     body: "Calibri",
+    /** Serif headlines over sans copy; both ship with Office and Google Slides. */
+    deckHeading: "Georgia",
+    deckBody: "Calibri",
     /** Standard 14 fonts, always available to the PDF writer. */
     pdfHeading: "Helvetica-Bold",
     pdfBody: "Helvetica",

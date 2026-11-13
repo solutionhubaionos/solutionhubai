@@ -11,11 +11,16 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { buildDocument } from "./build";
+import { buildExportBrief } from "./brief";
+import { buildDraft } from "./intent";
+import { planOutline } from "./outline";
 import {
   DOCUMENT_FORMATS,
   documentFileName,
+  type DocumentDraft,
   type GeneratedDocument,
   type DocumentTrace,
+  type SlidePlan,
 } from "./types";
 
 export type GenerateDocumentResult =
@@ -28,7 +33,13 @@ export type GenerateDocumentResult =
       warnings: string[];
       trace: DocumentTrace;
     }
-  | { ok: false; error: string };
+  | {
+      ok: false;
+      error: string;
+      /** Sections the gate refused; the UI can offer a partial document. */
+      missingSections?: { id: string; title: string; passages: number; reason: string | null }[];
+      canGeneratePartial?: boolean;
+    };
 
 const historySchema = z
   .array(
@@ -50,6 +61,23 @@ const historySchema = z
   .max(40)
   .optional();
 
+const slidePlanSchema = z.object({
+  title: z.string().trim().min(1).max(120),
+  layout: z.enum([
+    "summary",
+    "bullets",
+    "text",
+    "table",
+    "comparison",
+    "kpis",
+    "chart",
+    "flow",
+    "timeline",
+    "raci",
+  ]),
+  section: z.string().trim().max(40).optional(),
+});
+
 const draftSchema = z.object({
   type: z.enum(["pdf", "docx", "pptx"]),
   mode: z.enum(["proposal", "pitch"]),
@@ -60,9 +88,118 @@ const draftSchema = z.object({
   industrySlug: z.string().trim().max(64).nullable(),
   client: z.string().trim().max(120).nullable(),
   sector: z.string().trim().max(80).nullable(),
-  outline: z.array(z.string().trim().min(1).max(120)).min(1).max(10),
+  outline: z.array(z.string().trim().min(1).max(120)).min(1).max(12),
+  outlinePlan: z.array(slidePlanSchema).max(12).optional(),
   prompt: z.string().trim().max(500),
+  allowPartial: z.boolean().optional(),
 });
+
+const planContextSchema = z.object({
+  clients: z.array(z.string().trim().min(1).max(120)).max(20).default([]),
+  personas: z.array(z.string().trim().min(1).max(60)).max(20).default([]),
+  industries: z.array(z.string().trim().min(1).max(64)).max(20).default([]),
+  sectors: z.array(z.string().trim().min(1).max(60)).max(20).default([]),
+  website: z.string().trim().max(200).default(""),
+});
+
+export type PlanDocumentResult =
+  | {
+      ok: true;
+      /** Title derived from the conversation, for the confirm card. */
+      title: string;
+      subtitle: string;
+      subject: string | null;
+      parties: string[];
+      /** Eight to twelve takeaway headings, in order, used verbatim at build time. */
+      outline: string[];
+      /** Title + layout + section tag agreed on the confirm card. */
+      outlinePlan: SlidePlan[];
+      usedFallback: boolean;
+    }
+  | { ok: false; error: string };
+
+/**
+ * Plans the outline the user sees on the confirm card. It reads the whole
+ * conversation through the same brief builder the export uses, asks the model
+ * for takeaway headings tailored to the named parties, and falls back to the
+ * mode's standard structure only when planning fails. The returned list is what
+ * `generateDocument` later treats as the confirmed outline.
+ */
+export const planDocument = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) =>
+    z
+      .object({
+        prompt: z.string().trim().min(2).max(2000),
+        type: z.enum(["pdf", "docx", "pptx"]),
+        mode: z.enum(["proposal", "pitch"]),
+        context: planContextSchema.optional(),
+        industryNames: z.record(z.string()).optional(),
+        history: historySchema,
+      })
+      .parse(data),
+  )
+  .handler(async ({ data, context: requestContext }): Promise<PlanDocumentResult> => {
+    const apiKey = process.env["TOKENFACTORY_API_KEY"];
+    const baseUrl = process.env["TOKENFACTORY_API_BASE"];
+    if (!apiKey || !baseUrl) {
+      return { ok: false, error: "Document planning needs the AI provider configured." };
+    }
+
+    const context = {
+      clients: data.context?.clients ?? [],
+      personas: data.context?.personas ?? [],
+      industries: data.context?.industries ?? [],
+      sectors: data.context?.sectors ?? [],
+      website: data.context?.website ?? "",
+    };
+
+    try {
+      const draft: DocumentDraft = {
+        ...buildDraft({
+          prompt: data.prompt,
+          type: data.type,
+          context,
+          ...(data.industryNames ? { industryNames: data.industryNames } : {}),
+        }),
+        mode: data.mode,
+      };
+      const brief = await buildExportBrief(draft, data.history ?? [], {
+        apiKey,
+        baseUrl,
+        client: requestContext.supabase,
+        log: (event, meta) => console.log(`[DOC] plan ${event}`, meta),
+      });
+      const planned = await planOutline(brief, draft, {
+        apiKey,
+        baseUrl,
+        log: (event, meta) => console.log(`[DOC] plan ${event}`, meta),
+      });
+
+      return {
+        ok: true,
+        title: brief.documentTitle || draft.title,
+        subtitle: draft.subtitle,
+        subject: brief.subject ?? null,
+        parties: [
+          ...new Set([...(brief.partiesInvolved ?? []), ...(brief.keyEntities ?? [])]),
+        ].slice(0, 8),
+        outline: planned.plans.map((plan) => plan.title),
+        outlinePlan: planned.plans.map((plan) => ({
+          title: plan.title,
+          layout: plan.layout ?? "bullets",
+          ...(plan.section ? { section: plan.section } : {}),
+        })),
+        usedFallback: planned.usedFallback,
+      };
+    } catch (error) {
+      console.error(
+        "[DOC] planning failed",
+        error instanceof Error ? (error.stack ?? error.message) : String(error),
+      );
+      return { ok: false, error: "Could not plan that document. Please try again." };
+    }
+  });
 
 export const generateDocument = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -87,6 +224,26 @@ export const generateDocument = createServerFn({ method: "POST" })
         provider: { apiKey, baseUrl },
         log: (event, meta) => console.log(`[DOC] ${event}`, meta),
       });
+
+      // Quality gate: never write a placeholder-filled file. The caller gets
+      // the exact sections that lacked evidence so it can offer a partial deck.
+      if (built.gate.blocked) {
+        console.log("[DOC] quality gate blocked", {
+          coverage: built.gate.coverage,
+          sections: built.gate.sections.map((section) => ({
+            title: section.title,
+            passages: section.passages,
+            generated: section.generated,
+            reason: section.reason,
+          })),
+        });
+        return {
+          ok: false,
+          error: built.gate.message,
+          missingSections: built.gate.sections.filter((section) => section.reason !== null),
+          canGeneratePartial: true,
+        };
+      }
 
       let bytes: Uint8Array;
       let pages: number;

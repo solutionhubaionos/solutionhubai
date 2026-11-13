@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { XMLValidator } from "fast-xml-parser";
 import { unzipSync } from "fflate";
-import type { DocumentModel, SourceRecord } from "../../src/lib/documents/types";
-import { renderDocx } from "../../src/lib/documents/render/docx";
-import { renderPdf } from "../../src/lib/documents/render/pdf";
-import { renderPptx } from "../../src/lib/documents/render/pptx";
+import type { DocumentModel, SourceRecord } from "../src/lib/documents/types";
+import { renderDocx } from "../src/lib/documents/render/docx";
+import { renderPdf } from "../src/lib/documents/render/pdf";
+import { renderPptx } from "../src/lib/documents/render/pptx";
 
 const source = (
   id: string,
@@ -293,9 +293,9 @@ describe("PPTX renderer", () => {
   const parts = unzipSync(bytes);
   const slideNames = Object.keys(parts).filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name));
 
-  test("writes one slide per section plus cover and sources, with notes", () => {
+  test("writes one slide per section plus a cover, with notes", () => {
     expect(slideNames.length).toBe(pages);
-    expect(pages).toBeGreaterThanOrEqual(4);
+    expect(pages).toBeGreaterThanOrEqual(pitchModel().sections.length + 1);
     const coverNotes = decode(parts["ppt/notesSlides/notesSlide1.xml"] ?? new Uint8Array());
     expect(coverNotes).toContain("Open with the outcome");
     const sectionNotes = decode(parts["ppt/notesSlides/notesSlide2.xml"] ?? new Uint8Array());
@@ -303,11 +303,17 @@ describe("PPTX renderer", () => {
     expect(parts["ppt/notesMasters/notesMaster1.xml"]).toBeDefined();
   });
 
-  test("writes a native table and a source footnote", () => {
+  test("writes a native table and keeps sources out of the deck", () => {
     const allSlides = slideNames.map((name) => decode(parts[name] ?? new Uint8Array())).join("\n");
     expect(allSlides).toContain("<a:tbl>");
-    expect(allSlides).toContain("Source:");
-    expect(allSlides).toContain("Zurich claims transformation");
+    expect(allSlides).not.toContain("Source:");
+    expect(allSlides).not.toContain("Zurich claims transformation");
+    const allNotes = Object.keys(parts)
+      .filter((name) => /^ppt\/notesSlides\/notesSlide\d+\.xml$/.test(name))
+      .map((name) => decode(parts[name] ?? new Uint8Array()))
+      .join("\n");
+    expect(allNotes).not.toContain("Source references");
+    expect(allNotes).not.toContain("Zurich claims transformation");
   });
 
   test("every PPTX XML part is well-formed", () => {

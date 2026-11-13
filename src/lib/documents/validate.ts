@@ -7,6 +7,7 @@
 import type { Block, DocumentModel, DocumentSection, ExportBrief, SourceRecord } from "./types";
 import type { SectionPlan } from "./outline";
 import { citedChunkIds } from "./generate";
+import { isAssumptionBlock } from "./assumptions";
 
 export type SectionValidation = {
   errors: string[];
@@ -60,6 +61,19 @@ function normalisedNumbers(text: string): Set<string> {
   return new Set(values.filter(Boolean));
 }
 
+/** Numbers stated anywhere in the block's cited passages plus the item's own. */
+function metricNumbers(
+  cited: readonly string[],
+  itemSource: string,
+  chunksById: ReadonlyMap<string, string>,
+): Set<string> {
+  const numbers = new Set<string>();
+  for (const id of new Set([...cited, itemSource])) {
+    for (const value of normalisedNumbers(chunksById.get(id) ?? "")) numbers.add(value);
+  }
+  return numbers;
+}
+
 export function blockText(block: Block): string {
   switch (block.type) {
     case "heading":
@@ -86,6 +100,18 @@ export function blockText(block: Block): string {
         ...block.criteria,
         ...block.options.flatMap((option) => [option.name, ...option.values]),
       ].join("\n");
+    case "chart":
+      return [
+        block.chart.title,
+        ...block.chart.categories,
+        ...block.chart.series.flatMap((series) => [series.name, ...series.values.map(String)]),
+      ].join("\n");
+    case "kpis":
+      return block.items
+        .map((item) => [item.label, item.value, item.note ?? ""].join(" "))
+        .join("\n");
+    case "flow":
+      return block.steps.map((step) => [step.label, step.detail ?? ""].join(" ")).join("\n");
   }
 }
 
@@ -190,12 +216,14 @@ export function validateSection(
           errors.push(`metric "${item.label}" has no valid source`);
           continue;
         }
-        const source = chunksById.get(item.source) ?? "";
-        const sourceNumbers = normalisedNumbers(source);
+        // A metrics block cites several passages; a figure in any of them is
+        // grounded. Checking only the item's own source rejected valid figures
+        // and cost whole sections.
+        const sourceNumbers = metricNumbers(cited, item.source, chunksById);
         for (const core of allNumbersInText(item.value)) {
           if (!sourceNumbers.has(core)) {
             errors.push(
-              `metric "${item.label}" states ${item.value}, which is not in its cited passage`,
+              `metric "${item.label}" states ${item.value}, which is not in its cited passages`,
             );
           }
         }
@@ -229,7 +257,9 @@ export function validateSection(
       }
     }
 
-    if (block.type !== "heading" && block.type !== "quote") {
+    // The labelled assumptions callout is code-computed arithmetic, not a
+    // sourced claim, so its numbers are exempt from the verbatim check.
+    if (block.type !== "heading" && block.type !== "quote" && !isAssumptionBlock(block)) {
       const unsupported = unsupportedIn(blockText(block), cited, chunksById);
       if (unsupported.length > 0) {
         const chatNumbers = new Set(brief.chatFigures.map(numericCore));
@@ -254,6 +284,7 @@ function validBlock(
   plan: SectionPlan,
 ): boolean {
   if (block.type === "heading") return true;
+  if (isAssumptionBlock(block)) return true;
   if (block.type === "quote") {
     const source = chunksById.get(block.source);
     if (!source) return false;
@@ -262,16 +293,16 @@ function validBlock(
       .toLowerCase()
       .includes(block.text.slice(0, 40).toLowerCase());
   }
+  const cited = citeSet(block);
   if (block.type === "metrics") {
     return block.items.every(
       (item) =>
         chunksById.has(item.source) &&
         allNumbersInText(item.value).every((value) =>
-          normalisedNumbers(chunksById.get(item.source) ?? "").has(value),
+          metricNumbers(cited, item.source, chunksById).has(value),
         ),
     );
   }
-  const cited = citeSet(block);
   if (cited.length === 0 || cited.some((id) => !chunksById.has(id))) return false;
   if (block.type === "table") {
     return (
@@ -308,7 +339,7 @@ export function sanitizeSection(
         (item) =>
           chunksById.has(item.source) &&
           allNumbersInText(item.value).every((value) =>
-            normalisedNumbers(chunksById.get(item.source) ?? "").has(value),
+            metricNumbers(citeSet(block), item.source, chunksById).has(value),
           ),
       );
       if (items.length > 0) kept.push({ type: "metrics", items, sources: block.sources });
@@ -331,7 +362,10 @@ export function sanitizeSection(
         ...section,
         blocks: [placeholder],
         flagged: true,
-        warnings: [...section.warnings, "Section marked [To be confirmed] after validation."],
+        warnings: [
+          ...section.warnings,
+          "Section could not be supported by the retrieved passages.",
+        ],
       },
       removed: section.blocks.length,
     };

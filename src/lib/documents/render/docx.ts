@@ -10,6 +10,7 @@
 import { strToU8, zipSync } from "fflate";
 import type { Block, DocumentModel, DocumentSection } from "../types";
 import { DOCUMENT_THEME as THEME, hexForOoxml } from "../theme";
+import { chartPng } from "../chart-image";
 import { APP_XML, coreXml, escapeXml, XML_HEADER } from "./ooxml";
 
 const W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
@@ -210,10 +211,28 @@ function suffixFor(
   return /\[\d+\]/.test(text) ? "" : citationSuffix(ids, citations);
 }
 
+function imageParagraph(relId: string, name: string, index: number, caption: string): string {
+  const width = 5_943_600;
+  const height = Math.round((width * 675) / 1200);
+  return (
+    `<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="120" w:after="60"/></w:pPr>` +
+    `<w:r><w:drawing><wp:inline xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" distT="0" distB="0" distL="0" distR="0">` +
+    `<wp:extent cx="${width}" cy="${height}"/><wp:docPr id="${100 + index}" name="${escapeXml(name)}"/>` +
+    `<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">` +
+    `<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">` +
+    `<pic:nvPicPr><pic:cNvPr id="${100 + index}" name="${escapeXml(name)}"/><pic:cNvPicPr/></pic:nvPicPr>` +
+    `<pic:blipFill><a:blip r:embed="${relId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
+    `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${width}" cy="${height}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>` +
+    `</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>` +
+    (caption ? paragraph(caption, "Caption", { align: "center", after: 120 }) : "")
+  );
+}
+
 function blocksToXml(
   blocks: readonly Block[],
   citations: ReadonlyMap<string, number>,
   flags: { isLast: boolean },
+  charts: { name: string; png: Uint8Array }[] = [],
 ): string {
   return blocks
     .map((block, index): string => {
@@ -282,6 +301,39 @@ function blocksToXml(
               ...block.options.map((option) => option.values[criterionIndex] ?? ""),
             ]),
             { ...(block.title ? { caption: block.title } : {}) },
+          );
+        case "chart": {
+          const png = chartPng(block.chart);
+          if (!png) {
+            return tableXml(
+              ["Category", ...block.chart.series.map((series) => series.name)],
+              block.chart.categories.map((category, categoryIndex) => [
+                category,
+                ...block.chart.series.map((series) => String(series.values[categoryIndex] ?? "")),
+              ]),
+              { caption: block.chart.title },
+            );
+          }
+          const relId = `rId${6 + charts.length}`;
+          charts.push({ name: `chart-${charts.length + 1}.png`, png });
+          return imageParagraph(
+            relId,
+            `chart-${charts.length}.png`,
+            charts.length,
+            `${block.chart.title}${suffixFor(block.chart.title, block.sources, citations)}`,
+          );
+        }
+        case "kpis":
+          return tableXml(
+            ["Metric", "Value", "Note"],
+            block.items.map((item) => [item.label, item.value, item.note ?? ""]),
+            { caption: "Key figures" },
+          );
+        case "flow":
+          return tableXml(
+            ["Step", "Detail"],
+            block.steps.map((step) => [step.label, step.detail ?? ""]),
+            { caption: "How it works" },
           );
         default:
           void index;

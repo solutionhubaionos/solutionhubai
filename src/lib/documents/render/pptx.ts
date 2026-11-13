@@ -1,15 +1,19 @@
 /**
  * PowerPoint renderer for pitch mode. Consumes the validated model: one idea
- * per slide, takeaway headlines, at most five short bullets, native tables,
- * metric cards with real source figures, a visual timeline, per-slide source
- * footnotes and speaker notes with chunk references.
+ * per slide, takeaway headlines, at most five short bullets, native tables and
+ * charts, KPI and flow cards, speaker notes.
+ *
+ * The deck is client-facing and carries the argument only: no citation marks,
+ * no source list and no references to the library. Provenance stays in the
+ * trace and in the DOCX/PDF exports.
  *
  * The theme, master and layout come from the generated skeleton; every slide
  * body is written here so layout does not depend on template placeholders.
  */
 import { strToU8, unzipSync, zipSync } from "fflate";
-import type { Block, DocumentModel, DocumentSection, SourceRecord } from "../types";
+import type { Block, ChartSpec, DocumentModel, DocumentSection } from "../types";
 import { DOCUMENT_THEME as THEME, hexForOoxml } from "../theme";
+import { sectionTagFor } from "../outline";
 import { DECK_SKELETON_BASE64 } from "../templates/deckSkeleton";
 import { APP_XML, coreXml, escapeXml, XML_HEADER } from "./ooxml";
 
@@ -20,12 +24,18 @@ const NS =
 
 const SLIDE_WIDTH = 12192000;
 const SLIDE_HEIGHT = 6858000;
-const MARGIN = 609600;
+const MARGIN = 685800;
 const CONTENT_WIDTH = SLIDE_WIDTH - MARGIN * 2;
-const TOP = 457200;
-const BODY_TOP = 1554480;
-const BODY_BOTTOM = 5852160;
+const TOP = 480000;
+const BODY_TOP = 1920000;
+const BODY_BOTTOM = 5820000;
 const BODY_HEIGHT = BODY_BOTTOM - BODY_TOP;
+/** Serif headlines and figures, sans body copy. */
+const HEADING_FONT = THEME.fonts.deckHeading;
+const BODY_FONT = THEME.fonts.deckBody;
+/** Pale blue used on the dark cover and for accents over ink. */
+const COVER_ACCENT = "#8FC0E4";
+const COVER_MUTED = "#C9D6E2";
 
 type Box = { x: number; y: number; w: number; h: number };
 
@@ -46,17 +56,77 @@ function solid(hex: string): string {
   return `<a:solidFill>${rgb(hex)}</a:solidFill>`;
 }
 
-type Run = { text: string; size: number; bold?: boolean; italic?: boolean; color?: string };
+type Run = {
+  text: string;
+  size: number;
+  bold?: boolean;
+  italic?: boolean;
+  color?: string;
+  font?: string;
+  /** Letter spacing in hundredths of a point, used by the uppercase labels. */
+  spacing?: number;
+};
 
-function paragraphXml(
-  run: Run,
-  options: {
-    bullet?: boolean;
-    level?: number;
-    align?: "l" | "ctr" | "r";
-    spaceBefore?: number;
-  } = {},
-): string {
+type ParagraphOptions = {
+  bullet?: boolean;
+  level?: number;
+  align?: "l" | "ctr" | "r";
+  spaceBefore?: number;
+  /** Line height as a percentage, e.g. 115 for 1.15. */
+  lineSpacing?: number;
+  bulletColor?: string;
+};
+
+function runXml(run: Run): string {
+  const attrs = [
+    `lang="en-GB"`,
+    `sz="${Math.round(run.size * 100)}"`,
+    run.bold ? 'b="1"' : "",
+    run.italic ? 'i="1"' : "",
+    run.spacing ? `spc="${run.spacing}"` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return (
+    `<a:r><a:rPr ${attrs} dirty="0">` +
+    (run.color ? solid(run.color) : "") +
+    `<a:latin typeface="${run.font ?? BODY_FONT}"/></a:rPr>` +
+    `<a:t>${escapeXml(run.text)}</a:t></a:r>`
+  );
+}
+
+/**
+ * Slide copy never cites: S-labels and bracketed passage numbers are prompt
+ * plumbing, so they are removed wherever they survive in the model output.
+ */
+function cleanCopy(text: string): string {
+  return text
+    .replace(/\[S\d+\]/g, "")
+    .replace(/\[\d+(?:\s*,\s*\d+)*\]/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+/**
+ * `**phrase**` becomes a bold accent run, so a slide can highlight the one
+ * figure or phrase that matters without adding another text box.
+ */
+function runsFor(run: Run): string {
+  return cleanCopy(run.text)
+    .split(/(\*\*[^*]+\*\*)/g)
+    .filter(Boolean)
+    .map((part) => {
+      const emphasised = part.length > 4 && part.startsWith("**") && part.endsWith("**");
+      const text = emphasised ? part.slice(2, -2) : part;
+      if (!text) return "";
+      return runXml(
+        emphasised ? { ...run, text, bold: true, color: THEME.colors.accent } : { ...run, text },
+      );
+    })
+    .join("");
+}
+
+function paragraphXml(run: Run, options: ParagraphOptions = {}): string {
   const level = options.level ?? 0;
   const attrs = [
     options.align ? `algn="${options.align}"` : "",
@@ -65,25 +135,28 @@ function paragraphXml(
     .filter(Boolean)
     .join(" ");
   const children = [
+    options.lineSpacing ? `<a:lnSpc><a:spcPct val="${options.lineSpacing * 1000}"/></a:lnSpc>` : "",
     options.spaceBefore ? `<a:spcBef><a:spcPts val="${options.spaceBefore}"/></a:spcBef>` : "",
-    options.bullet ? '<a:buChar char="&#8226;"/>' : "",
+    options.bullet && options.bulletColor ? `<a:buClr>${rgb(options.bulletColor)}</a:buClr>` : "",
+    options.bullet ? '<a:buFont typeface="Arial"/><a:buChar char="&#8226;"/>' : "",
   ].join("");
   const pPr =
     attrs || children ? `<a:pPr${attrs ? ` ${attrs}` : ""}>${children}</a:pPr>` : "<a:pPr/>";
-  const rAttrs = [
-    `lang="en-GB"`,
-    `sz="${Math.round(run.size * 100)}"`,
-    run.bold ? 'b="1"' : "",
-    run.italic ? 'i="1"' : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
-  const rChildren =
-    (run.color ? solid(run.color) : "") + `<a:latin typeface="${THEME.fonts.body}"/>`;
-  return (
-    `<a:p>${pPr}` +
-    `<a:r><a:rPr ${rAttrs} dirty="0">${rChildren}</a:rPr><a:t>${escapeXml(run.text)}</a:t></a:r></a:p>`
-  );
+  return `<a:p>${pPr}${runsFor(run)}</a:p>`;
+}
+
+/** Multi-line copy keeps its paragraph breaks instead of one long run. */
+function paragraphsFor(
+  text: string,
+  run: Omit<Run, "text">,
+  options: ParagraphOptions = {},
+): string {
+  return text
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line) => paragraphXml({ ...run, text: line }, options))
+    .join("");
 }
 
 function textBody(
@@ -105,6 +178,7 @@ function shape(
     fill?: string;
     line?: string;
     rounded?: boolean;
+    ellipse?: boolean;
     paragraphs?: string;
     anchor?: "t" | "ctr" | "b";
   } = {},
@@ -112,7 +186,7 @@ function shape(
   return (
     `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="${escapeXml(name)}"/><p:cNvSpPr${options.paragraphs ? ' txBox="1"' : ""}/><p:nvPr/></p:nvSpPr>` +
     `<p:spPr><a:xfrm><a:off x="${Math.round(box.x)}" y="${Math.round(box.y)}"/><a:ext cx="${Math.round(box.w)}" cy="${Math.round(box.h)}"/></a:xfrm>` +
-    `<a:prstGeom prst="${options.rounded ? "roundRect" : "rect"}"><a:avLst/></a:prstGeom>` +
+    `<a:prstGeom prst="${options.ellipse ? "ellipse" : options.rounded ? "roundRect" : "rect"}"><a:avLst/></a:prstGeom>` +
     (options.fill ? solid(options.fill) : "<a:noFill/>") +
     (options.line ? `<a:ln w="12700">${solid(options.line)}</a:ln>` : "") +
     `</p:spPr>` +
@@ -120,6 +194,58 @@ function shape(
       ? textBody(options.paragraphs, options.anchor ? { anchor: options.anchor } : {})
       : '<p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang="en-GB"/></a:p></p:txBody>') +
     `</p:sp>`
+  );
+}
+
+/** Charts written in this render, shared by every slide that uses one. */
+type ChartContext = { parts: string[]; rels: { part: number; relId: string }[] };
+
+/** Native, editable DrawingML chart: bar, stacked bar, line, pie or doughnut. */
+function chartXml(spec: ChartSpec): string {
+  const count = spec.categories.length;
+  const categories = spec.categories
+    .map((category, index) => `<c:pt idx="${index}"><c:v>${escapeXml(category)}</c:v></c:pt>`)
+    .join("");
+  const series = spec.series
+    .map((entry, seriesIndex) => {
+      const values = entry.values
+        .map((value, index) => `<c:pt idx="${index}"><c:v>${value}</c:v></c:pt>`)
+        .join("");
+      return (
+        `<c:ser><c:idx val="${seriesIndex}"/><c:order val="${seriesIndex}"/>` +
+        `<c:tx><c:strRef><c:f>Series${seriesIndex + 1}</c:f><c:strCache><c:ptCount val="1"/><c:pt idx="0"><c:v>${escapeXml(entry.name)}</c:v></c:pt></c:strCache></c:strRef></c:tx>` +
+        `<c:cat><c:strRef><c:f>Categories</c:f><c:strCache><c:ptCount val="${count}"/>${categories}</c:strCache></c:strRef></c:cat>` +
+        `<c:val><c:numRef><c:f>Values${seriesIndex + 1}</c:f><c:numCache><c:formatCode>General</c:formatCode><c:ptCount val="${count}"/>${values}</c:numCache></c:numRef></c:val>` +
+        `</c:ser>`
+      );
+    })
+    .join("");
+
+  const plot =
+    spec.type === "line"
+      ? `<c:lineChart><c:grouping val="standard"/><c:varyColors val="0"/>${series}<c:marker val="1"/></c:lineChart>`
+      : spec.type === "pie"
+        ? `<c:pieChart><c:varyColors val="1"/>${series}<c:firstSliceAng val="0"/></c:pieChart>`
+        : spec.type === "doughnut"
+          ? `<c:doughnutChart><c:varyColors val="1"/>${series}<c:firstSliceAng val="0"/><c:holeSize val="50"/></c:doughnutChart>`
+          : `<c:barChart><c:barDir val="col"/><c:grouping val="${spec.type === "stacked_bar" ? "stacked" : "clustered"}"/><c:varyColors val="0"/>${series}<c:gapWidth val="60"/><c:overlap val="${spec.type === "stacked_bar" ? "100" : "-10"}"/></c:barChart>`;
+
+  return (
+    `${XML_HEADER}<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">` +
+    `<c:roundedCorners val="0"/>` +
+    `<c:chart><c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr lang="en-GB" sz="1200" b="1">${solid(THEME.colors.ink)}<a:latin typeface="${BODY_FONT}"/></a:rPr><a:t>${escapeXml(spec.title)}</a:t></a:r></a:p></c:rich></c:tx><c:overlay val="0"/></c:title><c:autoTitleDeleted val="0"/>` +
+    `<c:plotArea><c:layout/>${plot}</c:plotArea>` +
+    `<c:legend><c:legendPos val="b"/><c:overlay val="0"/></c:legend><c:plotVisOnly val="1"/><c:dispBlanksAs val="gap"/></c:chart></c:chartSpace>`
+  );
+}
+
+function chartFrame(id: number, relId: string, box: Box): string {
+  return (
+    `<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="${id}" name="Chart ${id}"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr>` +
+    `<p:xfrm><a:off x="${Math.round(box.x)}" y="${Math.round(box.y)}"/><a:ext cx="${Math.round(box.w)}" cy="${Math.round(box.h)}"/></p:xfrm>` +
+    `<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart">` +
+    `<c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="${relId}"/>` +
+    `</a:graphicData></a:graphic></p:graphicFrame>`
   );
 }
 
@@ -133,30 +259,36 @@ function tableXml(
   const columns = headers.length;
   const columnWidth = box.w / columns;
   const rowCount = rows.length + 1;
-  const rowHeight = Math.min(420000, Math.floor(box.h / Math.max(rowCount, 1)));
-  const fontSize = options.compact ? 900 : rowCount > 7 ? 950 : 1050;
+  const rowHeight = Math.min(430000, Math.floor(box.h / Math.max(rowCount, 1)));
+  const fontSize = options.compact ? 950 : rowCount > 7 ? 1000 : 1100;
+  const rule = `<a:lnB w="6350" cap="flat" cmpd="sng" algn="ctr"><a:solidFill>${rgb(THEME.colors.border)}</a:solidFill></a:lnB>`;
 
-  const cell = (value: string, header: boolean, index: number): string => {
+  const cell = (value: string, header: boolean, index: number, column: number): string => {
     const fill = header
-      ? THEME.colors.accent
+      ? THEME.colors.accentDark
       : index % 2 === 1
         ? THEME.colors.surface
         : THEME.colors.white;
+    const color = header ? THEME.colors.white : THEME.colors.ink;
+    const bold = header || column === 0;
     return (
       `<a:tc><a:txBody><a:bodyPr/><a:lstStyle/><a:p>` +
-      `<a:r><a:rPr lang="en-GB" sz="${fontSize}"${header ? ' b="1"' : ""}>` +
-      `${solid(header ? THEME.colors.white : THEME.colors.ink)}<a:latin typeface="${THEME.fonts.body}"/></a:rPr>` +
-      `<a:t>${escapeXml(value.slice(0, 180))}</a:t></a:r></a:p></a:txBody>` +
-      `<a:tcPr marL="72000" marR="72000" marT="36000" marB="36000" anchor="ctr">${solid(fill)}</a:tcPr></a:tc>`
+      `<a:r><a:rPr lang="en-GB" sz="${fontSize}"${bold ? ' b="1"' : ""}>` +
+      `${solid(color)}<a:latin typeface="${header ? HEADING_FONT : BODY_FONT}"/></a:rPr>` +
+      `<a:t>${escapeXml(cleanCopy(value).slice(0, 180))}</a:t></a:r></a:p></a:txBody>` +
+      `<a:tcPr marL="108000" marR="108000" marT="45000" marB="45000" anchor="ctr">` +
+      `${header ? "" : rule}${solid(fill)}</a:tcPr></a:tc>`
     );
   };
 
-  const headerRow = `<a:tr h="${rowHeight}">${headers.map((header) => cell(header, true, 0)).join("")}</a:tr>`;
+  const headerRow = `<a:tr h="${rowHeight}">${headers
+    .map((header, column) => cell(header, true, 0, column))
+    .join("")}</a:tr>`;
   const bodyRows = rows
     .map(
       (row, index) =>
         `<a:tr h="${rowHeight}">${headers
-          .map((_, column) => cell(row[column] ?? "", false, index))
+          .map((_header, column) => cell(row[column] ?? "", false, index, column))
           .join("")}</a:tr>`,
     )
     .join("");
@@ -170,9 +302,9 @@ function tableXml(
   );
 }
 
-function slideXml(shapes: string): string {
+function slideXml(shapes: string, background: string = THEME.colors.white): string {
   return (
-    `${XML_HEADER}<p:sld ${NS}><p:cSld><p:bg><p:bgPr>${solid(THEME.colors.white)}<a:effectLst/></p:bgPr></p:bg><p:spTree>` +
+    `${XML_HEADER}<p:sld ${NS}><p:cSld><p:bg><p:bgPr>${solid(background)}<a:effectLst/></p:bgPr></p:bg><p:spTree>` +
     `<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>` +
     `<p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>` +
     `${shapes}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>`
@@ -201,6 +333,12 @@ function estimateHeight(block: Block): number {
       return 1_650_000;
     case "comparison":
       return (block.criteria.length + 1) * 300000 + 330000;
+    case "chart":
+      return 2_400_000;
+    case "kpis":
+      return 1_350_000;
+    case "flow":
+      return 1_500_000;
   }
 }
 
@@ -226,46 +364,17 @@ export function paginateBlocks(blocks: readonly Block[], budget = BODY_HEIGHT): 
   return pages.length > 0 ? pages : [[]];
 }
 
-function sourceLabel(source: SourceRecord, index: number): string {
-  const where = source.slide ? `slide ${source.slide}` : source.page ? `page ${source.page}` : "";
-  return `[${index + 1}] ${source.title}${where ? `, ${where}` : ""}`;
-}
-
-function sectionSources(section: DocumentSection, model: DocumentModel): SourceRecord[] {
-  const ids = new Set<string>();
-  for (const block of section.blocks) {
-    switch (block.type) {
-      case "heading":
-        break;
-      case "quote":
-        ids.add(block.source);
-        break;
-      case "metrics":
-        block.items.forEach((item) => ids.add(item.source));
-        block.sources.forEach((id) => ids.add(id));
-        break;
-      case "timeline":
-        block.sources.forEach((id) => ids.add(id));
-        block.items.forEach((item) => item.sources.forEach((id) => ids.add(id)));
-        break;
-      default:
-        block.sources.forEach((id) => ids.add(id));
-    }
-  }
-  return model.sources.filter((source) => ids.has(source.chunkId));
-}
-
-/** S-labels are prompt plumbing; speaker notes should read like notes. */
+/** S-labels and citation marks are prompt plumbing; notes should read as notes. */
 function stripSourceLabels(text: string): string {
   return text
     .replace(/\[S\d+\]/g, "")
+    .replace(/\[\d+(?:\s*,\s*\d+)*\]/g, "")
     .replace(/\s{2,}/g, " ")
     .trim();
 }
 
-function notesXml(text: string, references: string): string {
-  const body = `${text}${references ? `\n\nSource references: ${references}` : ""}`;
-  const paragraphs = body
+function notesXml(text: string): string {
+  const paragraphs = text
     .split("\n")
     .filter((line) => line.trim().length > 0)
     .map((line) => paragraphXml({ text: line, size: 12, color: THEME.colors.ink }))
@@ -282,11 +391,15 @@ function notesXml(text: string, references: string): string {
 
 function coverSlide(model: DocumentModel): string {
   const shapes: string[] = [];
+  const inset = MARGIN + 91440;
+  const title = model.cover.title.replace(/\*\*/g, "");
+  const titleSize = title.length > 64 ? 30 : title.length > 44 ? 34 : 40;
+
   shapes.push(
     shape(
       2,
-      "Accent band",
-      { x: 0, y: 0, w: SLIDE_WIDTH, h: 182880 },
+      "Accent stripe",
+      { x: 0, y: 0, w: 167640, h: SLIDE_HEIGHT },
       { fill: THEME.colors.accent },
     ),
   );
@@ -294,13 +407,14 @@ function coverSlide(model: DocumentModel): string {
     shape(
       3,
       "Brand",
-      { x: MARGIN, y: 480000, w: 3_000_000, h: 260000 },
+      { x: inset, y: 560000, w: 5_000_000, h: 240000 },
       {
         paragraphs: paragraphXml({
           text: THEME.brand.wordmark,
-          size: 11,
+          size: 9,
           bold: true,
-          color: THEME.colors.accent,
+          color: COVER_MUTED,
+          spacing: 360,
         }),
       },
     ),
@@ -308,14 +422,15 @@ function coverSlide(model: DocumentModel): string {
   shapes.push(
     shape(
       4,
-      "Title",
-      { x: MARGIN, y: 1_700_000, w: CONTENT_WIDTH, h: 1_900_000 },
+      "Kicker",
+      { x: inset, y: 1_900_000, w: CONTENT_WIDTH - 91440, h: 260000 },
       {
         paragraphs: paragraphXml({
-          text: model.cover.title,
-          size: 38,
+          text: model.mode === "pitch" ? "PITCH DECK" : "PROPOSAL",
+          size: 9,
           bold: true,
-          color: THEME.colors.ink,
+          color: COVER_ACCENT,
+          spacing: 280,
         }),
       },
     ),
@@ -323,84 +438,93 @@ function coverSlide(model: DocumentModel): string {
   shapes.push(
     shape(
       5,
-      "Accent rule",
-      { x: MARGIN, y: 3_650_000, w: 914400, h: 36000 },
-      { fill: THEME.colors.accent },
+      "Title",
+      { x: inset, y: 2_240_000, w: CONTENT_WIDTH - 1_400_000, h: 1_600_000 },
+      {
+        paragraphs: paragraphXml(
+          {
+            text: title,
+            size: titleSize,
+            bold: true,
+            color: THEME.colors.white,
+            font: HEADING_FONT,
+          },
+          { lineSpacing: 95 },
+        ),
+      },
     ),
   );
   shapes.push(
     shape(
       6,
-      "Subtitle",
-      { x: MARGIN, y: 3_800_000, w: CONTENT_WIDTH - 900000, h: 700000 },
+      "Accent rule",
+      { x: inset, y: 4_020_000, w: 1_100_000, h: 42000 },
       {
-        paragraphs: paragraphXml({
-          text: model.cover.subtitle,
-          size: 17,
-          color: THEME.colors.muted,
-        }),
+        fill: COVER_ACCENT,
       },
     ),
   );
+  if (model.cover.subtitle) {
+    shapes.push(
+      shape(
+        7,
+        "Subtitle",
+        { x: inset, y: 4_200_000, w: CONTENT_WIDTH - 1_800_000, h: 620000 },
+        {
+          paragraphs: paragraphXml(
+            {
+              text: model.cover.subtitle,
+              size: 15,
+              color: COVER_MUTED,
+            },
+            { lineSpacing: 120 },
+          ),
+        },
+      ),
+    );
+  }
   const meta = [
     model.cover.client ? `Prepared for ${model.cover.client}` : null,
     model.cover.industry,
     model.cover.date,
   ]
     .filter((value): value is string => Boolean(value))
-    .join("  ·  ");
-  shapes.push(
-    shape(
-      7,
-      "Meta",
-      { x: MARGIN, y: 4_650_000, w: CONTENT_WIDTH, h: 320000 },
-      {
-        paragraphs: paragraphXml({ text: meta, size: 12, color: THEME.colors.muted }),
-      },
-    ),
-  );
-  if (model.cover.request) {
+    .join("   ·   ");
+  if (meta) {
     shapes.push(
       shape(
         8,
-        "Request panel",
-        { x: MARGIN, y: 5_250_000, w: CONTENT_WIDTH, h: 760000 },
+        "Meta",
+        { x: inset, y: 5_400_000, w: CONTENT_WIDTH - 91440, h: 300000 },
         {
-          fill: THEME.colors.surface,
           paragraphs: paragraphXml({
-            text: `Request: ${model.cover.request.slice(0, 220)}`,
+            text: meta,
             size: 10,
-            italic: true,
-            color: THEME.colors.muted,
+            bold: true,
+            color: COVER_ACCENT,
+            spacing: 140,
           }),
         },
       ),
     );
   }
-  if (model.sources.length > 0) {
-    shapes.push(
-      shape(
-        9,
-        "Cover source note",
-        { x: MARGIN, y: 6_240_000, w: CONTENT_WIDTH, h: 240000 },
-        {
-          paragraphs: paragraphXml({
-            text: `Built from ${model.sources.length} documents in the Solution Hub library`,
-            size: 8,
-            color: THEME.colors.muted,
-          }),
-        },
-      ),
-    );
-  }
-  return slideXml(shapes.join(""));
+  shapes.push(
+    shape(
+      9,
+      "Footer rule",
+      { x: inset, y: 6_060_000, w: CONTENT_WIDTH - 91440, h: 12700 },
+      {
+        fill: "#2A3F57",
+      },
+    ),
+  );
+  return slideXml(shapes.join(""), THEME.colors.ink);
 }
 
 function renderBlocks(
   blocks: readonly Block[],
-  section: DocumentSection,
-  citations: Map<string, number>,
   startId: number,
+  charts: ChartContext = { parts: [], rels: [] },
 ): { shapes: string; nextId: number } {
   const shapes: string[] = [];
   let id = startId;
@@ -418,7 +542,11 @@ function renderBlocks(
             "Body",
             { x: MARGIN, y, w: CONTENT_WIDTH, h: Math.max(height, 400000) },
             {
-              paragraphs: paragraphXml({ text: block.text, size: 15, color: THEME.colors.ink }),
+              paragraphs: paragraphsFor(
+                block.text,
+                { size: 16, color: THEME.colors.ink },
+                { lineSpacing: 130 },
+              ),
             },
           ),
         );
@@ -428,16 +556,23 @@ function renderBlocks(
       case "bullet_list":
       case "numbered_list": {
         const count = block.items.filter((item) => (item.level ?? 0) === 0).length;
-        const size = count <= 3 ? 19 : count <= 5 ? 17 : 14;
+        const size = count <= 3 ? 20 : count <= 5 ? 18 : 15;
         const paragraphs = block.items
-          .map((item) =>
-            paragraphXml(
-              { text: item.text, size, color: THEME.colors.ink },
-              { bullet: block.type === "bullet_list", level: item.level ?? 0, spaceBefore: 500 },
-            ),
-          )
+          .map((item) => {
+            const level = item.level ?? 0;
+            return paragraphXml(
+              { text: item.text.replace(/\s*\n\s*/g, " "), size, color: THEME.colors.ink },
+              {
+                bullet: block.type === "bullet_list",
+                level,
+                spaceBefore: 700,
+                lineSpacing: 115,
+                bulletColor: level === 0 ? THEME.colors.accent : THEME.colors.muted,
+              },
+            );
+          })
           .join("");
-        const height = Math.min(block.items.length * 340000 + 120000, BODY_BOTTOM - y);
+        const height = Math.min(block.items.length * 400000 + 140000, BODY_BOTTOM - y);
         shapes.push(
           shape(
             id++,
@@ -453,9 +588,9 @@ function renderBlocks(
       }
       case "metrics": {
         const columns = Math.min(3, block.items.length);
-        const gap = 120000;
+        const gap = 140000;
         const cardWidth = (CONTENT_WIDTH - gap * (columns - 1)) / columns;
-        const cardHeight = Math.min(1_250_000, BODY_BOTTOM - y);
+        const cardHeight = Math.min(1_300_000, BODY_BOTTOM - y);
         block.items.slice(0, 3).forEach((item, index) => {
           const x = MARGIN + index * (cardWidth + gap);
           shapes.push(
@@ -473,38 +608,236 @@ function renderBlocks(
           shapes.push(
             shape(
               id++,
+              `Metric accent ${index + 1}`,
+              { x, y: y + 100000, w: 48000, h: cardHeight - 200000 },
+              { fill: THEME.colors.accent },
+            ),
+          );
+          shapes.push(
+            shape(
+              id++,
               `Metric value ${index + 1}`,
-              { x, y: y + 80000, w: cardWidth, h: 420000 },
+              { x, y: y + 120000, w: cardWidth, h: 520000 },
               {
                 paragraphs: paragraphXml({
                   text: `${item.value}${item.unit ? ` ${item.unit}` : ""}`,
                   size: 30,
+                  bold: true,
+                  font: HEADING_FONT,
+                  color: THEME.colors.accentDark,
+                }),
+              },
+            ),
+          );
+          shapes.push(
+            shape(
+              id++,
+              `Metric label ${index + 1}`,
+              { x, y: y + 620000, w: cardWidth, h: Math.max(320000, cardHeight - 680000) },
+              {
+                paragraphs: [
+                  paragraphXml({
+                    text: item.label,
+                    size: 10.5,
+                    bold: true,
+                    color: THEME.colors.ink,
+                  }),
+                  item.context
+                    ? paragraphXml({ text: item.context, size: 9, color: THEME.colors.muted })
+                    : "",
+                ].join(""),
+              },
+            ),
+          );
+        });
+        y += cardHeight + 180000;
+        break;
+      }
+      case "chart": {
+        const height = Math.max(1_900_000, Math.min(estimateHeight(block), BODY_BOTTOM - y));
+        const part = charts.parts.length + 1;
+        charts.parts.push(chartXml(block.chart));
+        const relId = `rId${100 + part}`;
+        charts.rels.push({ part, relId });
+        shapes.push(chartFrame(id++, relId, { x: MARGIN, y, w: CONTENT_WIDTH, h: height }));
+        if (block.illustrative) {
+          shapes.push(
+            shape(
+              id++,
+              "Illustrative badge",
+              {
+                x: MARGIN + CONTENT_WIDTH - 2_100_000,
+                y: y + 60000,
+                w: 2_050_000,
+                h: 250000,
+              },
+              {
+                fill: THEME.colors.accentSoft,
+                rounded: true,
+                paragraphs: paragraphXml({
+                  text: "ILLUSTRATIVE - REPLACE WITH ACTUALS",
+                  size: 8,
                   bold: true,
                   color: THEME.colors.accentDark,
                 }),
               },
             ),
           );
-          const citation = citations.get(item.source) ? ` [${citations.get(item.source)}]` : "";
+        }
+        y += height + 120000;
+        break;
+      }
+      case "kpis": {
+        const items = block.items.slice(0, 4);
+        const columns = Math.min(2, items.length);
+        const gap = 160000;
+        const cardWidth = (CONTENT_WIDTH - gap * (columns - 1)) / columns;
+        const cardHeight = Math.min(1_100_000, (BODY_BOTTOM - y - gap) / 2);
+        items.forEach((item, index) => {
+          const cardY = y + Math.floor(index / columns) * (cardHeight + gap);
+          const x = MARGIN + (index % columns) * (cardWidth + gap);
           shapes.push(
             shape(
               id++,
-              `Metric label ${index + 1}`,
-              { x, y: y + 520000, w: cardWidth, h: cardHeight - 560000 },
+              `KPI ${index + 1}`,
+              { x, y: cardY, w: cardWidth, h: cardHeight },
+              {
+                fill: THEME.colors.surface,
+                line: THEME.colors.border,
+                rounded: true,
+              },
+            ),
+          );
+          shapes.push(
+            shape(
+              id++,
+              `KPI accent ${index + 1}`,
+              { x, y: cardY + 100000, w: 48000, h: cardHeight - 200000 },
+              { fill: THEME.colors.accent },
+            ),
+          );
+          shapes.push(
+            shape(
+              id++,
+              `KPI value ${index + 1}`,
+              { x, y: cardY + 80000, w: cardWidth, h: 500000 },
+              {
+                paragraphs: paragraphXml({
+                  text: item.value,
+                  size: 32,
+                  bold: true,
+                  font: HEADING_FONT,
+                  color: THEME.colors.accentDark,
+                }),
+              },
+            ),
+          );
+          shapes.push(
+            shape(
+              id++,
+              `KPI label ${index + 1}`,
+              { x, y: cardY + 580000, w: cardWidth, h: Math.max(300000, cardHeight - 620000) },
               {
                 paragraphs: [
-                  paragraphXml({ text: item.label, size: 11, bold: true, color: THEME.colors.ink }),
-                  item.context
+                  paragraphXml({
+                    text: item.label.slice(0, 120),
+                    size: 10.5,
+                    bold: true,
+                    color: THEME.colors.ink,
+                  }),
+                  item.note
                     ? paragraphXml({
-                        text: `${item.context}${citation}`,
+                        text: item.note.slice(0, 120),
                         size: 9,
                         color: THEME.colors.muted,
                       })
-                    : paragraphXml({ text: citation.trim(), size: 9, color: THEME.colors.muted }),
+                    : "",
                 ].join(""),
               },
             ),
           );
+        });
+        y += Math.ceil(items.length / columns) * (cardHeight + gap);
+        break;
+      }
+      case "flow": {
+        const steps = block.steps.slice(0, 5);
+        const gap = 130000;
+        const cardWidth = (CONTENT_WIDTH - gap * (steps.length - 1)) / Math.max(1, steps.length);
+        const cardHeight = Math.min(1_450_000, BODY_BOTTOM - y);
+        steps.forEach((step, index) => {
+          const x = MARGIN + index * (cardWidth + gap);
+          shapes.push(
+            shape(
+              id++,
+              `Step ${index + 1}`,
+              { x, y, w: cardWidth, h: cardHeight },
+              { fill: THEME.colors.accentSoft, rounded: true },
+            ),
+          );
+          shapes.push(
+            shape(
+              id++,
+              `Step number ${index + 1}`,
+              { x: x + 160000, y: y + 160000, w: 340000, h: 340000 },
+              {
+                fill: THEME.colors.accent,
+                ellipse: true,
+                paragraphs: paragraphXml(
+                  {
+                    text: String(index + 1),
+                    size: 11,
+                    bold: true,
+                    color: THEME.colors.white,
+                  },
+                  { align: "ctr" },
+                ),
+              },
+            ),
+          );
+          shapes.push(
+            shape(
+              id++,
+              `Step label ${index + 1}`,
+              { x: x + 160000, y: y + 580000, w: cardWidth - 300000, h: 420000 },
+              {
+                paragraphs: paragraphXml(
+                  {
+                    text: step.label,
+                    size: 12.5,
+                    bold: true,
+                    font: HEADING_FONT,
+                    color: THEME.colors.accentDark,
+                  },
+                  { lineSpacing: 110 },
+                ),
+              },
+            ),
+          );
+          if (step.detail) {
+            shapes.push(
+              shape(
+                id++,
+                `Step detail ${index + 1}`,
+                {
+                  x: x + 160000,
+                  y: y + 1_000_000,
+                  w: cardWidth - 300000,
+                  h: Math.max(300000, cardHeight - 1_060_000),
+                },
+                {
+                  paragraphs: paragraphXml(
+                    {
+                      text: step.detail.slice(0, 150),
+                      size: 9.5,
+                      color: THEME.colors.ink,
+                    },
+                    { lineSpacing: 115 },
+                  ),
+                },
+              ),
+            );
+          }
         });
         y += cardHeight + 160000;
         break;
@@ -512,41 +845,41 @@ function renderBlocks(
       case "table": {
         const rows = block.rows.slice(0, 8);
         const rowCount = rows.length + 1;
-        const height = Math.min(Math.max(rowCount * 300000, 700000), BODY_BOTTOM - y);
+        const height = Math.min(Math.max(rowCount * 330000, 720000), BODY_BOTTOM - y);
         if (block.caption) {
           shapes.push(
             shape(
               id++,
               "Table caption",
-              { x: MARGIN, y, w: CONTENT_WIDTH, h: 240000 },
+              { x: MARGIN, y, w: CONTENT_WIDTH, h: 260000 },
               {
                 paragraphs: paragraphXml({
                   text: block.caption,
-                  size: 9,
+                  size: 9.5,
                   italic: true,
                   color: THEME.colors.muted,
                 }),
               },
             ),
           );
-          y += 240000;
+          y += 260000;
         }
         shapes.push(
           tableXml(id++, block.headers, rows, { x: MARGIN, y, w: CONTENT_WIDTH, h: height }),
         );
-        y += height + 140000;
+        y += height + 160000;
         break;
       }
       case "timeline": {
         const items = block.items.slice(0, 4);
-        const gap = 120000;
+        const gap = 170000;
         const cardWidth = (CONTENT_WIDTH - gap * (items.length - 1)) / items.length;
-        const cardHeight = Math.min(1_350_000, BODY_BOTTOM - y);
+        const cardHeight = Math.min(1_550_000, BODY_BOTTOM - y);
         shapes.push(
           shape(
             id++,
             "Timeline rail",
-            { x: MARGIN, y: y + 260000, w: CONTENT_WIDTH, h: 25400 },
+            { x: MARGIN, y: y + 305000, w: CONTENT_WIDTH, h: 19050 },
             { fill: THEME.colors.border },
           ),
         );
@@ -556,10 +889,10 @@ function renderBlocks(
             shape(
               id++,
               `Timeline dot ${index + 1}`,
-              { x, y: y + 205000, w: 125000, h: 125000 },
+              { x, y: y + 232000, w: 165000, h: 165000 },
               {
                 fill: THEME.colors.accent,
-                rounded: true,
+                ellipse: true,
               },
             ),
           );
@@ -567,27 +900,40 @@ function renderBlocks(
             shape(
               id++,
               `Timeline text ${index + 1}`,
-              { x, y: y + 400000, w: cardWidth, h: cardHeight - 400000 },
+              { x, y: y + 470000, w: cardWidth, h: Math.max(400000, cardHeight - 470000) },
               {
                 paragraphs: [
                   paragraphXml({
-                    text: item.timeframe,
-                    size: 9,
+                    text: item.timeframe.toUpperCase(),
+                    size: 8.5,
                     bold: true,
                     color: THEME.colors.accent,
+                    spacing: 140,
                   }),
-                  paragraphXml({ text: item.label, size: 13, bold: true, color: THEME.colors.ink }),
-                  paragraphXml({
-                    text: item.detail.slice(0, 140),
-                    size: 9,
-                    color: THEME.colors.muted,
-                  }),
+                  paragraphXml(
+                    {
+                      text: item.label,
+                      size: 13,
+                      bold: true,
+                      font: HEADING_FONT,
+                      color: THEME.colors.ink,
+                    },
+                    { lineSpacing: 110 },
+                  ),
+                  paragraphXml(
+                    {
+                      text: item.detail.slice(0, 150),
+                      size: 9.5,
+                      color: THEME.colors.muted,
+                    },
+                    { lineSpacing: 115 },
+                  ),
                 ].join(""),
               },
             ),
           );
         });
-        y += cardHeight + 120000;
+        y += cardHeight + 160000;
         break;
       }
       case "callout": {
@@ -598,18 +944,36 @@ function renderBlocks(
             : block.tone === "success"
               ? "#E9F5EF"
               : THEME.colors.accentSoft;
+        const bar =
+          block.tone === "warning"
+            ? THEME.colors.warning
+            : block.tone === "success"
+              ? THEME.colors.success
+              : THEME.colors.accent;
+        shapes.push(
+          shape(id++, "Callout", { x: MARGIN, y, w: CONTENT_WIDTH, h: height }, { fill }),
+        );
+        shapes.push(
+          shape(id++, "Callout bar", { x: MARGIN, y, w: 54000, h: height }, { fill: bar }),
+        );
         shapes.push(
           shape(
             id++,
-            "Callout",
-            { x: MARGIN, y, w: CONTENT_WIDTH, h: height },
+            "Callout text",
+            { x: MARGIN + 54000, y, w: CONTENT_WIDTH - 54000, h: height },
             {
-              fill,
-              paragraphs: paragraphXml({ text: block.text, size: 14, color: THEME.colors.ink }),
+              paragraphs: paragraphXml(
+                {
+                  text: block.text,
+                  size: 14.5,
+                  color: THEME.colors.ink,
+                },
+                { lineSpacing: 120 },
+              ),
             },
           ),
         );
-        y += height + 120000;
+        y += height + 140000;
         break;
       }
       case "quote": {
@@ -618,7 +982,7 @@ function renderBlocks(
           shape(
             id++,
             "Quote bar",
-            { x: MARGIN, y, w: 45720, h: height },
+            { x: MARGIN, y, w: 64000, h: height },
             { fill: THEME.colors.accent },
           ),
         );
@@ -626,21 +990,31 @@ function renderBlocks(
           shape(
             id++,
             "Quote",
-            { x: MARGIN + 90000, y, w: CONTENT_WIDTH - 90000, h: height },
+            { x: MARGIN + 160000, y, w: CONTENT_WIDTH - 160000, h: height },
             {
               paragraphs: [
+                paragraphXml(
+                  {
+                    text: `"${block.text}"`,
+                    size: 18,
+                    italic: true,
+                    font: HEADING_FONT,
+                    color: THEME.colors.ink,
+                  },
+                  { lineSpacing: 120 },
+                ),
                 paragraphXml({
-                  text: `"${block.text}"`,
-                  size: 16,
-                  italic: true,
-                  color: THEME.colors.ink,
+                  text: block.attribution.toUpperCase(),
+                  size: 8.5,
+                  bold: true,
+                  color: THEME.colors.muted,
+                  spacing: 140,
                 }),
-                paragraphXml({ text: block.attribution, size: 9, color: THEME.colors.muted }),
               ].join(""),
             },
           ),
         );
-        y += height + 120000;
+        y += height + 140000;
         break;
       }
       case "comparison": {
@@ -665,8 +1039,6 @@ function renderBlocks(
     }
   }
 
-  // Keep the footer area clear even if the content budget was optimistic.
-  void section;
   return { shapes: shapes.join(""), nextId: id };
 }
 
@@ -674,85 +1046,127 @@ function contentSlide(
   section: DocumentSection,
   blocks: readonly Block[],
   index: number,
-  model: DocumentModel,
-  citations: Map<string, number>,
   continuation: boolean,
+  charts: ChartContext,
 ): string {
   const shapes: string[] = [];
+  const title = section.title.replace(/\*\*/g, "");
+  const eyebrow = `${sectionTagFor(section.kind)}${continuation ? " · continued" : ""}`;
+
   shapes.push(
     shape(
       2,
-      "Accent band",
-      { x: 0, y: 0, w: SLIDE_WIDTH, h: 91440 },
+      "Accent stripe",
+      { x: 0, y: 0, w: 118872, h: SLIDE_HEIGHT },
       { fill: THEME.colors.accent },
     ),
   );
   shapes.push(
     shape(
       3,
-      "Brand",
-      { x: MARGIN, y: TOP - 120000, w: 2_600_000, h: 200000 },
+      "Eyebrow",
+      { x: MARGIN, y: TOP, w: CONTENT_WIDTH - 3_400_000, h: 240000 },
       {
         paragraphs: paragraphXml({
-          text: THEME.brand.wordmark,
-          size: 9,
+          text: eyebrow.toUpperCase(),
+          size: 8.5,
           bold: true,
           color: THEME.colors.accent,
+          spacing: 240,
         }),
       },
     ),
   );
-  const headline = continuation ? `${section.title} (cont.)` : section.title;
   shapes.push(
     shape(
       4,
-      "Headline",
-      { x: MARGIN, y: TOP + 200000, w: CONTENT_WIDTH, h: 880000 },
+      "Brand",
+      { x: SLIDE_WIDTH - MARGIN - 3_400_000, y: TOP, w: 3_400_000, h: 240000 },
       {
-        paragraphs: paragraphXml({ text: headline, size: 25, bold: true, color: THEME.colors.ink }),
+        paragraphs: paragraphXml(
+          {
+            text: THEME.brand.wordmark,
+            size: 8,
+            bold: true,
+            color: THEME.colors.border,
+            spacing: 240,
+          },
+          { align: "r" },
+        ),
       },
     ),
   );
   shapes.push(
     shape(
       5,
+      "Headline",
+      { x: MARGIN, y: 770000, w: CONTENT_WIDTH, h: 1_000_000 },
+      {
+        paragraphs: paragraphXml(
+          {
+            text: title,
+            size: title.length > 64 ? 22 : 25,
+            bold: true,
+            color: THEME.colors.ink,
+            font: HEADING_FONT,
+          },
+          { lineSpacing: 92 },
+        ),
+      },
+    ),
+  );
+  shapes.push(
+    shape(
+      6,
       "Headline rule",
-      { x: MARGIN, y: TOP + 1_090_000, w: 640080, h: 30000 },
-      { fill: THEME.colors.accent },
+      { x: MARGIN, y: 1_790_000, w: 760000, h: 30000 },
+      {
+        fill: THEME.colors.accent,
+      },
     ),
   );
 
-  const body = renderBlocks(blocks, section, citations, 6);
+  const body = renderBlocks(blocks, 7, charts);
   shapes.push(body.shapes);
 
-  const sources = sectionSources(section, model).slice(0, 2);
-  const footnote = sources
-    .map(
-      (source) =>
-        `${source.title}${source.slide ? ` · slide ${source.slide}` : source.page ? ` · p.${source.page}` : ""}`,
-    )
-    .join("  |  ");
   shapes.push(
     shape(
       body.nextId + 1,
-      "Source footnote",
-      { x: MARGIN, y: BODY_BOTTOM + 180000, w: CONTENT_WIDTH - 800000, h: 260000 },
-      {
-        paragraphs: paragraphXml({
-          text: footnote ? `Source: ${footnote}` : THEME.footer,
-          size: 8,
-          color: THEME.colors.muted,
-        }),
-      },
+      "Footer rule",
+      { x: MARGIN, y: BODY_BOTTOM + 150000, w: CONTENT_WIDTH, h: 9525 },
+      { fill: THEME.colors.border },
     ),
   );
   shapes.push(
     shape(
       body.nextId + 2,
-      "Slide number",
-      { x: SLIDE_WIDTH - MARGIN - 500000, y: BODY_BOTTOM + 180000, w: 500000, h: 260000 },
+      "Footer",
+      { x: MARGIN, y: BODY_BOTTOM + 190000, w: 4_000_000, h: 240000 },
       {
-        paragraphs: paragraphXml({ text: String(index + 1), size: 8, color: THEME.colors.muted }),
+        paragraphs: paragraphXml({
+          text: "Confidential",
+          size: 8,
+          color: THEME.colors.muted,
+          spacing: 120,
+        }),
+      },
+    ),
+  );
+  shapes.push(
+    shape(
+      body.nextId + 3,
+      "Slide number",
+      { x: SLIDE_WIDTH - MARGIN - 600000, y: BODY_BOTTOM + 190000, w: 600000, h: 240000 },
+      {
+        paragraphs: paragraphXml(
+          {
+            text: String(index + 1),
+            size: 9,
+            bold: true,
+            color: THEME.colors.muted,
+          },
+          { align: "r" },
+        ),
       },
     ),
   );
@@ -760,94 +1174,16 @@ function contentSlide(
   return slideXml(shapes.join(""));
 }
 
-function sectionNotes(section: DocumentSection, model: DocumentModel): string {
-  const references = sectionSources(section, model)
-    .slice(0, 4)
-    .map((source) => sourceLabel(source, model.sources.indexOf(source)))
-    .join("; ");
+function sectionNotes(section: DocumentSection): string {
   const text =
     stripSourceLabels(section.speakerNotes) ||
     "Talk through the evidence behind this slide and invite the client's reaction before moving on.";
-  return notesXml(text, references);
+  return notesXml(text);
 }
 
 function coverNotes(model: DocumentModel): string {
   const client = model.cover.client ?? "the client";
-  return notesXml(
-    `Open with the outcome for ${client} and the decision you want by the end. This deck is built from ${model.sources.length} documents in the Solution Hub library.`,
-    "",
-  );
-}
-
-function sourcesNotes(model: DocumentModel): string {
-  return notesXml(
-    "Use this slide if the client asks where a figure came from. Every figure in the deck is traceable to these documents.",
-    model.sources.map((source, index) => sourceLabel(source, index)).join("; "),
-  );
-}
-
-function sourcesSlide(
-  sources: readonly SourceRecord[],
-  part: number,
-  totalParts: number,
-  startIndex: number,
-): string {
-  const shapes: string[] = [];
-  shapes.push(
-    shape(
-      2,
-      "Accent band",
-      { x: 0, y: 0, w: SLIDE_WIDTH, h: 91440 },
-      { fill: THEME.colors.accent },
-    ),
-  );
-  shapes.push(
-    shape(
-      3,
-      "Brand",
-      { x: MARGIN, y: TOP - 120000, w: 2_600_000, h: 200000 },
-      {
-        paragraphs: paragraphXml({
-          text: THEME.brand.wordmark,
-          size: 9,
-          bold: true,
-          color: THEME.colors.accent,
-        }),
-      },
-    ),
-  );
-  shapes.push(
-    shape(
-      4,
-      "Title",
-      { x: MARGIN, y: 700000, w: CONTENT_WIDTH, h: 600000 },
-      {
-        paragraphs: paragraphXml({
-          text: part === 0 ? "Sources" : `Sources (${part + 1}/${totalParts})`,
-          size: 28,
-          bold: true,
-          color: THEME.colors.ink,
-        }),
-      },
-    ),
-  );
-  const list = sources
-    .map((source, index) =>
-      paragraphXml(
-        { text: sourceLabel(source, startIndex + index), size: 10, color: THEME.colors.ink },
-        { bullet: true, spaceBefore: 500 },
-      ),
-    )
-    .join("");
-  shapes.push(
-    shape(
-      5,
-      "Source list",
-      { x: MARGIN, y: 1_500_000, w: CONTENT_WIDTH, h: 4_600_000 },
-      { paragraphs: list },
-    ),
-  );
-  return slideXml(shapes.join(""));
+  return notesXml(`Open with the outcome for ${client} and the decision you want by the end.`);
 }
 
 function presentationXml(slideCount: number): string {
@@ -879,12 +1215,18 @@ function presentationRels(slideCount: number): string {
   );
 }
 
-function slideRels(index: number): string {
+function slideRels(index: number, charts: readonly { part: number; relId: string }[] = []): string {
+  const chartRels = charts
+    .map(
+      ({ part, relId }) =>
+        `<Relationship Id="${relId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart${part}.xml"/>`,
+    )
+    .join("");
   return (
     `${XML_HEADER}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
     `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>` +
     `<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide" Target="../notesSlides/notesSlide${index + 1}.xml"/>` +
-    `</Relationships>`
+    `${chartRels}</Relationships>`
   );
 }
 
@@ -897,7 +1239,7 @@ function notesRels(index: number): string {
   );
 }
 
-function contentTypes(slideCount: number): string {
+function contentTypes(slideCount: number, chartCount = 0): string {
   const slides = Array.from(
     { length: slideCount },
     (_, index) =>
@@ -914,6 +1256,11 @@ function contentTypes(slideCount: number): string {
     `<Override PartName="/ppt/notesMasters/notesMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.notesMaster+xml"/>` +
     `<Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>` +
     `${slides}` +
+    Array.from(
+      { length: chartCount },
+      (_, index) =>
+        `<Override PartName="/ppt/charts/chart${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>`,
+    ).join("") +
     `<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>` +
     `<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>` +
     `</Types>`
@@ -948,28 +1295,24 @@ const NOTES_MASTER_RELS =
 
 /** One slide per outline section; long sections continue onto another slide. */
 export function renderPptx(model: DocumentModel): { bytes: Uint8Array; pages: number } {
-  const citations = new Map(model.sources.map((source, index) => [source.chunkId, index + 1]));
   const slides: string[] = [coverSlide(model)];
   const notes: string[] = [coverNotes(model)];
+  const chartParts: string[] = [];
+  // One entry per slide; only the cover starts without chart relationships.
+  const chartRelsBySlide: { part: number; relId: string }[][] = [[]];
 
   for (const section of model.sections) {
     const pages = paginateBlocks(section.blocks);
     pages.forEach((blocks, index) => {
-      slides.push(contentSlide(section, blocks, slides.length, model, citations, index > 0));
-      notes.push(sectionNotes(section, model));
+      const charts: ChartContext = { parts: chartParts, rels: [] };
+      slides.push(contentSlide(section, blocks, slides.length, index > 0, charts));
+      chartRelsBySlide.push(charts.rels);
+      notes.push(sectionNotes(section));
     });
   }
 
-  const sourcesPerSlide = 10;
-  const sourceParts = Math.max(1, Math.ceil(model.sources.length / sourcesPerSlide));
-  for (let part = 0; part < sourceParts; part += 1) {
-    const chunk = model.sources.slice(part * sourcesPerSlide, (part + 1) * sourcesPerSlide);
-    slides.push(sourcesSlide(chunk, part, sourceParts, part * sourcesPerSlide));
-    notes.push(sourcesNotes(model));
-  }
-
   const parts: Record<string, Uint8Array> = { ...unzipSync(base64ToBytes(DECK_SKELETON_BASE64)) };
-  parts["[Content_Types].xml"] = strToU8(contentTypes(slides.length));
+  parts["[Content_Types].xml"] = strToU8(contentTypes(slides.length, chartParts.length));
   parts["_rels/.rels"] = strToU8(PACKAGE_RELS);
   parts["ppt/presentation.xml"] = strToU8(presentationXml(slides.length));
   parts["ppt/_rels/presentation.xml.rels"] = strToU8(presentationRels(slides.length));
@@ -977,9 +1320,14 @@ export function renderPptx(model: DocumentModel): { bytes: Uint8Array; pages: nu
   parts["ppt/notesMasters/_rels/notesMaster1.xml.rels"] = strToU8(NOTES_MASTER_RELS);
   parts["docProps/core.xml"] = strToU8(coreXml(model.cover.title));
   parts["docProps/app.xml"] = strToU8(APP_XML);
+  chartParts.forEach((xml, chartIndex) => {
+    parts[`ppt/charts/chart${chartIndex + 1}.xml`] = strToU8(xml);
+  });
   slides.forEach((slide, index) => {
     parts[`ppt/slides/slide${index + 1}.xml`] = strToU8(slide);
-    parts[`ppt/slides/_rels/slide${index + 1}.xml.rels`] = strToU8(slideRels(index));
+    parts[`ppt/slides/_rels/slide${index + 1}.xml.rels`] = strToU8(
+      slideRels(index, chartRelsBySlide[index] ?? []),
+    );
     parts[`ppt/notesSlides/notesSlide${index + 1}.xml`] = strToU8(notes[index] ?? notes[0] ?? "");
     parts[`ppt/notesSlides/_rels/notesSlide${index + 1}.xml.rels`] = strToU8(notesRels(index));
   });

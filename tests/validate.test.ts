@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import type { Block, DocumentSection, ExportBrief } from "../../src/lib/documents/types";
-import type { SectionPlan } from "../../src/lib/documents/outline";
-import { sanitizeSection, validateModel, validateSection } from "../../src/lib/documents/validate";
+import type { Block, DocumentSection, ExportBrief } from "../src/lib/documents/types";
+import type { SectionPlan } from "../src/lib/documents/outline";
+import { sanitizeSection, validateModel, validateSection } from "../src/lib/documents/validate";
 
 const chunks = new Map<string, string>([
   [

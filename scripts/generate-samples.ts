@@ -18,7 +18,7 @@ import {
   createMockSupabase,
   deckHistory,
   draftFor,
-} from "../tests/documents/fixtures";
+} from "../tests/fixtures";
 
 const provider = {
   apiKey: "sample",
