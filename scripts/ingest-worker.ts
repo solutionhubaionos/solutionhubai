@@ -54,9 +54,10 @@ import {
   type EmbeddedChunk,
 } from "../src/lib/rag/ingest";
 import { describeImage } from "../src/lib/rag/vision";
+import { extractChunkFacts, type FactEntityType, type KnownEntity } from "../src/lib/rag/facts";
 
 const BUCKET = "content";
-const SUPPORTED = new Set(["pdf", "docx", "pptx"]);
+const SUPPORTED = new Set(["pdf", "docx", "pptx", "xlsx"]);
 
 type Job = {
   id: string;
@@ -316,6 +317,51 @@ async function replaceChunks(
   return Number(data ?? 0);
 }
 
+/** Canonical names used to link a chunk to entities. Missing 0023 is not fatal. */
+async function knownFactEntities(client: SupabaseClient): Promise<KnownEntity[]> {
+  const { data, error } = await client.from("entities").select("name, entity_type").limit(2_000);
+  if (error || !data) return [];
+  return (data as { name: string; entity_type: string }[]).flatMap((row) => {
+    const type = row.entity_type;
+    if (type !== "company" && type !== "airport" && type !== "concept") return [];
+    return [{ name: row.name, type: type as FactEntityType }];
+  });
+}
+
+/**
+ * Writes claims and entity links for a committed document. This is auxiliary:
+ * a missing 0023 or a failed attach must never turn a successfully indexed file
+ * into a failed job.
+ */
+async function attachChunkFacts(
+  client: SupabaseClient,
+  job: Job,
+  rows: readonly { chunk_index: number; content: string }[],
+  context: { title: string; customerName: string | null },
+): Promise<void> {
+  try {
+    const known = await knownFactEntities(client);
+    const facts = rows.map((row) =>
+      extractChunkFacts({
+        chunkIndex: row.chunk_index,
+        text: row.content,
+        knownEntities: known,
+        sourceTitle: context.title,
+        customerName: context.customerName,
+      }),
+    );
+    const { error } = await client.rpc("worker_attach_chunk_facts", {
+      p_content_id: job.content_id,
+      p_facts: facts,
+    });
+    if (error) throw new Error(error.message);
+  } catch (error) {
+    console.warn(
+      `job ${job.id} facts not attached: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
 /** Records the failure; retries until the database's three-attempt limit, then stays failed. */
 async function fail(job: Job, message: string): Promise<"queued" | "failed"> {
   const client = await getClient();
@@ -499,6 +545,7 @@ async function processJob(job: Job, counters: Counters) {
   }));
 
   const replacedCount = await replaceChunks(job, payload, contentHash, "ready", warnings);
+  await attachChunkFacts(client, job, rows, context);
 
   counters.ready += 1;
   const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);

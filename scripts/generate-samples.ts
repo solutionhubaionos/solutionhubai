@@ -61,7 +61,7 @@ async function main() {
     provider,
     now: new Date("2026-11-11T00:00:00Z"),
   });
-  const pptx = renderPptx(deck.model);
+  const pptx = await renderPptx(deck.model);
 
   writeFileSync("samples/zurich-claims-proposal.pdf", pdf.bytes);
   writeFileSync("samples/zurich-claims-proposal.docx", docx.bytes);

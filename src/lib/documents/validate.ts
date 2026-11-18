@@ -7,14 +7,33 @@
 import type { Block, DocumentModel, DocumentSection, ExportBrief, SourceRecord } from "./types";
 import type { SectionPlan } from "./outline";
 import { citedChunkIds } from "./generate";
-import { isAssumptionBlock } from "./assumptions";
-
 export type SectionValidation = {
   errors: string[];
   warnings: string[];
   /** Figures asserted in chat but absent from the library. */
   conflicts: string[];
 };
+
+/**
+ * Reader-facing copy states what is there, never what the library lacks. A
+ * client-ready document does not tell the client which data we failed to find;
+ * the recommendation carries the gap instead, and the gap is an open item.
+ */
+const MISSING_DATA_PHRASES: readonly RegExp[] = [
+  /\[to be confirmed\]/i,
+  /\bno library evidence\b/i,
+  /\bcould not find\b/i,
+  /\bcouldn['\u2019]t find\b/i,
+  /\bno (?:data|information|evidence|passages|sources?)\b/i,
+  /\bnot (?:present|available|found) in the library\b/i,
+  /\bnothing (?:was )?(?:found|available)\b/i,
+  /\bwe (?:were unable|did not find|have no)\b/i,
+  /\bmissing evidence\b/i,
+];
+
+export function statesMissingData(text: string): boolean {
+  return MISSING_DATA_PHRASES.some((pattern) => pattern.test(text));
+}
 
 const BANNED = [
   /\blorem ipsum\b/i,
@@ -24,9 +43,8 @@ const BANNED = [
   /\bas an AI\b/i,
   /\binsert .* here\b/i,
   /\bclick here\b/i,
+  ...MISSING_DATA_PHRASES,
 ];
-
-const ALLOWED_PLACEHOLDER = /\[to be confirmed\]/i;
 
 const NUMBER_PATTERN =
   /(?:[£$€]\s?\d[\d,]*(?:\.\d+)?\s?(?:bn|m|k)?|\b\d[\d,]*(?:\.\d+)?\s?(?:%|percent|days?|weeks?|months?|years?|hours?|minutes?|x|times|bn|fte|countries|markets|sites|clients|customers|projects|users)(?![a-z])|\b\d{1,3}(?:,\d{3})+\b|\b\d{4,}\b|\b\d+\.\d+\b)/gi;
@@ -172,7 +190,7 @@ export function validateSection(
   if (BANNED.some((pattern) => pattern.test(text))) {
     errors.push("the section contains placeholder or meta text");
   }
-  if (!ALLOWED_PLACEHOLDER.test(text) && /\[[a-z ]{3,30}\]/i.test(text)) {
+  if (/\[[a-z ]{3,30}\]/i.test(text)) {
     warnings.push("the section contains an unexplained bracketed note");
   }
 
@@ -257,9 +275,7 @@ export function validateSection(
       }
     }
 
-    // The labelled assumptions callout is code-computed arithmetic, not a
-    // sourced claim, so its numbers are exempt from the verbatim check.
-    if (block.type !== "heading" && block.type !== "quote" && !isAssumptionBlock(block)) {
+    if (block.type !== "heading" && block.type !== "quote") {
       const unsupported = unsupportedIn(blockText(block), cited, chunksById);
       if (unsupported.length > 0) {
         const chatNumbers = new Set(brief.chatFigures.map(numericCore));
@@ -284,7 +300,6 @@ function validBlock(
   plan: SectionPlan,
 ): boolean {
   if (block.type === "heading") return true;
-  if (isAssumptionBlock(block)) return true;
   if (block.type === "quote") {
     const source = chunksById.get(block.source);
     if (!source) return false;
@@ -314,8 +329,10 @@ function validBlock(
   if (block.type === "comparison") {
     return block.options.every((option) => option.values.length === block.criteria.length);
   }
+  // Copy that announces a gap in the library is removed rather than shipped.
+  if (statesMissingData(blockText(block))) return false;
   const unsupported = unsupportedIn(blockText(block), cited, chunksById);
-  if (unsupported.length > 0 && !ALLOWED_PLACEHOLDER.test(blockText(block))) {
+  if (unsupported.length > 0) {
     void brief;
     void plan;
     return false;
@@ -351,21 +368,15 @@ export function sanitizeSection(
 
   const content = kept.filter((block) => block.type !== "heading");
   if (content.length === 0) {
-    const placeholder: Block = {
-      type: "callout",
-      tone: "warning",
-      text: `[To be confirmed] ${plan.title} could not be supported by the passages retrieved from the library. Add the missing evidence before sending this document.`,
-      sources: [],
-    };
+    // Nothing survived grounding, so the section is left out of the document
+    // rather than filled with a note about the library's gaps. The caller sees
+    // the flag and can list it as an open item for the team.
     return {
       section: {
         ...section,
-        blocks: [placeholder],
+        blocks: [],
         flagged: true,
-        warnings: [
-          ...section.warnings,
-          "Section could not be supported by the retrieved passages.",
-        ],
+        warnings: [...section.warnings, `No grounded copy for "${plan.title}"; section omitted.`],
       },
       removed: section.blocks.length,
     };
@@ -443,7 +454,7 @@ export function validateModel(
 }
 
 function sectionSourceIdsOf(section: DocumentSection): string[] {
-  return [...new Set(section.blocks.flatMap(citedChunkIds))];
+  return [...new Set([...section.blocks.flatMap(citedChunkIds), ...(section.evidenceIds ?? [])])];
 }
 
 export function sourceRecords(

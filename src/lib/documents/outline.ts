@@ -257,7 +257,7 @@ function goalFor(kind: SectionKind, brief: ExportBrief): string {
     case "assumptions":
       return "State the dependencies and client responsibilities that must hold for the plan.";
     case "pricing":
-      return "Include commercial figures only if a source states them; otherwise mark [To be confirmed].";
+      return "Include commercial figures only if a source states them; otherwise propose the commercial approach and what it depends on, without naming a price.";
     case "next_steps":
       return "Recommend a specific, low-risk next step and who needs to decide.";
     case "why_us":
@@ -430,13 +430,25 @@ export const OUTLINE_SYSTEM = [
   'Return JSON only: {"sections":[{"title":string,"layout":string,"section":string,"goal":string,"query":string}]}.',
   `Layouts: ${LAYOUTS.join(", ")}. Pick the layout the content needs.`,
   "Suggested coverage for a proposal: cover; executive summary; context; parties; offer/journey; collaboration pointers; operating model; economics; shortcomings and risks; governance and KPIs; roadmap; the ask; open questions. Adapt, merge or drop freely for this request; a pitch is tighter.",
-  "Write each title as the takeaway of that slide in at most twelve words, not a generic label.",
+  "A proposal must cover: context, parties, how the collaboration works, commercial/economics, risks and shortcomings, next steps and sources. A party slide gets one row per party named in the brief, describing the capability we can evidence or the role we propose for them; never announce that a party is undocumented.",
+  "Build next steps as a text-led slide with three to five proposed actions, not a table. Do not tag next steps, risks or the ask as Evidence, and never end the content on a chart with no takeaway.",
+  "Keep tables in check: no more than two consecutive table slides and roughly one table per three slides, unless the brief explicitly asks for tables. Each fact, figure or passage should be the primary content of one slide; do not plan two slides around the same numbers.",
+  "Write each title as the takeaway of that slide in at most twelve words, not a generic label. When the brief names a target client, localise the title to that client by name (or 'you'): it must sound like a claim about this client's business, not copy that would fit any company.",
+  "Never title a slide after what is missing. Do not write 'unspecified', 'not stated', 'unknown', 'no data' or similar; where the brief leaves something open, title the slide by what we propose or recommend about it.",
   "If the brief asks for a separate pointers table or shortcomings table, include a slide for each.",
   "Use only the allowed kinds supplied. Do not invent facts, clients or figures.",
   "Do not add a cover, contents or sources section; those are added automatically.",
 ].join(" ");
 
 /** Keeps the confirmed order and wording; layouts are validated, never invented. */
+/**
+ * A heading that only says what the brief does not cover is not a takeaway: the
+ * reader came for the argument, not for an inventory of gaps. Such titles fall
+ * back to the section's own default wording.
+ */
+const REPORTS_A_GAP =
+  /\b(?:unspecified|not specified|not stated|unknown|undocumented|no data|no information|to be confirmed)\b/i;
+
 export function normalizePlans(
   incoming: readonly {
     kind?: string | undefined;
@@ -459,10 +471,11 @@ export function normalizePlans(
       ? (entry.layout as SlideLayout)
       : defaultLayout(kind);
     const queries = sectionQueries(kind, entry.title, brief);
+    const title = entry.title.trim();
     return {
       id: `s${index + 1}`,
       kind,
-      title: entry.title.trim(),
+      title: REPORTS_A_GAP.test(title) ? titleFor(kind, brief) : title,
       layout,
       section: entry.section?.trim() || sectionTagFor(kind),
       goal: entry.goal?.trim() || goalFor(kind, brief),
@@ -502,6 +515,20 @@ export function ensurePlanCoverage(
     };
   };
   const additions: SectionPlan[] = [];
+  const parties = [
+    ...new Set(
+      [...(brief.partiesInvolved ?? []), ...(brief.keyEntities ?? [])]
+        .map((name) => name.trim())
+        .filter(Boolean),
+    ),
+  ];
+  if (
+    parties.length >= 2 &&
+    !result.some((plan) => plan.kind === "parties") &&
+    !has(/\bparties\b|\bpartners?\b|\bwhat each brings/i)
+  ) {
+    additions.push(make("parties", "The parties and what each brings", "table"));
+  }
   if (items.includes("pointers") && !has(/\bpointer|\bcollaboration|\bwho does what/i)) {
     additions.push(make("pointers", "Collaboration pointers: who does what", "table"));
   }
@@ -537,7 +564,42 @@ export function ensurePlanCoverage(
     }
   }
 
-  return result.slice(0, 12).map((plan, index) => ({ ...plan, id: `s${index + 1}` }));
+  return easeTableDensity(result, brief)
+    .slice(0, 12)
+    .map((plan, index) => ({
+      ...plan,
+      // A parties slide is a table by contract: one row per party.
+      ...(plan.kind === "parties" ? { layout: "table" as const } : {}),
+      id: `s${index + 1}`,
+    }));
+}
+
+/**
+ * Cheap post-plan check: a run of three tables, or two tables in any three
+ * slides, is demoted to the kind's natural layout. A brief that asks for tables
+ * keeps them. Only layouts change; titles and order are the contract.
+ */
+export function easeTableDensity(plans: readonly SectionPlan[], brief: ExportBrief): SectionPlan[] {
+  if (mustIncludeItems(brief.request).includes("tables")) return [...plans];
+  const result = plans.map((plan) => ({ ...plan }));
+  const tableBudget = Math.max(1, Math.ceil(result.length / 3));
+  let tables = 0;
+  let run = 0;
+  for (const plan of result) {
+    if (plan.layout !== "table") {
+      run = 0;
+      continue;
+    }
+    run += 1;
+    tables += 1;
+    const natural = defaultLayout(plan.kind);
+    if ((run > 2 || tables > tableBudget) && natural !== "table") {
+      plan.layout = natural;
+      run -= 1;
+      tables -= 1;
+    }
+  }
+  return result;
 }
 
 /** The exact user turn the outline model sees; reused by the calibration script. */
@@ -553,6 +615,8 @@ export function outlineUserPrompt(brief: ExportBrief, draft: DocumentDraft): str
     `Industry: ${brief.industry ?? "not stated"}`,
     `Audience: ${brief.audience ?? "not stated"}`,
     `Parties: ${[...new Set([...(brief.partiesInvolved ?? []), ...(brief.keyEntities ?? [])])].join("; ") || "not stated"}`,
+    `Target client: ${brief.client ?? draft.client ?? brief.targetClients?.[0] ?? "not stated"}`,
+    "Other library customers are references for proof only, never parties.",
     `Problem from conversation: ${brief.problem ?? "not stated"}`,
     `Goals: ${brief.goals.join("; ") || "not stated"}`,
     `Constraints: ${brief.constraints.join("; ") || "not stated"}`,
@@ -611,6 +675,8 @@ const KIND_HINTS: [SectionKind, RegExp][] = [
   ["governance", /\bgovernance|\bdecision rights|\bkpis?\b|\boperating cadence/i],
   ["journey", /\bjourney|\bcustomer experience|\btouchpoint|\bfunnel\b/i],
   ["governance", /\boperating model\b|\bgovernance\b/i],
+  ["next_steps", /\bnext steps?\b|\bwhat happens next\b|\bproposed next\b|\bnext\b/i],
+  ["ask", /\bthe ask\b|\bdecision\b/i],
   [
     "problem",
     /\bwhy\b.*\b(now|need|matter|urgent)\b|\bchallenge|\bproblem|\bpressure|\bopportunity|\bcurrent state|\bcontext\b/i,
@@ -627,8 +693,6 @@ const KIND_HINTS: [SectionKind, RegExp][] = [
   ["why_us", /\bwhy us\b|\bdifferentiat|\bwhy choose\b/i],
   ["how_it_works", /\bhow it works\b|\barchitecture|\boperating model|\bintegration\b/i],
   ["assumptions", /\bassumption|\brisk|\bdependenc/i],
-  ["ask", /\bthe ask\b|\bdecision\b/i],
-  ["next_steps", /\bnext step|\bwhat happens next|\bproposed next\b/i],
 ];
 
 export function inferSectionKind(
@@ -653,16 +717,26 @@ export function plansFromOutline(draft: DocumentDraft, brief: ExportBrief): Sect
   const titles = draft.outline.map((title) => title.trim()).filter(Boolean);
   if (titles.length === 0) return defaultPlans(brief);
 
+  const allowed = new Set(allowedKinds(brief.mode));
   return titles.slice(0, 12).map((title, index) => {
-    const kind = inferSectionKind(title, index, brief.mode);
     const hint = draft.outlinePlan?.[index];
     const hintMatches = hint?.title?.trim() === title;
+    // The plan's own kind is authoritative: re-inferring from the title turned
+    // "…partner P&Ls" into a parties slide and lost the next-steps slide.
+    const hintKind =
+      hintMatches && hint?.kind && allowed.has(hint.kind as SectionKind)
+        ? (hint.kind as SectionKind)
+        : null;
+    const kind = hintKind ?? inferSectionKind(title, index, brief.mode);
     const queries = sectionQueries(kind, title, brief);
     return {
       id: `s${index + 1}`,
       kind,
       title,
-      layout: (hintMatches ? hint?.layout : undefined) ?? defaultLayout(kind),
+      layout:
+        kind === "parties"
+          ? "table"
+          : ((hintMatches ? hint?.layout : undefined) ?? defaultLayout(kind)),
       section: (hintMatches ? hint?.section : undefined) ?? sectionTagFor(kind),
       goal: goalFor(kind, brief),
       query: queries[0] ?? title,

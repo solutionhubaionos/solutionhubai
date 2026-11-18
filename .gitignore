@@ -49,3 +49,6 @@ evals/results/answers-*.json
 *.njsproj
 *.sln
 *.sw?
+
+# Local verification venv for scripts/check-pptx.py
+.venv-check/

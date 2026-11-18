@@ -3,8 +3,13 @@
  * Generate, and the card states that plainly. Mode (proposal or pitch deck) is
  * chosen here, and the finished card exposes the source audit per section.
  */
+import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useRouteContext } from "@tanstack/react-router";
+import { toast } from "sonner";
 import {
   AlertTriangle,
+  Check,
   Download,
   Eye,
   File,
@@ -12,11 +17,23 @@ import {
   Loader2,
   Presentation,
   Sparkles,
+  Upload,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { ChipButton } from "./SelectionCard";
 import { DocumentPreviewDialog } from "./DocumentPreviewDialog";
 import { downloadDocument } from "@/lib/documents/download";
+import { useIndustries } from "@/lib/industries";
+import { useIndustryClients } from "@/lib/chat/clients";
+import { supabase } from "@/integrations/supabase/client";
 import {
   DOCUMENT_FORMATS,
   formatBytes,
@@ -52,6 +69,28 @@ export function DocumentCard({
   onModeChange: (mode: DocumentMode) => void;
 }) {
   const { draft, status, file } = state;
+  const { user } = useRouteContext({ from: "/_authenticated" });
+  const { industries } = useIndustries();
+  const { clientsByIndustry } = useIndustryClients();
+  const qc = useQueryClient();
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [savedIndustry, setSavedIndustry] = useState("");
+  /** Saving always names a sector first, then the industry inside it. */
+  const [saveStep, setSaveStep] = useState<"sector" | "industry">("sector");
+  const [saveSector, setSaveSector] = useState("");
+  const [saveCustomer, setSaveCustomer] = useState("");
+  const sectorName =
+    industries.find((industry) => industry.slug === saveSector)?.name ?? saveSector;
+  const sectorClients = saveSector ? (clientsByIndustry[saveSector] ?? []) : [];
+
+  /** The dialog opens on the full sector list, with the draft's sector pre-picked. */
+  function openSaveDialog() {
+    setSaveSector(draft.industrySlug ?? "");
+    setSaveCustomer(draft.client?.trim() ?? "");
+    setSaveStep("sector");
+    setUploadOpen(true);
+  }
   const format = DOCUMENT_FORMATS[draft.type];
   const Icon = ICONS[draft.type];
   const context = [draft.client, draft.industry, draft.sector, draft.audience].filter(
@@ -71,6 +110,61 @@ export function DocumentCard({
 
   const openItems = state.openItems ?? [];
   const warnings = state.warnings ?? [];
+
+  /**
+   * Saving is explicit. The file only ever exists in memory, so it reaches the
+   * library solely from this confirmation: the sector and industry picked in the
+   * dialog decide where it lands, and the chosen customer becomes the company
+   * (industry-wide when none is picked). Same rows an upload from that industry
+   * page writes, so the ingestion worker indexes it without a special path.
+   */
+  async function saveToLibrary() {
+    if (!file || !saveSector || !user) return;
+    setUploading(true);
+    const binary = globalThis.atob(file.base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    const safeName = file.fileName.replace(/[^\w.-]+/g, "_");
+    const path = `${user.id}/${saveSector}/${crypto.randomUUID()}-${safeName}`;
+    const uploaded = await supabase.storage
+      .from("content")
+      .upload(path, new Blob([bytes], { type: file.mimeType }), { contentType: file.mimeType });
+    const failure = uploaded.error
+      ? uploaded.error
+      : (
+          await supabase.from("content_items").insert({
+            industry: saveSector,
+            customer_name: saveCustomer.trim() || null,
+            title: draft.title,
+            description: draft.subtitle || null,
+            content_type: draft.type === "pptx" ? "pitch_deck" : "proposal",
+            file_path: path,
+            file_name: file.fileName,
+            mime_type: file.mimeType,
+            file_size: file.bytes,
+            uploaded_by: user.id,
+            uploader_email: user.email ?? null,
+          })
+        ).error;
+
+    // A row without its bytes would be an unopenable library entry, so the
+    // object is removed again when the metadata write is the part that failed.
+    if (failure) {
+      if (!uploaded.error) await supabase.storage.from("content").remove([path]);
+      toast.error(failure.message || "Could not save this document to the library.");
+      setUploading(false);
+      return;
+    }
+
+    const label = saveCustomer.trim() ? `${sectorName} · ${saveCustomer.trim()}` : sectorName;
+    setSavedIndustry(label);
+    qc.invalidateQueries({ queryKey: ["content"] });
+    toast.success(`Saved to ${label}`);
+    setUploading(false);
+    setUploadOpen(false);
+  }
 
   return (
     <div className="overflow-hidden rounded-2xl border border-border bg-card">
@@ -140,22 +234,9 @@ export function DocumentCard({
       )}
 
       <div className="px-4 py-3">
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Outline
-        </p>
-        <ol className="mt-1.5 space-y-1">
-          {draft.outline.map((outlineHeading, index) => (
-            <li key={outlineHeading} className="flex gap-2 text-xs text-muted-foreground">
-              <span className="w-4 shrink-0 text-right tabular-nums text-muted-foreground/70">
-                {index + 1}.
-              </span>
-              <span className="min-w-0 truncate">{outlineHeading}</span>
-            </li>
-          ))}
-        </ol>
-        <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
-          The final structure is generated from this conversation and the library, so headings may
-          be tailored. Nothing is generated until you confirm.
+        <p className="text-[11px] leading-snug text-muted-foreground">
+          The structure is built from this conversation and the library. Nothing is generated until
+          you confirm.
         </p>
       </div>
 
@@ -190,10 +271,25 @@ export function DocumentCard({
               type={draft.type}
               trigger={
                 <Button size="sm" variant="outline">
-                  <Eye /> View
+                  <Eye /> Open
                 </Button>
               }
             />
+            {savedIndustry ? (
+              <span className="inline-flex items-center gap-1 text-xs text-primary">
+                <Check size={13} /> In library · {savedIndustry}
+              </span>
+            ) : (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={openSaveDialog}
+                disabled={!user}
+                title="Save this document to the library"
+              >
+                <Upload /> Upload
+              </Button>
+            )}
             <span className="text-[11px] text-muted-foreground">
               {file.fileName} · {formatBytes(file.bytes)} · {file.pages}{" "}
               {draft.type === "pptx" ? "slides" : "pages"}
@@ -257,6 +353,108 @@ export function DocumentCard({
             ))}
           </ul>
         </details>
+      )}
+
+      {status === "ready" && file && (
+        <Dialog
+          open={uploadOpen}
+          onOpenChange={(open) => {
+            if (!uploading) setUploadOpen(open);
+          }}
+        >
+          <DialogContent className="max-w-md" aria-describedby={undefined}>
+            <DialogHeader>
+              <DialogTitle>Save to the library</DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-muted-foreground">
+              Pick the sector, then the specific industry it belongs in.{" "}
+              <span className="font-medium text-foreground">{file.fileName}</span> appears in the
+              library like any other upload, and the ingestion worker extracts and embeds it in the
+              background so later answers can cite it. Nothing is uploaded until you confirm.
+            </p>
+
+            {saveStep === "sector" ? (
+              <div className="space-y-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  1 · Sector
+                </p>
+                {industries.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No sectors are available yet.</p>
+                ) : (
+                  <div className="flex max-h-56 flex-wrap gap-1.5 overflow-y-auto">
+                    {industries.map((industry) => (
+                      <ChipButton
+                        key={industry.slug}
+                        label={industry.name}
+                        active={industry.slug === saveSector}
+                        onToggle={() => {
+                          setSaveSector(industry.slug);
+                          // A team's own draft keeps its customer; another
+                          // sector starts as industry-wide content.
+                          setSaveCustomer(
+                            industry.slug === draft.industrySlug
+                              ? (draft.client?.trim() ?? "")
+                              : "",
+                          );
+                          setSaveStep("industry");
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    2 · Industry in {sectorName}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setSaveStep("sector")}
+                    className={`${FOCUS} rounded-md px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground underline underline-offset-4 transition-colors hover:text-foreground`}
+                  >
+                    Change sector
+                  </button>
+                </div>
+                <div className="flex max-h-56 flex-wrap gap-1.5 overflow-y-auto">
+                  <ChipButton
+                    label="Industry-wide"
+                    active={saveCustomer.trim().length === 0}
+                    onToggle={() => setSaveCustomer("")}
+                  />
+                  {sectorClients.map((name) => (
+                    <ChipButton
+                      key={name}
+                      label={name}
+                      active={saveCustomer.trim().toLowerCase() === name.trim().toLowerCase()}
+                      onToggle={() => setSaveCustomer(name)}
+                    />
+                  ))}
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  {sectorClients.length === 0
+                    ? `No customers are listed under ${sectorName} yet, so this saves as industry-wide content.`
+                    : `Choose a customer to file it under ${sectorName}, or keep it industry-wide.`}
+                </p>
+              </div>
+            )}
+
+            <DialogFooter className="gap-2">
+              <Button variant="ghost" onClick={() => setUploadOpen(false)} disabled={uploading}>
+                Cancel
+              </Button>
+              <Button onClick={saveToLibrary} disabled={uploading || !saveSector}>
+                {uploading ? <Loader2 className="animate-spin" /> : <Upload />}
+                {uploading
+                  ? "Uploading…"
+                  : saveSector
+                    ? `Upload to ${sectorName}${saveCustomer.trim() ? ` · ${saveCustomer.trim()}` : ""}`
+                    : "Choose a sector"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       )}
 
       {status === "ready" && state.trace && (

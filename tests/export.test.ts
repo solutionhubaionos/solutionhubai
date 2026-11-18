@@ -93,17 +93,25 @@ describe("export on the InterGlobe/IndiGo scenario", () => {
     expect(titles).not.toContain("Our point of view");
     expect(titles).toHaveLength(8);
 
-    // What the card shows is what the builder uses, verbatim.
+    // The confirmed topics shape the planned deck; every title is now an
+    // action claim, not a section label.
     const built = await buildDocument({
       draft: { ...draft, outline: titles },
       history: indigoHistory(),
       client: createMockSupabase(CHUNKS, []),
       provider: PROVIDER,
     });
-    expect(built.model.sections.map((section) => section.title)).toEqual(titles);
+    expect(built.model.deck).toBeDefined();
+    expect(built.model.deck?.slides.length).toBeGreaterThanOrEqual(6);
+    expect(built.model.deck?.slides.length).toBeLessThanOrEqual(10);
+    for (const slide of built.model.deck?.slides ?? []) {
+      expect(slide.actionTitle.split(/\s+/).length).toBeGreaterThanOrEqual(4);
+      expect(["Our point of view", "Overview", "Next steps"]).not.toContain(slide.actionTitle);
+    }
+    expect(built.gate.blocked).toBe(false);
   });
 
-  test("the confirmed outline is generated exactly and no section is a placeholder", async () => {
+  test("the deck is planned from the confirmed storyline with no placeholder slide", async () => {
     const result = await buildDocument({
       draft,
       history: indigoHistory(),
@@ -111,11 +119,15 @@ describe("export on the InterGlobe/IndiGo scenario", () => {
       provider: PROVIDER,
     });
 
-    expect(result.model.sections.map((section) => section.title)).toEqual(draft.outline);
-    expect(result.gate.sections).toHaveLength(draft.outline.length);
-    expect(result.gate.sections.every((section) => section.passages > 0)).toBe(true);
+    expect(result.model.deck).toBeDefined();
+    expect(result.model.sections).toHaveLength(result.model.deck?.slides.length ?? 0);
+    expect(result.gate.sections).toHaveLength(result.model.deck?.slides.length ?? 0);
+    expect(result.gate.sections.some((section) => section.passages > 0)).toBe(true);
     expect(result.gate.blocked).toBe(false);
-    expect(JSON.stringify(result.model.sections)).not.toContain("[To be confirmed]");
+    const text = JSON.stringify(result.model.sections);
+    expect(text).not.toContain("[To be confirmed]");
+    expect(text).not.toContain("(continued)");
+    expect(text.toLowerCase()).not.toContain("documented capability");
   });
 
   test("strips mid-sentence [To be confirmed] notes from supported sections", async () => {
@@ -158,7 +170,7 @@ describe("export on the InterGlobe/IndiGo scenario", () => {
       provider: PROVIDER,
     });
 
-    const pptx = renderPptx(result.model);
+    const pptx = await renderPptx(result.model);
     const parts = unzipSync(pptx.bytes);
     const slideText = Object.keys(parts)
       .filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name))

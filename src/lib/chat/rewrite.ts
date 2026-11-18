@@ -66,6 +66,7 @@ export function needsRewrite(question: string, history: readonly ChatHistoryMess
 export function buildRewritePrompt(
   question: string,
   history: readonly ChatHistoryMessage[],
+  scopeLine = "",
 ): string {
   const turns = history
     .slice(-QUERY_REWRITE_HISTORY_MESSAGES)
@@ -75,6 +76,7 @@ export function buildRewritePrompt(
   return [
     REWRITE_INSTRUCTIONS,
     "",
+    scopeLine ? `\n${scopeLine}` : "",
     turns ? `Conversation so far:\n${turns}` : "No previous conversation.",
     "",
     `Latest message: ${question.trim()}`,
@@ -101,6 +103,8 @@ export function sanitizeRewrite(raw: string, fallback: string): string {
 export type RewriteOptions = {
   apiKey: string;
   baseUrl: string;
+  /** One line naming the conversation's selected industries and companies. */
+  scopeLine?: string;
   model?: string;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
@@ -131,7 +135,7 @@ export async function rewriteQuery(
     // a small completion used to spend its whole max_tokens on reasoning and
     // come back empty with finish_reason "length".
     const outcome = await completeWithBudget(
-      [{ role: "user", content: buildRewritePrompt(original, history) }],
+      [{ role: "user", content: buildRewritePrompt(original, history, options.scopeLine ?? "") }],
       {
         apiKey: options.apiKey,
         baseUrl: options.baseUrl,

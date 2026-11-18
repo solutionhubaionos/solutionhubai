@@ -8,6 +8,8 @@ export type ChatMessageView = {
   content: string;
   notice?: boolean;
   sources?: ChatSource[];
+  /** Organisations the answer reached outside the selected scope. */
+  addedEntities?: string[];
   /** Present when this turn proposes or delivers a generated document. */
   document?: DocumentDraftState;
 };

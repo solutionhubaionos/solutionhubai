@@ -36,6 +36,7 @@ type ListOption = { value: string; label: string };
 export function ContextToolbar({
   value,
   onChange,
+  onCommit,
   onReset,
   clients,
   industries,
@@ -43,6 +44,8 @@ export function ContextToolbar({
 }: {
   value: ChatContext;
   onChange: <K extends keyof ChatContext>(key: K, next: ChatContext[K]) => void;
+  /** Runs once the website field is committed (blur or Enter), not per keystroke. */
+  onCommit?: (website: string) => void;
   onReset: () => void;
   /** Customer names from the library. */
   clients: string[];
@@ -197,7 +200,11 @@ export function ContextToolbar({
           </Popover>
         </Pill>
 
-        <WebsiteInput value={value.website} onChange={(next) => onChange("website", next)} />
+        <WebsiteInput
+          value={value.website}
+          onChange={(next) => onChange("website", next)}
+          onCommit={(next) => onCommit?.(next)}
+        />
       </div>
 
       {hasAny && (
@@ -501,13 +508,22 @@ function SelectList({
  * space. It updates the context as you type, normalises on blur or Enter, and
  * flags an implausible value with a quiet rose ring — never by blocking send.
  */
-function WebsiteInput({ value, onChange }: { value: string; onChange: (next: string) => void }) {
+function WebsiteInput({
+  value,
+  onChange,
+  onCommit,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  onCommit?: (next: string) => void;
+}) {
   const set = value.length > 0;
   const invalid = set && !isValidWebsite(value);
 
   const commit = () => {
     const normalised = normaliseWebsite(value);
     if (normalised !== value) onChange(normalised);
+    onCommit?.(normalised);
   };
 
   return (
@@ -548,7 +564,10 @@ function WebsiteInput({ value, onChange }: { value: string; onChange: (next: str
         {set && (
           <button
             type="button"
-            onClick={() => onChange("")}
+            onClick={() => {
+              onChange("");
+              onCommit?.("");
+            }}
             aria-label="Clear website"
             className={`${FOCUS} -mr-1 grid h-5 w-5 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground`}
           >

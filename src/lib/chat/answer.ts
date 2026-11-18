@@ -191,6 +191,8 @@ export function buildMessages(
   question: string,
   context: BuiltContext,
   history: readonly ChatHistoryMessage[] = [],
+  /** One line naming the conversation's selected industries and companies. */
+  scopeLine = "",
 ): ChatMessage[] {
   const recent = history.slice(-MAX_HISTORY_MESSAGES).map((message) => ({
     role: message.role,
@@ -202,7 +204,15 @@ export function buildMessages(
     ...recent,
     {
       role: "user",
-      content: `Numbered sources from the library:\n\n${context.text}\n\nQuestion: ${question.trim()}`,
+      content: [
+        scopeLine
+          ? `Conversation scope (context only, not a filter on the sources):\n${scopeLine}\n`
+          : "",
+        `Numbered sources from the library:\n\n${context.text}`,
+        `Question: ${question.trim()}`,
+      ]
+        .filter(Boolean)
+        .join("\n\n"),
     },
   ];
 }
@@ -406,7 +416,15 @@ export function finalizeAnswer(raw: string, context: BuiltContext): FinalAnswer 
  * claiming the library has nothing — the entity may exist and the retrieval
  * may simply have missed it.
  */
-export function noPassagesAnswer(names: readonly string[] = []): string {
+export function noPassagesAnswer(
+  names: readonly string[] = [],
+  /** The pitch target: no prior work is expected, and saying so is not a refusal. */
+  targets: readonly string[] = [],
+): string {
+  const target = targets.map((name) => name.trim()).filter(Boolean)[0];
+  if (target) {
+    return `We're pitching **${target}** as a new client, so the library has no prior work about them — that's expected. I couldn't retrieve any evidence for this request either, though. Name the industry, the problem or the outcome you want to lead with and I'll pull the closest customer evidence from the library.`;
+  }
   const named = [...new Set(names.map((name) => name.trim()).filter(Boolean))].slice(0, 3);
   if (named.length > 0) {
     const list =

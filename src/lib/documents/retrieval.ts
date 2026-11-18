@@ -11,6 +11,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "../../integrations/supabase/types";
 import { isTitleOnlyChunk } from "../rag/chunk-quality";
 import { resolveLibraryEntities } from "../rag/entities";
+import { MAX_CHUNKS_PER_DOCUMENT } from "../rag/config";
 import { metadataFallbackChunks, searchLibraryChunks, type RetrievedChunk } from "../rag/search";
 import { searchLimiter } from "./concurrency";
 import type { ExportBrief } from "./types";
@@ -214,6 +215,12 @@ export type GatherOptions = {
   allowSeeds?: boolean;
   /** Set false to skip entity resolution and its per-entity searches. */
   allowEntityScope?: boolean;
+  /**
+   * The client the document is addressed to. It is searched as a hard entity so
+   * target-specific passages rank first; when the library has none, the same
+   * topic query still returns the closest peer evidence.
+   */
+  targetName?: string | null;
   log?: (event: string, meta: Record<string, unknown>) => void;
 };
 
@@ -242,39 +249,35 @@ async function fetchChunksByIds(
   ids: readonly string[],
 ): Promise<RetrievedChunk[]> {
   if (ids.length === 0) return [];
-  try {
-    const { data, error } = await client
-      .from("document_chunks")
-      .select(
-        "id, content_id, content, page, slide, heading, content_items(title, file_name, file_path, industry, customer_name)",
-      )
-      .in("id", ids);
-    if (error || !data) return [];
-    return (data as unknown as SeedRow[]).flatMap((row) => {
-      const item = row.content_items;
-      if (!item || row.content.trim().length === 0) return [];
-      return [
-        {
-          chunkId: row.id,
-          contentId: row.content_id,
-          content: row.content,
-          page: row.page,
-          slide: row.slide,
-          heading: row.heading,
-          title: item.title ?? row.heading ?? "Library document",
-          fileName: item.file_name ?? "",
-          filePath: item.file_path ?? "",
-          industry: item.industry ?? "",
-          customerName: item.customer_name,
-          vectorRank: null,
-          textRank: null,
-          score: 0.5,
-        },
-      ];
-    });
-  } catch {
-    return [];
-  }
+  const { data, error } = await client
+    .from("document_chunks")
+    .select(
+      "id, content_id, content, page, slide, heading, content_items(title, file_name, file_path, industry, customer_name)",
+    )
+    .in("id", ids);
+  if (error || !data) return [];
+  return (data as unknown as SeedRow[]).flatMap((row) => {
+    const item = row.content_items;
+    if (!item || row.content.trim().length === 0) return [];
+    return [
+      {
+        chunkId: row.id,
+        contentId: row.content_id,
+        content: row.content,
+        page: row.page,
+        slide: row.slide,
+        heading: row.heading,
+        title: item.title ?? row.heading ?? "Library document",
+        fileName: item.file_name ?? "",
+        filePath: item.file_path ?? "",
+        industry: item.industry ?? "",
+        customerName: item.customer_name,
+        vectorRank: null,
+        textRank: null,
+        score: 0.5,
+      },
+    ];
+  });
 }
 
 function keywordSet(text: string): Set<string> {
@@ -396,6 +399,24 @@ export async function gatherEvidence(options: GatherOptions): Promise<Evidence[]
           log("section retrieval failed", { section: plan.id, query, error: result.error });
         }
         merge(result.chunks);
+      }
+
+      // Same rule as the deck pass: an industry hint that matches nothing is a
+      // hint, not a filter, so retry the section's queries library-wide.
+      if (merged.size === 0 && scope.industry) {
+        log("section retrieval: industry hint empty, retrying unscoped", { section: plan.id });
+        for (const query of queries) {
+          const result = await searchWithRetry(
+            options.client,
+            query,
+            {},
+            PER_SECTION,
+            options.embed,
+            log,
+          );
+          if (result.error) error = result.error;
+          merge(result.chunks);
+        }
       }
 
       for (const entity of entities.slice(0, 3)) {
@@ -581,215 +602,486 @@ export async function gatherEvidence(options: GatherOptions): Promise<Evidence[]
   return evidence;
 }
 
+export type DeckEvidenceGroup = {
+  name: string;
+  matchedName: string | null;
+  chunks: RetrievedChunk[];
+  /** True when the party resolved but no passage survived the evidence cap. */
+  gap: boolean;
+};
+
 export type DeckEvidence = {
   chunks: RetrievedChunk[];
   entities: { canonical: string; matchedName: string }[];
+  /** Per-party passages, so the deck can group by retrieval, not just metadata. */
+  groups: DeckEvidenceGroup[];
+  gaps: string[];
   queries: string[];
   warnings: string[];
   error: string | null;
+  /** Target-client passages versus peer passages selected for adaptation. */
+  target: { name: string | null; passages: number; peers: number };
 };
 
 const DECK_PASSAGES = 24;
 const DECK_CHARS = 30_000;
-const ENTITY_QUOTA_DECK = 3;
+const DECK_MIN_PASSAGES = 8;
+const DECK_MIN_DOCUMENTS = 2;
+/** Candidate documents are chosen from metadata before any search runs. */
+const DECK_CANDIDATES = 8;
+const DECK_CANDIDATE_MIN = 3;
+/** Hybrid-search depth per plan section; dedupe and caps happen afterwards. */
+// shortcut: slide decks contain many title-only chunks, so 25 hits is mostly
+// dividers; depth 50 reaches the substantive passages. Revisit when ingestion
+// stops emitting slide titles as chunks.
+const DECK_SECTION_K = 50;
 
-const TOPIC_STOPWORDS = new Set([
-  "the",
-  "and",
-  "for",
-  "with",
-  "that",
-  "this",
-  "from",
-  "into",
-  "our",
-  "their",
-  "would",
-  "could",
-  "should",
-  "please",
-  "make",
-  "build",
-  "create",
-  "document",
-  "proposal",
-  "pitch",
-  "deck",
-  "separate",
-  "table",
-  "tables",
-  "slide",
-  "slides",
-]);
+const PITCH_DOCUMENT_TYPES = new Set(["pitch_deck", "proposal", "case_study"]);
 
-function deckTopicWords(brief: ExportBrief): string[] {
-  const supplied = (brief.keyTopics ?? []).join(" ");
-  const source = supplied || brief.subject || brief.problem || brief.industry || "";
-  const topic = source
-    .toLowerCase()
-    .split(/[^a-z0-9+]+/)
-    .filter((word) => word.length > 3 && !TOPIC_STOPWORDS.has(word))
-    .slice(0, 6)
-    .join(" ");
-  return topic.split(" ").filter(Boolean);
+/**
+ * What each plan section retrieves. These are section topics, never the user's
+ * sentence and never the target client's name, so the same sector library is
+ * searched for a new client as for the customers already in it.
+ */
+const DECK_SECTION_TOPICS: Record<SectionPlan["kind"], string> = {
+  executive_summary: "executive summary priorities",
+  problem: "industry challenges market pressure",
+  solution: "solution overview what we offer",
+  approach: "delivery approach implementation",
+  how_it_works: "platform architecture integration",
+  proof: "case study results outcomes",
+  results: "results outcomes metrics",
+  timeline: "implementation roadmap phases",
+  deliverables: "deliverables scope",
+  assumptions: "planning assumptions",
+  pricing: "commercial model pricing",
+  next_steps: "next steps roadmap",
+  ask: "investment ask next steps",
+  why_us: "credentials relevant experience",
+  parties: "partnership roles responsibilities",
+  pointers: "collaboration success factors",
+  shortcomings: "risks limitations",
+  economics: "business case economics return",
+  governance: "governance operating model",
+  open_questions: "open questions decisions",
+  journey: "customer journey experience",
+};
+
+type DeckCandidate = {
+  id: string;
+  title: string;
+  fileName: string;
+  filePath: string;
+  industry: string;
+  customerName: string | null;
+};
+
+type DeckPool = {
+  candidates: DeckCandidate[];
+  source: "scoped" | "adjacent" | "unscoped";
+  scope: { industry?: string | null };
+};
+
+/**
+ * The pool is metadata-first: the newest pitch decks, proposals and case studies
+ * in the target's industry. If the sector is too thin, widen to industries that
+ * share a customer, then to the whole library — and say so in the trace.
+ */
+async function deckDocumentPool(
+  client: SupabaseClient<Database>,
+  industrySlug: string | null,
+  log: (event: string, meta: Record<string, unknown>) => void,
+): Promise<{ pool: DeckPool; warnings: string[] }> {
+  const { data, error } = await client
+    .from("content_items")
+    .select("id, title, file_name, file_path, customer_name, industry, content_type, created_at")
+    .order("created_at", { ascending: false })
+    .limit(500);
+  if (error) {
+    log("deck candidate documents failed", { error: error.message });
+    return {
+      pool: { candidates: [], source: "unscoped", scope: {} },
+      warnings: ["The library metadata could not be read, so no documents were found."],
+    };
+  }
+
+  const rows = (data ?? []) as {
+    id: string;
+    title: string | null;
+    file_name: string | null;
+    file_path: string | null;
+    customer_name: string | null;
+    industry: string;
+    content_type: string;
+  }[];
+  // Preferred document types first, newest first inside each group (stable sort).
+  const ordered = [...rows].sort(
+    (a, b) =>
+      Number(PITCH_DOCUMENT_TYPES.has(b.content_type)) -
+      Number(PITCH_DOCUMENT_TYPES.has(a.content_type)),
+  );
+  const toCandidate = (row: (typeof rows)[number]): DeckCandidate => ({
+    id: row.id,
+    title: row.title?.trim() || row.file_name?.trim() || "Library document",
+    fileName: row.file_name ?? "",
+    filePath: row.file_path ?? "",
+    industry: row.industry,
+    customerName: row.customer_name,
+  });
+
+  // One document per customer before a second from any of them, so eight slots
+  // cover the sector instead of eight files from one account.
+  const diversify = (rows: typeof ordered): typeof ordered => {
+    const groups = new Map<string, typeof rows>();
+    for (const row of rows) {
+      const key = (row.customer_name ?? "").trim().toLowerCase() || "library";
+      groups.set(key, [...(groups.get(key) ?? []), row]);
+    }
+    const out: typeof rows = [];
+    for (let round = 0; ; round += 1) {
+      let added = false;
+      for (const list of groups.values()) {
+        const row = list[round];
+        if (!row) continue;
+        out.push(row);
+        added = true;
+      }
+      if (!added) return out;
+    }
+  };
+
+  const scoped = industrySlug ? ordered.filter((row) => row.industry === industrySlug) : [];
+  const warnings: string[] = [];
+  let source: DeckPool["source"] = industrySlug ? "scoped" : "unscoped";
+  let chosen = diversify(scoped).slice(0, DECK_CANDIDATES);
+
+  if (industrySlug && chosen.length < DECK_CANDIDATE_MIN) {
+    const customers = new Set(
+      scoped.map((row) => (row.customer_name ?? "").trim().toLowerCase()).filter(Boolean),
+    );
+    const adjacent = ordered.filter(
+      (row) =>
+        row.industry !== industrySlug &&
+        row.customer_name &&
+        customers.has(row.customer_name.trim().toLowerCase()),
+    );
+    chosen = diversify([...scoped, ...adjacent]).slice(0, DECK_CANDIDATES);
+    source = "adjacent";
+    warnings.push(
+      `Only ${scoped.length} document${scoped.length === 1 ? "" : "s"} in ${industrySlug}; widened to adjacent industries.`,
+    );
+  }
+  if (industrySlug && chosen.length < DECK_CANDIDATE_MIN) {
+    chosen = diversify(ordered).slice(0, DECK_CANDIDATES);
+    source = "unscoped";
+    warnings.push(`Too few documents in ${industrySlug}; widened to the whole library.`);
+  }
+  if (!industrySlug) chosen = diversify(ordered).slice(0, DECK_CANDIDATES);
+
+  const candidates = [...new Map(chosen.map((row) => [row.id, toCandidate(row)])).values()];
+  log("deck candidate documents", {
+    source,
+    documents: candidates.length,
+    titles: candidates.map((document) => document.title),
+  });
+
+  return {
+    pool: {
+      candidates,
+      source,
+      scope: source === "scoped" && industrySlug ? { industry: industrySlug } : {},
+    },
+    warnings,
+  };
+}
+
+const OVERVIEW_COPY =
+  /\b(?:solution|offer|offering|approach|platform|capabilit|proposition|what we do)\b/i;
+
+/** One candidate document's best overview passage, or its first usable chunk. */
+async function deckOverviewChunk(
+  client: SupabaseClient<Database>,
+  document: DeckCandidate,
+): Promise<RetrievedChunk | null> {
+  const { data, error } = await client
+    .from("document_chunks")
+    .select("id, content_id, content, page, slide, heading, chunk_index")
+    .eq("content_id", document.id)
+    .order("chunk_index", { ascending: true })
+    .limit(40);
+  if (error || !data) return null;
+
+  const chunks = (
+    data as {
+      id: string;
+      content_id: string;
+      content: string;
+      page: number | null;
+      slide: number | null;
+      heading: string | null;
+      chunk_index: number;
+    }[]
+  )
+    .map((row): RetrievedChunk => ({
+      chunkId: row.id,
+      contentId: row.content_id,
+      content: row.content,
+      page: row.page,
+      slide: row.slide,
+      heading: row.heading,
+      title: document.title,
+      fileName: document.fileName,
+      filePath: document.filePath,
+      industry: document.industry,
+      customerName: document.customerName,
+      vectorRank: null,
+      textRank: null,
+      score: 0.001,
+    }))
+    .filter(isUsable);
+
+  return (
+    chunks.find((chunk) =>
+      OVERVIEW_COPY.test(`${chunk.heading ?? ""} ${chunk.content.slice(0, 500)}`),
+    ) ??
+    [...chunks].sort((a, b) => b.content.trim().length - a.content.trim().length)[0] ??
+    null
+  );
+}
+
+/** One query per plan section, from the section topic only. */
+function deckSectionQueries(plans: readonly SectionPlan[]): string[] {
+  const fallback: SectionPlan["kind"][] = ["problem", "solution", "approach", "proof", "timeline"];
+  const kinds = plans.length > 0 ? [...new Set(plans.map((plan) => plan.kind))] : fallback;
+  return [
+    ...new Set(
+      kinds
+        .map((kind) => shortQuery(DECK_SECTION_TOPICS[kind]))
+        .filter((query) => query.split(" ").length >= 2),
+    ),
+  ].slice(0, 8);
+}
+
+/** Round-robin across documents, at most three passages from any one. */
+function roundRobinByDocument(chunks: readonly RetrievedChunk[]): RetrievedChunk[] {
+  const groups = new Map<string, RetrievedChunk[]>();
+  for (const chunk of [...chunks].sort((a, b) => b.score - a.score)) {
+    const list = groups.get(chunk.contentId) ?? [];
+    if (list.length < MAX_CHUNKS_PER_DOCUMENT) list.push(chunk);
+    groups.set(chunk.contentId, list);
+  }
+  const out: RetrievedChunk[] = [];
+  for (let round = 0; ; round += 1) {
+    let added = false;
+    for (const list of groups.values()) {
+      const chunk = list[round];
+      if (!chunk) continue;
+      out.push(chunk);
+      added = true;
+    }
+    if (!added) return out;
+  }
 }
 
 /**
- * One evidence pool for the whole deck: at most two short entity-anchored
- * queries per named party plus one topic query, merged with the conversation's
- * cited passages, deduped, and capped at ~24 numbered passages with a per-entity
- * quota. No section-by-section searches.
+ * The deck's evidence pool. Documents come from the sector's metadata; each
+ * plan section contributes one topic query; results are grouped by document and
+ * interleaved, then every candidate document's overview passage is added. The
+ * target client is never a query term and library customers are references.
  */
 export async function gatherDeckEvidence(options: GatherOptions): Promise<DeckEvidence> {
   const log = options.log ?? (() => undefined);
   const warnings: string[] = [];
-  const scope = options.industrySlug ? { industry: options.industrySlug } : {};
+  const targetName = options.targetName?.trim() || null;
+  const { pool, warnings: poolWarnings } = await deckDocumentPool(
+    options.client,
+    options.industrySlug,
+    log,
+  );
+  warnings.push(...poolWarnings);
+
+  const queries = deckSectionQueries(options.plans);
+  const poolIndustries = new Set(pool.candidates.map((document) => document.industry));
+  let error: string | null = null;
+
+  const sections = await Promise.all(
+    queries.map(async (query) => {
+      const result = await searchWithRetry(
+        options.client,
+        query,
+        pool.scope,
+        DECK_SECTION_K,
+        options.embed,
+        log,
+      );
+      if (result.error) error = result.error;
+      // A scoped search only returns the target sector. Adjacent pools span a
+      // few industries, so keep the search inside those; unscoped is the whole
+      // library by definition.
+      const usable = result.chunks.filter(
+        (chunk) =>
+          isUsable(chunk) && (pool.source !== "adjacent" || poolIndustries.has(chunk.industry)),
+      );
+      log("deck section retrieval", {
+        query,
+        results: usable.length,
+        documents: new Set(usable.map((chunk) => chunk.contentId)).size,
+      });
+      return roundRobinByDocument(usable);
+    }),
+  );
+
+  const merged = new Map<string, RetrievedChunk>();
+  for (const section of sections) {
+    for (const chunk of section) {
+      if (!merged.has(chunk.chunkId)) merged.set(chunk.chunkId, chunk);
+    }
+  }
+
+  // Chat-cited passages stay first-class evidence; they are not entity
+  // resolution and do not influence the section queries.
   const seeds =
     options.allowSeeds === false
       ? []
       : await seedEvidenceFromHistory(options.client, options.history ?? []);
   if (seeds.length > 0) log("history evidence seeded", { chunks: seeds.length });
-
-  const names = [
-    ...new Set(
-      [
-        ...(options.entityNames ?? []),
-        ...(options.brief.keyEntities ?? []),
-        ...(options.brief.partiesInvolved ?? []),
-      ]
-        .map((name) => name.trim())
-        .filter(Boolean),
-    ),
-  ].slice(0, 8);
-
-  const entities =
-    options.allowEntityScope === false || names.length === 0
-      ? []
-      : await resolveLibraryEntities(options.client, names.join(" and "), {
-          limit: 8,
-          threshold: 0.4,
-        }).catch(() => []);
-  if (entities.length > 0) {
-    log("export entities resolved", { entities: entities.map((entity) => entity.canonical) });
+  for (const seed of seeds.slice(0, SEED_LIMIT)) {
+    const chunk = seed.chunk;
+    if (isUsable(chunk) && !merged.has(chunk.chunkId)) merged.set(chunk.chunkId, chunk);
   }
 
-  const topic = deckTopicWords(options.brief);
-  const topicText = shortQuery(topic.join(" "), 6);
-  const secondary = shortQuery(
-    (options.brief.keyTopics ?? [])[1] ?? options.brief.audience ?? options.brief.industry ?? "",
-    5,
+  // Every candidate document contributes its overview, so a document that the
+  // topic queries did not rank still reaches the evidence pack.
+  const overviews = await Promise.all(
+    pool.candidates.map((document) => deckOverviewChunk(options.client, document)),
   );
-
-  const entityQueries = entities.flatMap((entity) => {
-    const queries = [
-      shortQuery(`${entity.canonical} ${topicText}`),
-      secondary ? shortQuery(`${entity.canonical} ${secondary}`) : "",
-    ]
-      .filter((query) => query.split(" ").length >= 2)
-      .filter((query, index, array) => array.indexOf(query) === index)
-      .slice(0, 2);
-    return queries.map((query) => ({ entity, query }));
-  });
-
-  const generalQueries = [topicText, secondary].filter((query) => query.split(" ").length >= 2);
-  const queries = [...generalQueries, ...entityQueries.map((entry) => entry.query)].filter(
-    (query, index, array) => array.indexOf(query) === index,
-  );
-
-  let error: string | null = null;
-  const entityHits = new Map<string, RetrievedChunk[]>();
-  const merged = new Map<string, RetrievedChunk>();
-  const merge = (chunks: readonly RetrievedChunk[]) => {
-    for (const chunk of chunks) {
-      const existing = merged.get(chunk.chunkId);
-      if (!existing || chunk.score > existing.score) merged.set(chunk.chunkId, chunk);
-    }
-  };
-
-  // Concurrency is bounded by the search limiter inside searchWithRetry.
-  await Promise.all(
-    generalQueries.map(async (query) => {
-      const result = await searchWithRetry(options.client, query, scope, 8, options.embed, log);
-      if (result.error) error = result.error;
-      merge(result.chunks);
-    }),
-  );
-
-  await Promise.all(
-    entityQueries.map(async ({ entity, query }) => {
-      const result = await searchWithRetry(
-        options.client,
-        query,
-        { customer: entity.matchedName },
-        4,
-        options.embed,
-        log,
-      );
-      if (result.error) error = result.error;
-      merge(result.chunks);
-      const hits = entityHits.get(entity.canonical) ?? [];
-      hits.push(...result.chunks);
-      entityHits.set(entity.canonical, hits);
-    }),
-  );
-
-  if (merged.size === 0 && entities.length > 0) {
-    const fallback = await metadataFallbackChunks(
-      options.client,
-      entities.flatMap((entity) => [entity.canonical, entity.matchedName]),
-      DECK_PASSAGES,
-    );
-    merge(fallback);
-    if (fallback.length > 0) log("deck metadata fallback", { chunks: fallback.length });
+  for (const chunk of overviews) {
+    if (chunk && !merged.has(chunk.chunkId)) merged.set(chunk.chunkId, chunk);
   }
 
-  const chosen: RetrievedChunk[] = [];
-  const seen = new Set<string>();
-  const push = (chunk: RetrievedChunk) => {
-    if (seen.has(chunk.chunkId)) return;
-    seen.add(chunk.chunkId);
-    chosen.push(chunk);
-  };
-
-  for (const seed of seeds.slice(0, 6)) push(seed.chunk);
-  for (const entity of entities) {
-    const ranked = (entityHits.get(entity.canonical) ?? [])
-      .filter(isUsable)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, ENTITY_QUOTA_DECK);
-    if (ranked.length === 0) warnings.push(`No passages found for ${entity.canonical}.`);
-    ranked.forEach(push);
-  }
-  [...merged.values()]
-    .filter(isUsable)
-    .sort((a, b) => b.score - a.score)
-    .forEach(push);
-
-  let totalChars = 0;
+  const chosen = [...merged.values()].sort((a, b) => b.score - a.score);
   const limited: RetrievedChunk[] = [];
-  for (const chunk of chosen.slice(0, DECK_PASSAGES)) {
-    if (totalChars + chunk.content.length > DECK_CHARS) break;
+  const perDocument = new Map<string, number>();
+  let totalChars = 0;
+  for (const chunk of chosen) {
+    const used = perDocument.get(chunk.contentId) ?? 0;
+    if (used >= MAX_CHUNKS_PER_DOCUMENT) continue;
+    if (totalChars + chunk.content.length > DECK_CHARS) continue;
     limited.push(chunk);
+    perDocument.set(chunk.contentId, used + 1);
     totalChars += chunk.content.length;
+    if (limited.length >= DECK_PASSAGES) break;
   }
 
-  if (limited.length === 0) warnings.push("No library evidence was found for this request.");
+  const resultDocuments = new Set(limited.map((chunk) => chunk.contentId)).size;
+  const matchesTarget = (chunk: RetrievedChunk): boolean => {
+    if (!targetName) return false;
+    const customer = (chunk.customerName ?? "").toLowerCase().trim();
+    const target = targetName.toLowerCase().trim();
+    if (!customer || !target) return false;
+    return customer === target || customer.includes(target) || target.includes(customer);
+  };
+  const targetPassages = limited.filter(matchesTarget).length;
+  const peers = limited.length - targetPassages;
+
+  // The gate refuses instead of writing a deck around two passages. The caller
+  // turns this into an explicit message listing the documents that were found.
+  if (limited.length < DECK_MIN_PASSAGES || resultDocuments < DECK_MIN_DOCUMENTS) {
+    const found = pool.candidates
+      .map(
+        (document) =>
+          `${document.title}${document.customerName ? ` (${document.customerName})` : ""}`,
+      )
+      .slice(0, DECK_CANDIDATES);
+    warnings.unshift(
+      `Only ${limited.length} usable passage${limited.length === 1 ? "" : "s"} from ${resultDocuments} document${resultDocuments === 1 ? "" : "s"}; a deck needs ${DECK_MIN_PASSAGES} from at least ${DECK_MIN_DOCUMENTS}. Documents found: ${found.length > 0 ? found.join("; ") : "none"}.`,
+    );
+    log("deck retrieval gate", {
+      passages: limited.length,
+      documents: resultDocuments,
+      pool: pool.source,
+    });
+    return {
+      chunks: [],
+      entities: [],
+      groups: [],
+      gaps: [],
+      queries,
+      warnings,
+      error,
+      target: { name: targetName, passages: 0, peers: 0 },
+    };
+  }
+
+  if (pool.source !== "scoped") {
+    warnings.push(
+      `Evidence pool widened to ${pool.source} industries because ${options.industrySlug ?? "this sector"} had too few documents.`,
+    );
+  }
+  if (targetName && targetPassages === 0 && peers > 0) {
+    warnings.push(
+      `No library passage names ${targetName}; the deck adapts ${peers} comparable passage${peers === 1 ? "" : "s"} from peer clients.`,
+    );
+  }
+
   log("deck retrieval", {
+    pool: pool.source,
     queries,
     results: limited.length,
-    entities: entities.map((entity) => entity.canonical),
+    documents: resultDocuments,
+    target: targetName,
+    targetPassages,
+    peerPassages: peers,
   });
 
   return {
     chunks: limited,
-    entities: entities.map((entity) => ({
-      canonical: entity.canonical,
-      matchedName: entity.matchedName,
-    })),
+    entities: [],
+    groups: [],
+    gaps: [],
     queries,
     warnings,
     error,
+    target: { name: targetName, passages: targetPassages, peers },
   };
+}
+
+/**
+ * Up to two short extra queries for thin slides whose topic has sparse
+ * evidence. Results are appended to the deck's passages, so existing reference
+ * numbers keep pointing at the same chunk.
+ */
+export async function topUpDeckEvidence(options: {
+  client: GatherOptions["client"];
+  queries: readonly string[];
+  industrySlug: string | null;
+  embed: (query: string) => Promise<number[]>;
+  existing: ReadonlySet<string>;
+  log?: (event: string, meta: Record<string, unknown>) => void;
+  limit?: number;
+}): Promise<RetrievedChunk[]> {
+  const log = options.log ?? (() => undefined);
+  const scope = options.industrySlug ? { industry: options.industrySlug } : {};
+  const queries = options.queries
+    .map((query) => shortQuery(query, 8))
+    .filter((query) => query.split(" ").length >= 2)
+    .filter((query, index, array) => array.indexOf(query) === index)
+    .slice(0, 2);
+  if (queries.length === 0) return [];
+
+  const limit = options.limit ?? 3;
+  const found = new Map<string, RetrievedChunk>();
+  for (const query of queries) {
+    const result = await searchWithRetry(options.client, query, scope, limit, options.embed, log);
+    for (const chunk of result.chunks) {
+      if (options.existing.has(chunk.chunkId) || found.has(chunk.chunkId)) continue;
+      if (!isUsable(chunk)) continue;
+      found.set(chunk.chunkId, chunk);
+    }
+  }
+  const chunks = [...found.values()].slice(0, limit);
+  if (chunks.length > 0) log("thin topic top-up", { queries, chunks: chunks.length });
+  return chunks;
 }
 
 /** Test helper: build evidence without a database. */

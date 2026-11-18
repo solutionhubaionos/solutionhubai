@@ -15,7 +15,8 @@
     "eval:answers": "bun scripts/run-answer-eval.ts",
     "eval:chat": "bun scripts/run-chat-eval.ts",
     "ingest": "bun scripts/ingest-worker.ts",
-    "ingest:cron": "bun scripts/ingest-worker.ts --cron"
+    "ingest:cron": "bun scripts/ingest-worker.ts --cron",
+    "ingest:facts": "bun scripts/backfill-claims.ts"
   },
   "overrides": {
     "rolldown": "1.2.1",
@@ -64,7 +65,6 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
-    "date-fns": "^4.1.0",
     "docx-preview": "^0.4.1",
     "embla-carousel-react": "^8.6.0",
     "fflate": "^0.8.3",
@@ -73,6 +73,7 @@
     "pdf-lib": "1.17.1",
     "pdfjs-dist": "5.4.624",
     "pptx-preview": "^1.0.7",
+    "pptxgenjs": "^4.0.1",
     "react": "^19.2.0",
     "react-day-picker": "^9.14.0",
     "react-dom": "^19.2.0",

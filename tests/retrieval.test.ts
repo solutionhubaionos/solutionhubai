@@ -7,7 +7,12 @@
  */
 import { describe, expect, test } from "bun:test";
 import { noPassagesAnswer } from "../src/lib/chat/answer";
-import { resolveLibraryEntities, splitEntityMentions } from "../src/lib/rag/entities";
+import {
+  distinctiveEntityName,
+  entityCandidates,
+  resolveLibraryEntities,
+  splitEntityMentions,
+} from "../src/lib/rag/entities";
 import {
   metadataFallbackChunks,
   searchLibraryChunksForEntities,
@@ -73,5 +78,28 @@ describe("multi-entity retrieval", () => {
     expect(named).toContain("Zurich Airport");
     expect(named.toLowerCase()).not.toContain("nothing in the library");
     expect(noPassagesAnswer()).not.toContain("nothing in the library");
+  });
+});
+
+describe("distinctive entity matching", () => {
+  test("strips sector and document words before matching", () => {
+    expect(distinctiveEntityName("Ethiopian Airlines")).toBe("Ethiopian");
+    expect(distinctiveEntityName("airlines")).toBe("");
+    expect(distinctiveEntityName("pitch deck proposal")).toBe("");
+    expect(distinctiveEntityName("IndiGo")).toBe("IndiGo");
+    expect(entityCandidates("airlines")).toEqual([]);
+    expect(entityCandidates("Ethiopian Airlines")).toContain("Ethiopian");
+    expect(entityCandidates("Ethiopian Airlines")).not.toContain("Airlines");
+  });
+
+  test("a generic sector word never resolves to a customer", async () => {
+    const client = createMockSupabase(CHUNKS, []);
+    expect(await resolveLibraryEntities(client, "airlines")).toEqual([]);
+    expect(await resolveLibraryEntities(client, "Ethiopian Airlines")).toEqual([]);
+  });
+
+  test("DFW stays DFW rather than collapsing to a near code", () => {
+    expect(entityCandidates("DFW")).toEqual(["DFW"]);
+    expect(entityCandidates("DFW")).not.toContain("DTW");
   });
 });

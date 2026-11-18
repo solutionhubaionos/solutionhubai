@@ -1,4 +1,5 @@
 /** Shapes shared by the document generator, its renderers and the chat card. */
+import type { DeckSpec, DeckSpecSlide } from "./deck/types";
 
 export type DocumentType = "pdf" | "docx" | "pptx";
 
@@ -106,6 +107,8 @@ export type SlidePlan = {
   layout: SlideLayout;
   /** Optional section tag rendered in the slide header. */
   section?: string | undefined;
+  /** Section kind chosen at plan time; authoritative when the title matches. */
+  kind?: SectionKind | undefined;
 };
 
 export type ChartType = "bar" | "stacked_bar" | "line" | "pie" | "doughnut";
@@ -122,6 +125,13 @@ export type ChartSpec = {
 
 export type KpiItem = { label: string; value: string; note?: string; refs?: number[] };
 export type FlowStep = { label: string; detail?: string };
+
+/**
+ * What a line of slide copy is doing. Evidence is a fact from a numbered
+ * passage; implication connects or weighs cited facts without adding new ones;
+ * recommendation is our proposal, rendered with a "Proposed" tag.
+ */
+export type BulletKind = "evidence" | "implication" | "recommendation";
 
 type BlockBase = { sources: string[] };
 
@@ -156,7 +166,15 @@ export type ComparisonBlock = {
   sources: string[];
 };
 
-export type ListItem = { text: string; level?: number; sources?: string[] };
+export type ListItem = {
+  text: string;
+  level?: number;
+  sources?: string[];
+  /** Defaults to evidence when absent. */
+  kind?: BulletKind;
+  /** Passage numbers behind an evidence item. */
+  refs?: number[];
+};
 
 export type Block =
   | { type: "heading"; level: 2 | 3; text: string }
@@ -180,10 +198,19 @@ export type DocumentSection = {
   title: string;
   /** The composition the model chose for this slide. */
   layout?: SlideLayout;
+  /** New-pipeline slide. PPTX renders this; PDF/DOCX keep using `blocks`. */
+  deck?: DeckSpecSlide;
+  /** Passages the section was written from, when the deck pipeline knows them. */
+  evidenceIds?: string[];
   blocks: Block[];
   /** 2-4 sentences for PPTX speaker notes, with chunk references. */
   speakerNotes: string;
-  /** Retrieval was too thin to write from; rendered with [To be confirmed]. */
+  /** 1-2 sentence "so what" line, highlighted near a visual. */
+  takeaway?: string | undefined;
+  /**
+   * Retrieval was too thin to write from. The section is flagged for the
+   * editor and left out of the rendered file rather than shown as a gap.
+   */
   flagged: boolean;
   warnings: string[];
 };
@@ -220,6 +247,8 @@ export type DocumentModel = {
   sources: SourceRecord[];
   openItems: string[];
   warnings: string[];
+  /** Present when the planner/writer pipeline built the deck. */
+  deck?: DeckSpec;
 };
 
 export type ExportBrief = {
@@ -228,9 +257,15 @@ export type ExportBrief = {
   /** What the document is about, derived from the conversation, not the UI. */
   subject?: string | null;
   partiesInvolved?: string[];
+  /** Every sector in the conversation's selected scope, not just the first. */
+  sectors?: string[];
   keyTopics?: string[];
   keyEntities?: string[];
   mode: DocumentMode;
+  /** The pitching target, when one was named. Not an evidence customer. */
+  targetClients?: string[];
+  /** Evidence customers are described generically in client-facing copy. */
+  anonymise?: boolean;
   client: string | null;
   industry: string | null;
   sector: string | null;
@@ -270,6 +305,12 @@ export type DocumentTrace = {
   usedChunkIds: string[];
   openItems: string[];
   warnings: string[];
+  /** Which client the file was written for, and how the evidence split. */
+  retrieval: {
+    target: string | null;
+    targetPassages: number;
+    peerPassages: number;
+  };
 };
 
 export type GeneratedDocument = {

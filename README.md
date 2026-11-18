@@ -63,6 +63,8 @@ drizzle/migrations/0018_worker_statement_timeout.sql
 drizzle/migrations/0019_chunk_provenance.sql
 drizzle/migrations/0020_entity_matching.sql
 drizzle/migrations/0021_customer_name_typo.sql
+drizzle/migrations/0021_chunk_context_backfill.sql
+drizzle/migrations/0022_conversation_scope.sql
 ```
 
 Paste one file at a time and run it. The editor asks for confirmation on
@@ -117,6 +119,9 @@ until each new run commits.
 - The worker reads `content_items` and the private Storage bucket, and writes only to the
   new `document_chunks` and `ingestion_jobs` tables plus the short-lived
   `ingestion_chunk_staging` table.
+- `0022` only creates the new `conversations` table (with owner-only RLS) that stores the
+  scope — selected industries and companies — for one chat thread. It changes no existing
+  table or row, is safe to re-run, and without it chat simply runs unscoped.
 
 ## Self-hosted Supabase (optional)
 
@@ -137,7 +142,9 @@ bun scripts/apply-sql.ts --dry-run \
   drizzle/migrations/0018_worker_statement_timeout.sql \
   drizzle/migrations/0019_chunk_provenance.sql \
   drizzle/migrations/0020_entity_matching.sql \
-  drizzle/migrations/0021_customer_name_typo.sql
+  drizzle/migrations/0021_customer_name_typo.sql \
+  drizzle/migrations/0021_chunk_context_backfill.sql \
+  drizzle/migrations/0022_conversation_scope.sql
 ```
 
 Then run the same command without `--dry-run`. `verify-rag.ts` needs
@@ -158,4 +165,4 @@ Then run the same command without `--dry-run`. `verify-rag.ts` needs
 | `bun scripts/run-answer-eval.ts`             | Citation, numeric and refusal scoring over the same set              |
 | `bun scripts/verify-rag.ts`                  | RLS, grants, indexes and delay smoke test (needs `SUPABASE_DB_URL`)  |
 
-`docs/rag-pipeline.md` describes the full pipeline and its design decisions.
+`flow.md` is the single handoff document: how uploads become passages, how a question becomes a grounded answer, how decks are generated, and what happens when one is saved back to the library.

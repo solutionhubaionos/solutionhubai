@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect, test } from "bun:test";
 import { XMLValidator } from "fast-xml-parser";
 import { unzipSync } from "fflate";
 import type { DocumentModel, SourceRecord } from "../src/lib/documents/types";
@@ -289,9 +289,18 @@ describe("DOCX renderer", () => {
 });
 
 describe("PPTX renderer", () => {
-  const { bytes, pages } = renderPptx(pitchModel());
-  const parts = unzipSync(bytes);
-  const slideNames = Object.keys(parts).filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name));
+  let bytes: Uint8Array;
+  let pages = 0;
+  let parts: Record<string, Uint8Array> = {};
+  let slideNames: string[] = [];
+
+  beforeAll(async () => {
+    const rendered = await renderPptx(pitchModel());
+    bytes = rendered.bytes;
+    pages = rendered.pages;
+    parts = unzipSync(bytes);
+    slideNames = Object.keys(parts).filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name));
+  });
 
   test("writes one slide per section plus a cover, with notes", () => {
     expect(slideNames.length).toBe(pages);

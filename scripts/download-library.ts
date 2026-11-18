@@ -15,7 +15,7 @@ import type { Database } from "../src/integrations/supabase/types";
 import { documentFormat } from "../src/lib/document-format";
 
 const BUCKET = "content";
-const SUPPORTED = new Set(["pdf", "docx", "pptx"]);
+const SUPPORTED = new Set(["pdf", "docx", "pptx", "xlsx"]);
 
 type ManifestEntry = {
   localPath: string;

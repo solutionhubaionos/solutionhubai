@@ -8,7 +8,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { ENTITY_FILTER_THRESHOLD, RETRIEVAL_CANDIDATES, RETRIEVAL_MAX_K } from "../rag/config";
+import { ENTITY_FILTER_THRESHOLD, RETRIEVAL_CANDIDATES } from "../rag/config";
 import {
   resolveLibraryEntities,
   resolveLibraryEntity,
@@ -17,12 +17,7 @@ import {
   type ResolvedEntity,
 } from "../rag/entities";
 import { embedQuery } from "../rag/embeddings";
-import { selectRelevantChunks } from "../rag/relevance";
-import {
-  metadataFallbackChunks,
-  searchLibraryChunksForEntities,
-  type EntityScope,
-} from "../rag/search";
+import { gatherLibraryEvidence } from "../rag/search";
 import {
   buildContext,
   buildMessages,
@@ -33,9 +28,27 @@ import {
 } from "./answer";
 import { rewriteQuery } from "./rewrite";
 import { buildRetrievalQuery, retrievalScopes } from "./scope";
+import {
+  EMPTY_SCOPE,
+  isEmptyScope,
+  outsideScopeEntities,
+  outsideScopeNote,
+  scopeCompanyNames,
+  scopePromptLine,
+  scopeRetrievalScopes,
+  type ConversationScope,
+} from "./conversationScope";
+import { readConversationScope } from "./scope.functions";
 
 export type AskLibraryResult =
-  | { ok: true; answer: string; sources: ChatSource[]; grounded: boolean }
+  | {
+      ok: true;
+      answer: string;
+      sources: ChatSource[];
+      grounded: boolean;
+      /** Organisations reached outside the selected scope, for the Add action. */
+      addedEntities?: string[];
+    }
   | { ok: false; error: string };
 
 const contextSchema = z.object({
@@ -44,6 +57,20 @@ const contextSchema = z.object({
   industries: z.array(z.string().trim().min(1).max(64)).max(20).default([]),
   sectors: z.array(z.string().trim().min(1).max(60)).max(20).default([]),
   website: z.string().trim().max(200).default(""),
+  /** Who we are pitching: a topical hint, never a retrieval filter. */
+  targetClients: z
+    .array(
+      z.object({
+        name: z.string().trim().min(1).max(120),
+        industry: z.string().trim().max(80).nullish(),
+        websiteUrl: z.string().trim().max(500).nullish(),
+        description: z.string().trim().max(400).nullish(),
+        includePriorWork: z.boolean().optional(),
+      }),
+    )
+    .max(6)
+    .default([]),
+  anonymise: z.boolean().default(true),
 });
 
 export const askLibrary = createServerFn({ method: "POST" })
@@ -52,6 +79,10 @@ export const askLibrary = createServerFn({ method: "POST" })
     z
       .object({
         question: z.string().trim().min(2).max(2000),
+        /** The stored conversation whose scope this turn runs inside. */
+        conversationId: z.string().uuid().optional(),
+        /** Industry slug -> display name, for the scope line and the pill. */
+        industryNames: z.record(z.string()).optional(),
         context: contextSchema.optional(),
         history: z
           .array(
@@ -74,12 +105,47 @@ export const askLibrary = createServerFn({ method: "POST" })
       return { ok: false, error: "AI Search is not configured yet." };
     }
 
+    // The stored scope is the source of truth; the client's live context is only
+    // merged in for conversations that predate persistence.
+    const scope: ConversationScope = data.conversationId
+      ? await readConversationScope(context.supabase, data.conversationId)
+      : EMPTY_SCOPE;
+    const scoped = !isEmptyScope(scope);
+
+    const targetClients = data.context?.targetClients ?? [];
     const ctx = {
-      clients: data.context?.clients ?? [],
+      clients: [...new Set([...scopeCompanyNames(scope), ...(data.context?.clients ?? [])])],
       personas: data.context?.personas ?? [],
-      industries: data.context?.industries ?? [],
+      industries: [...new Set([...scope.industries, ...(data.context?.industries ?? [])])],
       sectors: data.context?.sectors ?? [],
       website: data.context?.website ?? "",
+      targetClients: targetClients.map((target) => ({
+        name: target.name,
+        industry: target.industry ?? null,
+        websiteUrl: target.websiteUrl ?? null,
+        description: target.description ?? null,
+        includePriorWork: target.includePriorWork ?? false,
+      })),
+      anonymise: data.context?.anonymise ?? true,
+    };
+    const scopeLine = scopePromptLine(scope, data.industryNames ?? {});
+
+    // A target we are pitching is never resolved as an evidence customer; the
+    // library belonging to other clients is the whole point. The opt-in toggle
+    // is the only way its own material may be searched.
+    const targetNames = new Set(
+      targetClients
+        .filter((target) => !target.includePriorWork)
+        .map((target) => normalizeEntityKey(target.name))
+        .filter(Boolean),
+    );
+    const isTarget = (entity: ResolvedEntity) => {
+      const key = normalizeEntityKey(entity.canonical);
+      if (!key) return false;
+      for (const name of targetNames) {
+        if (key === name || key.includes(name) || name.includes(key)) return true;
+      }
+      return false;
     };
 
     try {
@@ -88,13 +154,16 @@ export const askLibrary = createServerFn({ method: "POST" })
       const rewrite = await rewriteQuery(data.question, data.history ?? [], {
         apiKey,
         baseUrl,
+        ...(scopeLine ? { scopeLine } : {}),
         log: (event, meta) => console.log(`[CHAT] ${event}`, { requestId, ...meta }),
       });
 
       // Resolve every organisation the question names, not just the best one.
       // A follow-up like "Zurich airport and Interglobe hotels" must reach both
       // document families; the previous single-entity filter dropped one.
-      const named = await resolveLibraryEntities(context.supabase, rewrite.query);
+      const named = (await resolveLibraryEntities(context.supabase, rewrite.query)).filter(
+        (entity) => !isTarget(entity),
+      );
 
       // Wizard picks are hints, but they still apply by default: resolve each
       // selected company to the spelling the library actually stored, so a pick
@@ -129,56 +198,41 @@ export const askLibrary = createServerFn({ method: "POST" })
         });
       }
 
+      // A question may name an organisation the user did not select. It is still
+      // answered (never blocked), and the answer says it was added for this turn.
+      const addedEntities = scoped
+        ? outsideScopeEntities(
+            named.map((entity) => entity.canonical),
+            scope,
+          )
+        : [];
+
       // Selected companies stay a default scope; the named entities get their
-      // own searches inside searchLibraryChunksForEntities.
-      const scopes = retrievalScopes(ctx);
+      // own searches inside gatherLibraryEvidence.
+      const scopes = scoped ? scopeRetrievalScopes(scope) : retrievalScopes(ctx);
       for (const entity of selected) {
         scopes.push({ customer: entity.matchedName }, { customer: entity.canonical });
       }
 
-      const corpus: EntityScope[] = entities.map((entity) => ({
-        canonical: entity.canonical,
-        spellings: entity.spellings,
-      }));
-      const searchText = buildRetrievalQuery(rewrite.query, ctx);
-
-      // One pass per named/selected organisation plus the wizard scopes, all
-      // embedded once and merged with a per-entity quota, so one document family
-      // cannot crowd out the others.
-      const candidates = await searchLibraryChunksForEntities(
-        context.supabase,
-        searchText,
-        corpus,
+      // One embedded question, one pass per named/selected organisation plus
+      // the wizard scopes, relevance filtering, the unscoped fallback and the
+      // metadata safety net all live behind this call.
+      const evidence = await gatherLibraryEvidence({
+        client: context.supabase,
+        query: buildRetrievalQuery(rewrite.query, ctx),
+        entities,
         scopes,
-        RETRIEVAL_CANDIDATES,
-        (query) => embedQuery(query, { apiKey, baseUrl }),
-      );
-
-      // Retrieval hands back a fixed candidate list; only passages that clear
-      // the score floor (and belong to a named entity) are worth prompting with.
-      let chunks = selectRelevantChunks(candidates, {
-        entityKeys: entities
-          .flatMap((entity) => [entity.canonical, entity.matchedName, ...entity.spellings])
-          .map(normalizeEntityKey),
         comparative: isComparativeQuestion(data.question),
+        fallbackToLibrary: scoped,
+        k: RETRIEVAL_CANDIDATES,
+        embed: (query) => embedQuery(query, { apiKey, baseUrl }),
       });
-
-      // Before saying nothing was found, check the metadata: a named customer or
-      // file may exist even when the hybrid ranking returned no passage.
-      if (chunks.length === 0 && entities.length > 0) {
-        chunks = await metadataFallbackChunks(
-          context.supabase,
-          entities.flatMap((entity) => [entity.canonical, entity.matchedName]),
-          RETRIEVAL_MAX_K,
-        );
-        if (chunks.length > 0) {
-          console.log("[CHAT] metadata fallback", { requestId, chunks: chunks.length });
-        }
-      }
+      const chunks = evidence.chunks;
 
       console.log("[CHAT] retrieval", {
         requestId,
-        candidates: candidates.length,
+        source: evidence.source,
+        candidates: evidence.candidates,
         selected: chunks.length,
         documents: [...new Set(chunks.map((chunk) => chunk.contentId))].length,
       });
@@ -186,16 +240,24 @@ export const askLibrary = createServerFn({ method: "POST" })
       if (chunks.length === 0) {
         return {
           ok: true,
-          answer: noPassagesAnswer(entities.map((entity) => entity.canonical)),
+          answer: noPassagesAnswer(
+            entities.map((entity) => entity.canonical),
+            targetClients.map((target) => target.name),
+          ),
           sources: [],
           grounded: false,
         };
       }
 
       const built = buildContext(chunks);
-      const messages = buildMessages(data.question, built, data.history ?? []);
+      const messages = buildMessages(data.question, built, data.history ?? [], scopeLine);
       const raw = await generateAnswer(messages, { apiKey, baseUrl, requestId });
       const final = finalizeAnswer(raw.answer, built);
+
+      // The scope note is server-owned: it is appended after citation cleanup so
+      // the markers in it can never be renumbered.
+      const note = outsideScopeNote(addedEntities);
+      const answer = note ? `${final.answer}\n\n${note}` : final.answer;
 
       // Measure how often the model still narrates its own retrieval; never block.
       if (final.metaPhrases.length > 0) {
@@ -212,7 +274,13 @@ export const askLibrary = createServerFn({ method: "POST" })
         });
       }
 
-      return { ok: true, answer: final.answer, sources: final.sources, grounded: true };
+      return {
+        ok: true,
+        answer,
+        sources: final.sources,
+        grounded: true,
+        ...(addedEntities.length > 0 ? { addedEntities } : {}),
+      };
     } catch (error) {
       console.error("[CHAT] turn failed", error instanceof Error ? error.message : error);
       return { ok: false, error: "AI Search could not answer that. Please try again." };

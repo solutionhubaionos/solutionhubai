@@ -4,9 +4,9 @@
  * selected sector one at a time, and only then invite the actual question.
  *
  * The state is kept pure so the sequence can be tested without a browser. The
- * picked tools become the drafts proposed once the scope is complete, the
- * picked sectors become `context.industries` and the picked companies become
- * `context.clients`, which is what retrieval uses for filtering.
+ * picked tools are informational, the picked sectors become the conversation's
+ * scope industries and the picked companies its scope companies, which is what
+ * retrieval and exports filter on.
  */
 import type { DocumentType } from "../documents/types";
 
@@ -26,18 +26,14 @@ export const SECTOR_QUESTION =
 export const READY_QUESTION =
   "Ok, now that I have enough context. What can I help you with? You can ask about anything in these files, or tell me to create a deck, proposal or PDF.";
 
-/** Shown above the composer once a few answers have landed. */
-export const DOCUMENT_SUGGESTION =
-  "Want me to create a deck, PPT or proposal document? Just tell me.";
-
-/** Grounded answers needed before the document suggestion appears. */
-export const SUGGESTION_MIN_ANSWERS = 2;
-
 /** The work types offered on the opening card, in display order. */
 export type Capability = {
   id: string;
   label: string;
-  /** The document this tool proposes at the end of intake, if any. */
+  /**
+   * The format this tool maps to, if any. Informational only: finishing the
+   * intake never proposes a document, and generation waits for an explicit ask.
+   */
   type: DocumentType | null;
 };
 
@@ -52,19 +48,8 @@ export const capabilityOptions: { value: string; label: string }[] = CAPABILITIE
   (capability) => ({ value: capability.id, label: capability.label }),
 );
 
-/** Document drafts to propose for the picked tools, one per format. */
-export function documentTypesForCapabilities(ids: readonly string[]): DocumentType[] {
-  const picked = new Set(ids);
-  const types: DocumentType[] = [];
-  for (const capability of CAPABILITIES) {
-    if (!capability.type || !picked.has(capability.id)) continue;
-    if (!types.includes(capability.type)) types.push(capability.type);
-  }
-  return types;
-}
-
 export function clientQuestion(industryName: string): string {
-  return `Select which ${industryName} companies you want data on.`;
+  return `Who are you pitching in ${industryName}? Pick an existing company, or type the new client's name — a prospect that isn't in the library is the normal case.`;
 }
 
 /** True while the transcript is waiting on a picker rather than typing. */

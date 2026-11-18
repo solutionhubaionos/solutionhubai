@@ -1,24 +1,21 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Sparkles, UploadCloud, X } from "lucide-react";
+import { UploadCloud } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { UploadDialog } from "@/components/UploadDialog";
 import { useIndustries } from "@/lib/industries";
 import { useIndustryClients } from "@/lib/chat/clients";
 import { askLibrary, type AskLibraryResult } from "@/lib/chat/chat.functions";
 import {
-  DOCUMENT_SUGGESTION,
   INTAKE_GREETING,
   INITIAL_INTAKE,
   READY_QUESTION,
   SECTOR_QUESTION,
-  SUGGESTION_MIN_ANSWERS,
   capabilityOptions,
   clientQuestion,
   clientsDone,
-  documentTypesForCapabilities,
   isPickingScope,
   optionsDone,
   sectorsDone,
@@ -28,19 +25,32 @@ import {
   EMPTY_CONTEXT,
   contextSummary,
   examplePrompts,
+  normaliseWebsite,
   titleFromQuestion,
   type ChatContext,
 } from "@/lib/chat/scope";
+import {
+  EMPTY_SCOPE,
+  contextFromScope,
+  mergeScopeWithContext,
+  normalizeScope,
+  scopePillLabels,
+  withPrimaryTargetWebsite,
+  type ConversationScope,
+  type TargetClient,
+} from "@/lib/chat/conversationScope";
+import { loadConversationScope, saveConversationScope } from "@/lib/chat/scope.functions";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { ChatTopBar } from "@/components/chat/ChatTopBar";
 import { Composer } from "@/components/chat/Composer";
 import { ContextToolbar } from "@/components/chat/ContextToolbar";
 import { Conversation } from "@/components/chat/Conversation";
 import { SelectionCard } from "@/components/chat/SelectionCard";
+import { ScopeBar } from "@/components/chat/ScopeBar";
+import { ExportHint } from "@/components/chat/ExportHint";
 import type { ChatMessageView } from "@/components/chat/types";
-import { downloadDocument } from "@/lib/documents/download";
 import { generateDocument, planDocument } from "@/lib/documents/documents.functions";
-import { buildDraft, detectDocumentType } from "@/lib/documents/intent";
+import { SHOW_EXPORT_CONFIRM, buildDraft, detectExportIntent } from "@/lib/documents/intent";
 import {
   DOCUMENT_FORMATS,
   type DocumentDraft,
@@ -59,6 +69,8 @@ export const Route = createFileRoute("/_authenticated/chat")({
       { name: "twitter:card", content: "summary" },
     ],
   }),
+  validateSearch: (search: Record<string, unknown>): { c?: string } =>
+    typeof search["c"] === "string" ? { c: search["c"] } : {},
   component: ChatPage,
 });
 
@@ -71,13 +83,11 @@ const HISTORY_TURNS = 6;
 const DOCUMENT_HISTORY_TURNS = 40;
 
 type ChatThread = {
+  /** Also the persisted conversation id, so its scope can be loaded later. */
   id: string;
   title: string;
   messages: ChatMessageView[];
   intake: IntakeState;
-  /** Tools picked on the opening card, e.g. a deck or a proposal. */
-  capabilities: string[];
-  dismissedSuggestion?: boolean;
 };
 
 /** A fresh chat opens with the assistant's greeting already in the transcript. */
@@ -87,7 +97,6 @@ function greetingThread(): ChatThread {
     title: "New conversation",
     messages: [{ id: crypto.randomUUID(), role: "assistant", content: INTAKE_GREETING }],
     intake: INITIAL_INTAKE,
-    capabilities: [],
   };
 }
 
@@ -103,6 +112,8 @@ function isKeyboardFocus(element: Element) {
 function ChatPage() {
   const { industries } = useIndustries();
   const { clientsByIndustry } = useIndustryClients();
+  const { user } = Route.useRouteContext();
+  const userId = user.id;
 
   const [context, setContext] = useState<ChatContext>(EMPTY_CONTEXT);
   const [threads, setThreads] = useState<ChatThread[]>(() => [greetingThread()]);
@@ -192,6 +203,150 @@ function ChatPage() {
   const intake = activeThread?.intake ?? INITIAL_INTAKE;
   const picking = isPickingScope(intake);
 
+  // The scope lives with the conversation on the server, so it survives a
+  // reload and a later session of the same chat; the client only displays it.
+  const conversationId = activeThread?.id ?? "";
+  const scopeQuery = useQuery({
+    queryKey: ["conversation-scope", conversationId],
+    enabled: conversationId.length > 0,
+    staleTime: 30_000,
+    queryFn: async (): Promise<ConversationScope> => {
+      const result = await loadConversationScope({ data: { conversationId } });
+      return result.ok ? normalizeScope(result.scope) : EMPTY_SCOPE;
+    },
+  });
+  const queryClient = useQueryClient();
+  const scope = scopeQuery.data ?? EMPTY_SCOPE;
+  const scopeLabels = useMemo(
+    () => scopePillLabels(scope, industryNameBySlug),
+    [scope, industryNameBySlug],
+  );
+
+  /** Saves an edited scope for this conversation; it applies from the next turn. */
+  const persistScope = useCallback(
+    (next: ConversationScope) => {
+      if (!conversationId) return;
+      const withStamp: ConversationScope = normalizeScope({
+        ...next,
+        // The target client is never dropped by an unrelated scope edit.
+        targetClients:
+          next.targetClients ??
+          queryClient.getQueryData<ConversationScope>(["conversation-scope", conversationId])
+            ?.targetClients ??
+          [],
+        updatedAt: new Date().toISOString(),
+      });
+      const key = ["conversation-scope", conversationId];
+      const previous = queryClient.getQueryData<ConversationScope>(key);
+      queryClient.setQueryData(key, withStamp);
+      // Mirror into the composer context so drafts and example prompts follow
+      // the same selection, and clearing the scope really clears the filters.
+      setContext((rest) =>
+        contextFromScope(withStamp, {
+          personas: rest.personas,
+          sectors: rest.sectors,
+          website: rest.website,
+        }),
+      );
+      const failed = () => {
+        if (previous) queryClient.setQueryData(key, previous);
+        toast("Could not save the selected scope", {
+          description: "The previous selection is still active.",
+        });
+      };
+      // A rejected server call and an `ok: false` result both mean the scope is
+      // not stored, so exports would silently fall back to the house theme.
+      return saveConversationScope({
+        data: {
+          conversationId,
+          scope: {
+            industries: withStamp.industries,
+            companies: withStamp.companies,
+            targetClients: withStamp.targetClients,
+            updatedAt: withStamp.updatedAt,
+          },
+        },
+      })
+        .then((result) => {
+          if (!result.ok) {
+            failed();
+            return false;
+          }
+          return true;
+        })
+        .catch(() => {
+          failed();
+          return false;
+        });
+    },
+    [conversationId, queryClient],
+  );
+
+  /**
+   * The website field above the composer stores the target's URL on the primary
+   * target, so a later export can ground the deck on it and detect its logo.
+   */
+  const syncTargetWebsite = useCallback(
+    async (raw: string) => {
+      const website = normaliseWebsite(raw);
+      if (!website || !conversationId) return;
+      const current =
+        queryClient.getQueryData<ConversationScope>(["conversation-scope", conversationId]) ??
+        scope;
+      if (!current.targetClients[0]) return;
+      if (current.targetClients[0].websiteUrl === website) return;
+      await persistScope(withPrimaryTargetWebsite(current, website));
+    },
+    [conversationId, persistScope, queryClient, scope],
+  );
+
+  /** Tracks the website save so an export cannot read the target before it lands. */
+  const websiteSyncRef = useRef<Promise<void> | null>(null);
+  const queueTargetWebsite = useCallback(
+    (website: string) => {
+      const task = syncTargetWebsite(website);
+      websiteSyncRef.current = task;
+      void task.finally(() => {
+        if (websiteSyncRef.current === task) websiteSyncRef.current = null;
+      });
+      return task;
+    },
+    [syncTargetWebsite],
+  );
+
+  const navigate = Route.useNavigate();
+  const search = Route.useSearch();
+
+  /** Opening a conversation also puts its id in the URL, so the scope survives. */
+  const openThread = useCallback(
+    (threadId: string) => {
+      setActiveId(threadId);
+      void navigate({ to: "/chat", search: { c: threadId }, replace: true });
+    },
+    [navigate],
+  );
+
+  // A conversation id in the URL reopens that conversation — and with it the
+  // stored scope — even in a fresh tab, where the transcript restarts empty.
+  useEffect(() => {
+    const id = search.c;
+    if (!id) return;
+    setThreads((previous) =>
+      previous.some((thread) => thread.id === id)
+        ? previous
+        : [
+            {
+              id,
+              title: "Resumed conversation",
+              messages: [{ id: crypto.randomUUID(), role: "assistant", content: INTAKE_GREETING }],
+              intake: { stage: "complete" },
+            },
+            ...previous,
+          ],
+    );
+    setActiveId(id);
+  }, [search.c]);
+
   const appendMessage = useCallback((threadId: string, message: ChatMessageView) => {
     setThreads((previous) =>
       previous.map((thread) =>
@@ -215,11 +370,23 @@ function ChatPage() {
   }, []);
 
   const documentGeneration = useMutation({
-    mutationFn: (payload: {
+    mutationFn: async (payload: {
       messageId: string;
       draft: DocumentDraft;
       history: { role: "user" | "assistant"; content: string }[];
-    }) => generateDocument({ data: { draft: payload.draft, history: payload.history } }),
+    }) => {
+      // A website just entered in the toolbar may still be saving; wait for the
+      // target row to carry it before the server reads the scope.
+      await websiteSyncRef.current;
+      return generateDocument({
+        data: {
+          draft: payload.draft,
+          history: payload.history,
+          ...(conversationId ? { conversationId } : {}),
+          industryNames: industryNameBySlug,
+        },
+      });
+    },
     onSuccess: (result, payload) => {
       if (!result.ok) {
         updateDocument(payload.messageId, { status: "error", error: result.error });
@@ -233,12 +400,14 @@ function ChatPage() {
         warnings: result.warnings,
         trace: result.trace,
       });
-      downloadDocument(result.file);
     },
-    onError: (_error, payload) => {
+    onError: (error, payload) => {
+      const detail = error instanceof Error ? error.message.trim() : "";
       updateDocument(payload.messageId, {
         status: "error",
-        error: "Document generation failed. Please try again.",
+        error: detail
+          ? `Document generation failed: ${detail}`
+          : "Document generation failed. Please try again.",
       });
     },
   });
@@ -266,6 +435,7 @@ function ChatPage() {
           mode: payload.mode,
           context,
           industryNames: industryNameBySlug,
+          ...(conversationId ? { conversationId } : {}),
           history: payload.history,
         },
       }),
@@ -371,7 +541,30 @@ function ChatPage() {
     );
   }, []);
 
-  /** Starts a draft from the "+" menu or the suggestion using current context. */
+  /**
+   * Appends a draft for an explicit request. With SHOW_EXPORT_CONFIRM false the
+   * request builds straight away; the composer hint only prefills text, so no
+   * document is ever generated without a user asking for it.
+   */
+  const startExport = useCallback(
+    (
+      threadId: string,
+      draft: DocumentDraft,
+      history: { role: "user" | "assistant"; content: string }[],
+    ) => {
+      const messageId = crypto.randomUUID();
+      appendMessage(threadId, {
+        id: messageId,
+        role: "assistant",
+        content: "",
+        document: { draft, status: SHOW_EXPORT_CONFIRM ? "proposed" : "generating" },
+      });
+      if (!SHOW_EXPORT_CONFIRM) documentGeneration.mutate({ messageId, draft, history });
+    },
+    [appendMessage, documentGeneration],
+  );
+
+  /** Starts a draft from the "+" menu, using current context. */
   const startDocument = useCallback(
     (type: DocumentType) => {
       if (!activeThread) return;
@@ -391,50 +584,35 @@ function ChatPage() {
           ),
         );
       }
+      const messageId = crypto.randomUUID();
       appendMessage(threadId, {
-        id: crypto.randomUUID(),
+        id: messageId,
         role: "assistant",
         content: "",
-        document: { draft, status: "proposed" },
+        document: { draft, status: SHOW_EXPORT_CONFIRM ? "proposed" : "generating" },
       });
+      if (!SHOW_EXPORT_CONFIRM) {
+        documentGeneration.mutate({ messageId, draft, history: [] });
+      }
     },
-    [activeThread, appendMessage, context, industryNameBySlug],
+    [activeThread, appendMessage, context, documentGeneration, industryNameBySlug],
   );
 
   /**
-   * The final turn of the intake: the ready prompt, plus a confirmable draft for
-   * every document tool picked on the opening card. Nothing is generated until
-   * the user presses Generate on a card.
+   * The final turn of the intake: only the ready prompt. Finishing the wizard
+   * never proposes or builds a document; generation waits for an explicit
+   * request, and one slim hint above the composer explains that.
    */
   const completeIntake = useCallback(
-    (nextContext: ChatContext, capabilities: readonly string[]): ChatMessageView[] => {
-      const messages: ChatMessageView[] = [
-        { id: crypto.randomUUID(), role: "assistant", content: READY_QUESTION },
-      ];
-      for (const type of documentTypesForCapabilities(capabilities)) {
-        messages.push({
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: "",
-          document: {
-            draft: buildDraft({
-              prompt: `Create a ${DOCUMENT_FORMATS[type].noun}`,
-              type,
-              context: nextContext,
-              industryNames: industryNameBySlug,
-            }),
-            status: "proposed",
-          },
-        });
-      }
-      return messages;
-    },
-    [industryNameBySlug],
+    (): ChatMessageView[] => [
+      { id: crypto.randomUUID(), role: "assistant", content: READY_QUESTION },
+    ],
+    [],
   );
 
-  /** Opening card Done: remember the tools, then ask which sectors to cover. */
+  /** Opening card Done: tools are informational only, so just ask for sectors. */
   const finishOptions = useCallback(
-    (selected: string[]) => {
+    (_selected: string[]) => {
       const thread = activeThread;
       if (!thread || thread.intake.stage !== "options") return;
 
@@ -443,7 +621,6 @@ function ChatPage() {
           item.id === thread.id
             ? {
                 ...item,
-                capabilities: selected,
                 intake: optionsDone(),
                 messages: [
                   ...item.messages,
@@ -465,13 +642,26 @@ function ChatPage() {
 
       const nextContext: ChatContext = { ...context, industries: selected, clients: [] };
       setContext(nextContext);
+      // The picked sectors are the conversation's scope from here on: whole
+      // industries until companies are added below.
+      persistScope(
+        mergeScopeWithContext(
+          {
+            industries: selected,
+            companies: [],
+            targetClients: scope.targetClients,
+            updatedAt: null,
+          },
+          nextContext,
+        ),
+      );
       const next = sectorsDone(selected);
       const firstName =
         next.stage === "clients" ? (industryNameBySlug[next.current] ?? next.current) : "";
       const followUp: ChatMessageView[] =
         next.stage === "clients"
           ? [{ id: crypto.randomUUID(), role: "assistant", content: clientQuestion(firstName) }]
-          : completeIntake(nextContext, thread.capabilities);
+          : completeIntake();
 
       setThreads((previous) =>
         previous.map((item): ChatThread =>
@@ -481,20 +671,44 @@ function ChatPage() {
         ),
       );
     },
-    [activeThread, completeIntake, context, industryNameBySlug],
+    [activeThread, completeIntake, context, industryNameBySlug, persistScope, scope.targetClients],
   );
 
-  /** Company Done: add the picks and advance to the next selected sector. */
+  /**
+   * Client Done: this is the company we are PITCHING. It is stored as the target
+   * client, never as an evidence company, because a new prospect is normally
+   * absent from the library and must not filter retrieval.
+   */
   const finishClients = useCallback(
     (selected: string[]) => {
       const thread = activeThread;
       if (!thread || thread.intake.stage !== "clients") return;
+      const currentIndustry = thread.intake.current;
 
-      const nextContext: ChatContext =
-        selected.length > 0
-          ? { ...context, clients: [...new Set([...context.clients, ...selected])] }
-          : context;
-      if (selected.length > 0) setContext(nextContext);
+      if (selected.length > 0) {
+        const existing = scope.targetClients;
+        // A URL typed before the client was chosen is already in the composer
+        // context; it belongs on the target so the deck can pick up its kit.
+        const website = normaliseWebsite(context.website);
+        const additions: TargetClient[] = selected
+          .filter(
+            (name) => !existing.some((client) => client.name.toLowerCase() === name.toLowerCase()),
+          )
+          .map((name) => ({
+            name,
+            websiteUrl: website || null,
+            industry: currentIndustry,
+            anonymise: true,
+            includePriorWork: false,
+            notes: "",
+          }));
+        persistScope({
+          ...scope,
+          targetClients: [...existing, ...additions],
+          updatedAt: new Date().toISOString(),
+        });
+        if (website) void queueTargetWebsite(website);
+      }
 
       const next = clientsDone(thread.intake.queue);
       const nextName =
@@ -502,7 +716,7 @@ function ChatPage() {
       const followUp: ChatMessageView[] =
         next.stage === "clients"
           ? [{ id: crypto.randomUUID(), role: "assistant", content: clientQuestion(nextName) }]
-          : completeIntake(nextContext, thread.capabilities);
+          : completeIntake();
 
       setThreads((previous) =>
         previous.map((item): ChatThread =>
@@ -512,7 +726,15 @@ function ChatPage() {
         ),
       );
     },
-    [activeThread, completeIntake, context, industryNameBySlug],
+    [
+      activeThread,
+      completeIntake,
+      context.website,
+      industryNameBySlug,
+      persistScope,
+      queueTargetWebsite,
+      scope,
+    ],
   );
 
   const industryOptions = useMemo(
@@ -533,8 +755,8 @@ function ChatPage() {
       return (
         <SelectionCard
           key="intake-options"
-          title="What would you like to do?"
           options={capabilityOptions}
+          large
           skipLabel="Skip"
           onDone={finishOptions}
           onSkip={() => finishOptions([])}
@@ -547,6 +769,9 @@ function ChatPage() {
           key="intake-sectors"
           title="Sectors & industries"
           options={industryOptions}
+          freeTextLabel="Other industry"
+          freeTextPlaceholder="Type your own, e.g. Airports"
+          freeTextAction="Use industry"
           onDone={finishSectors}
           onSkip={() => finishSectors([])}
         />
@@ -557,10 +782,13 @@ function ChatPage() {
       return (
         <SelectionCard
           key={`intake-clients-${intake.current}`}
-          title={`${currentName} companies`}
+          title={`Who are you pitching in ${currentName}?`}
           options={clientOptions}
-          emptyLabel={`No companies are listed under ${currentName} yet. You can still continue.`}
+          emptyLabel={`No ${currentName} companies are in the library yet — type the client below.`}
           skipLabel={`Skip ${currentName}`}
+          freeTextLabel="Client you're pitching"
+          freeTextPlaceholder="Type any company, e.g. Zurich Airport"
+          freeTextAction="Use as new client"
           onDone={finishClients}
           onSkip={() => finishClients([])}
         />
@@ -574,7 +802,16 @@ function ChatPage() {
       threadId: string;
       question: string;
       history: { role: "user" | "assistant"; content: string }[];
-    }) => askLibrary({ data: { question: payload.question, context, history: payload.history } }),
+    }) =>
+      askLibrary({
+        data: {
+          question: payload.question,
+          context,
+          industryNames: industryNameBySlug,
+          ...(conversationId ? { conversationId } : {}),
+          history: payload.history,
+        },
+      }),
     onSuccess: (result: AskLibraryResult, payload) => {
       if (!result.ok) {
         appendMessage(payload.threadId, {
@@ -591,6 +828,9 @@ function ChatPage() {
         content: result.answer,
         sources: result.sources,
         notice: !result.grounded,
+        ...(result.addedEntities && result.addedEntities.length > 0
+          ? { addedEntities: result.addedEntities }
+          : {}),
       });
     },
     onError: (_error, payload) => {
@@ -627,28 +867,28 @@ function ChatPage() {
     appendMessage(threadId, { id: crypto.randomUUID(), role: "user", content: question });
     setInput("");
 
-    // "Create a pitch deck" becomes a draft to confirm, never an instant file.
-    const documentType = detectDocumentType(question);
-    if (documentType) {
-      appendMessage(threadId, {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: "",
-        document: {
-          draft: buildDraft({
+    // Only an explicit request (verb + format) starts an export; merely naming a
+    // deck, or finishing the wizard, never does.
+    const intent = detectExportIntent(question, history);
+    if (intent) {
+      startExport(
+        threadId,
+        {
+          ...buildDraft({
             prompt: question,
-            type: documentType,
+            type: intent.type,
             context,
             industryNames: industryNameBySlug,
           }),
-          status: "proposed",
+          mode: intent.mode,
         },
-      });
+        history,
+      );
       return;
     }
 
     ask.mutate({ threadId, question, history });
-  }, [activeThread, appendMessage, ask, context, industryNameBySlug, input]);
+  }, [activeThread, appendMessage, ask, context, industryNameBySlug, input, startExport]);
 
   const newChat = useCallback(() => {
     const pristine =
@@ -657,12 +897,12 @@ function ChatPage() {
     if (!pristine) {
       const thread = greetingThread();
       setThreads((previous) => [thread, ...previous]);
-      setActiveId(thread.id);
+      openThread(thread.id);
       setContext(EMPTY_CONTEXT);
     }
     setInput("");
     setFocusSignal((signal) => signal + 1);
-  }, [activeThread]);
+  }, [activeThread, openThread]);
 
   // An example card drops its prompt into the composer for editing — never sends.
   const useExample = useCallback((prompt: string) => {
@@ -697,25 +937,24 @@ function ChatPage() {
     URL.revokeObjectURL(url);
   }, [activeThread]);
 
-  const groundedAnswers = messages.filter(
-    (message) => message.role === "assistant" && (message.sources?.length ?? 0) > 0,
-  ).length;
-  const showSuggestion =
-    activeThread !== null &&
-    intake.stage === "complete" &&
-    !activeThread.dismissedSuggestion &&
-    groundedAnswers >= SUGGESTION_MIN_ANSWERS &&
-    !ask.isPending;
-
-  const dismissSuggestion = useCallback(() => {
-    if (!activeThread) return;
-    const threadId = activeThread.id;
-    setThreads((previous) =>
-      previous.map((thread): ChatThread =>
-        thread.id === threadId ? { ...thread, dismissedSuggestion: true } : thread,
-      ),
-    );
-  }, [activeThread]);
+  // One slim hint above the composer, remembered per user once dismissed.
+  const hintKey = `export-hint-dismissed:${userId}`;
+  const [hintDismissed, setHintDismissed] = useState(false);
+  useEffect(() => {
+    try {
+      setHintDismissed(window.localStorage.getItem(hintKey) === "1");
+    } catch {
+      setHintDismissed(false);
+    }
+  }, [hintKey]);
+  const dismissHint = useCallback(() => {
+    setHintDismissed(true);
+    try {
+      window.localStorage.setItem(hintKey, "1");
+    } catch {
+      // Private mode: the hint returns next visit, which is harmless.
+    }
+  }, [hintKey]);
 
   const expanded = hovered || focused || overlayOpen || tapped;
 
@@ -732,7 +971,7 @@ function ChatPage() {
         )
         .map((thread) => ({ id: thread.id, title: thread.title }))}
       activeChatId={activeThread?.id ?? null}
-      onSelectChat={setActiveId}
+      onSelectChat={openThread}
       onNewChat={newChat}
       onOverlayOpenChange={setOverlayOpen}
       {...(options.onNavigate ? { onNavigate: options.onNavigate } : {})}
@@ -812,6 +1051,35 @@ function ChatPage() {
           }
         />
 
+        {/* What this conversation is scoped to, editable at any time. */}
+        <ScopeBar
+          labels={scopeLabels}
+          sectors={scope.industries}
+          companies={scope.companies.map((company) => company.canonicalName)}
+          industryOptions={industryOptions}
+          companyOptions={allClients.map((name) => ({ value: name, label: name }))}
+          onSave={({ industries: pickedSectors, companies: pickedCompanies }) =>
+            persistScope({
+              industries: pickedSectors,
+              targetClients: scope.targetClients,
+              companies: pickedCompanies.map((name) => ({
+                id:
+                  scope.companies.find(
+                    (company) => company.canonicalName.toLowerCase() === name.toLowerCase(),
+                  )?.id ?? null,
+                canonicalName: name,
+                industry:
+                  scope.companies.find(
+                    (company) => company.canonicalName.toLowerCase() === name.toLowerCase(),
+                  )?.industry ??
+                  pickedSectors[0] ??
+                  null,
+              })),
+              updatedAt: new Date().toISOString(),
+            })
+          }
+        />
+
         <div
           className="flex-1 overflow-y-auto"
           onScroll={(event) => setScrolled(event.currentTarget.scrollTop > 4)}
@@ -832,6 +1100,24 @@ function ChatPage() {
                 onCancelDocument={cancelDocument}
                 onDocumentModeChange={changeDocumentMode}
                 intake={picker}
+                onAddToScope={(names) =>
+                  persistScope({
+                    ...scope,
+                    companies: [
+                      ...scope.companies,
+                      ...names
+                        .filter(
+                          (name) =>
+                            !scope.companies.some(
+                              (company) =>
+                                company.canonicalName.toLowerCase() === name.toLowerCase(),
+                            ),
+                        )
+                        .map((name) => ({ id: null, canonicalName: name, industry: null })),
+                    ],
+                    updatedAt: new Date().toISOString(),
+                  })
+                }
               />
             </div>
           </div>
@@ -840,31 +1126,7 @@ function ChatPage() {
         {/* Pinned composer — the context row lives inside the card. */}
         <div className="relative z-20 shrink-0 border-t border-border bg-background">
           <div className="mx-auto w-full max-w-5xl px-4 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:px-6">
-            {showSuggestion && (
-              <div
-                role="status"
-                className="mb-2 flex items-center gap-2 rounded-xl border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-foreground"
-              >
-                <Sparkles size={14} className="shrink-0 text-primary" aria-hidden />
-                <p className="min-w-0 flex-1">{DOCUMENT_SUGGESTION}</p>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 shrink-0 px-2 text-xs"
-                  onClick={() => startDocument("pptx")}
-                >
-                  Make a deck
-                </Button>
-                <button
-                  type="button"
-                  onClick={dismissSuggestion}
-                  aria-label="Dismiss document suggestion"
-                  className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-                >
-                  <X size={13} />
-                </button>
-              </div>
-            )}
+            {!hintDismissed && <ExportHint onPrefill={useExample} onDismiss={dismissHint} />}
 
             <Composer
               value={input}
@@ -886,7 +1148,14 @@ function ChatPage() {
                 <ContextToolbar
                   value={context}
                   onChange={setContextValue}
-                  onReset={() => setContext(EMPTY_CONTEXT)}
+                  onCommit={(website) => {
+                    setContextValue("website", website);
+                    void queueTargetWebsite(website);
+                  }}
+                  onReset={() => {
+                    setContext(EMPTY_CONTEXT);
+                    persistScope(EMPTY_SCOPE);
+                  }}
                   clients={allClients}
                   industries={industries}
                   summary={summary}

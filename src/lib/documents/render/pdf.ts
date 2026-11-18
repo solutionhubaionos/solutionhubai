@@ -846,6 +846,12 @@ function drawSources(ctx: Ctx, model: DocumentModel): void {
 export async function renderPdf(
   model: DocumentModel,
 ): Promise<{ bytes: Uint8Array; pages: number }> {
+  return renderThemedPdf(model);
+}
+
+async function renderThemedPdf(
+  model: DocumentModel,
+): Promise<{ bytes: Uint8Array; pages: number }> {
   const isSlide = model.mode === "pitch";
   const size = isSlide ? SLIDE : A4;
   const doc = await PDFDocument.create();
@@ -859,6 +865,7 @@ export async function renderPdf(
   const oblique = await doc.embedFont(StandardFonts.HelveticaOblique);
 
   const cover = doc.addPage([size.width, size.height]);
+
   const citations = new Map(model.sources.map((source, index) => [source.chunkId, index + 1]));
   const ctx: Ctx = {
     doc,
@@ -888,7 +895,10 @@ export async function renderPdf(
 
   drawCover(ctx, model);
 
-  const contents = !isSlide && model.sections.length >= 5;
+  // A section with no grounded copy is left out of the file: the PDF states what
+  // the evidence supports and our recommendation, never what is missing.
+  const sections = model.sections.filter((section) => section.blocks.length > 0);
+  const contents = !isSlide && sections.length >= 5;
   let contentsPage: PDFPage | null = null;
   if (contents) {
     newPage(ctx);
@@ -899,7 +909,7 @@ export async function renderPdf(
 
   const starts: { title: string; page: number }[] = [];
 
-  model.sections.forEach((section: DocumentSection, index) => {
+  sections.forEach((section: DocumentSection, index) => {
     if (isSlide) {
       newPage(ctx);
     } else {
@@ -918,15 +928,6 @@ export async function renderPdf(
     ctx.y -= 8;
 
     section.blocks.forEach((block) => drawBlock(ctx, block));
-
-    if (section.flagged) {
-      text(ctx, "This section is marked for completion before the document is sent.", {
-        size: 8,
-        font: ctx.oblique,
-        color: THEME.colors.warning,
-        gap: 4,
-      });
-    }
   });
 
   drawSources(ctx, model);

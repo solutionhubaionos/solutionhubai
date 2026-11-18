@@ -18,5 +18,7 @@ export function downloadDocument(file: GeneratedDocument) {
   document.body.append(link);
   link.click();
   link.remove();
-  URL.revokeObjectURL(url);
+  // Revoking in the same tick can cancel the download before the browser has
+  // read the blob, which saves a truncated or empty file. Let it drain first.
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }

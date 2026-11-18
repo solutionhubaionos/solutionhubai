@@ -83,6 +83,8 @@ export async function extractDocument(
         return { ok: true, document: await extractDocx(bytes) };
       case "pptx":
         return { ok: true, document: extractPptx(bytes) };
+      case "xlsx":
+        return { ok: true, document: extractXlsx(bytes) };
       default:
         return { ok: false, format, error: `Unsupported format: ${format}` };
     }
@@ -133,6 +135,63 @@ async function extractDocx(bytes: Uint8Array): Promise<ExtractedDocument> {
     warnings,
     images: [],
   };
+}
+
+/**
+ * Workbooks are read natively: every cell is text, so a sheet needs no OCR and
+ * no model. A sheet becomes one table section whose first row is the header,
+ * which is what the chunker repeats on every continuation chunk.
+ */
+function extractXlsx(bytes: Uint8Array): ExtractedDocument {
+  const files = unzipSync(bytes, {
+    filter: (file) =>
+      file.name === "xl/workbook.xml" ||
+      file.name === "xl/_rels/workbook.xml.rels" ||
+      file.name === "xl/sharedStrings.xml" ||
+      file.name === "xl/styles.xml" ||
+      /^xl\/worksheets\/sheet\d+\.xml$/.test(file.name) ||
+      /^xl\/worksheets\/[^/]+\.xml$/.test(file.name),
+  });
+  const workbook = files["xl/workbook.xml"];
+  if (!workbook) throw new Error("No workbook found in Excel file");
+
+  const sheets = xlsxSheetParts(
+    strFromU8(workbook),
+    files["xl/_rels/workbook.xml.rels"],
+    Object.keys(files),
+  );
+  if (sheets.length === 0) throw new Error("No sheets found in Excel file");
+
+  const shared = xlsxSharedStrings(files["xl/sharedStrings.xml"]);
+  const formats = xlsxCellFormats(files["xl/styles.xml"]);
+  const warnings: string[] = [];
+  const sections: ExtractedSection[] = [];
+
+  for (const sheet of sheets) {
+    const data = files[sheet.path];
+    if (!data) continue;
+    const { rows, truncated } = xlsxSheetRows(strFromU8(data), shared, formats);
+    if (rows.length === 0) continue;
+    if (truncated) {
+      warnings.push(`Sheet ${sheet.name}: only the first ${XLSX_MAX_ROWS} rows were read`);
+    }
+    const columns = rows.reduce((widest, row) => Math.max(widest, row.length), 0);
+    sections.push({
+      text: tableText(rows),
+      pageOrSlide: sheet.index,
+      heading: sheet.name || null,
+      kind: "table",
+      metadata: {
+        source: "sheet",
+        sheet: sheet.name,
+        sheet_index: sheet.index,
+        rows: rows.length,
+        columns,
+      },
+    });
+  }
+
+  return { format: "xlsx", sections, emptyUnits: [], warnings, images: [] };
 }
 
 function extractPptx(bytes: Uint8Array): ExtractedDocument {
@@ -296,6 +355,196 @@ function pptxTables(xml: string, slide: number): ExtractedSection[] {
     });
   });
   return sections;
+}
+
+/** A sheet with more rows than this is a data dump; keep it readable. */
+const XLSX_MAX_ROWS = 2_000;
+
+/** Excel serial dates are days since 1899-12-30 (which absorbs the 1900 leap bug). */
+const EXCEL_EPOCH_MS = Date.UTC(1899, 11, 30);
+const DAY_MS = 86_400_000;
+
+/** Built-in number formats Excel ships without a `<numFmt>` entry. */
+const BUILTIN_DATE_FORMATS = new Set([14, 15, 16, 17, 18, 19, 20, 21, 22, 45, 46, 47]);
+const BUILTIN_PERCENT_FORMATS = new Set([9, 10]);
+
+type CellFormat = { date: boolean; percent: boolean; currency: string | null };
+
+type XlsxSheet = { name: string; path: string; index: number };
+
+/** Sheet names in workbook order, resolved through the workbook relationships. */
+function xlsxSheetParts(
+  workbookXml: string,
+  rels: Uint8Array | undefined,
+  available: readonly string[],
+): XlsxSheet[] {
+  const targets = new Map<string, string>();
+  if (rels) {
+    for (const match of strFromU8(rels).matchAll(/<Relationship\b[^>]*>/g)) {
+      const id = /\bId="([^"]+)"/.exec(match[0])?.[1];
+      const target = /\bTarget="([^"]+)"/.exec(match[0])?.[1];
+      if (!id || !target) continue;
+      const clean = target.replace(/\\/g, "/").replace(/^\.\//, "");
+      targets.set(id, clean.startsWith("/") ? clean.slice(1) : `xl/${clean}`);
+    }
+  }
+
+  const block = /<sheets>([\s\S]*?)<\/sheets>/.exec(workbookXml)?.[1] ?? "";
+  const named = [...block.matchAll(/<sheet\b[^>]*>/g)].map((match) => {
+    const tag = match[0];
+    const name = decodeXmlEntities(/\bname="([^"]*)"/.exec(tag)?.[1] ?? "");
+    const relId = /\br:id="([^"]+)"/.exec(tag)?.[1] ?? "";
+    return { name, path: targets.get(relId) ?? "" };
+  });
+
+  const sheets: XlsxSheet[] = [];
+  named.forEach((sheet) => {
+    const path = sheet.path && available.includes(sheet.path) ? sheet.path : "";
+    if (path) sheets.push({ name: sheet.name, path, index: sheets.length + 1 });
+  });
+
+  // Older writers omit the relationship: fall back to worksheet part order.
+  if (sheets.length === 0) {
+    available
+      .filter((path) => /^xl\/worksheets\/[^/]+\.xml$/.test(path))
+      .sort((a, b) => {
+        const first = Number(/(\d+)/.exec(a)?.[1] ?? 0);
+        const second = Number(/(\d+)/.exec(b)?.[1] ?? 0);
+        return first - second;
+      })
+      .forEach((path, index) => sheets.push({ name: "", path, index: index + 1 }));
+  }
+
+  return sheets;
+}
+
+/** Shared strings: one entry per distinct text cell, indexed by `<v>` in the cell. */
+function xlsxSharedStrings(data: Uint8Array | undefined): string[] {
+  if (!data) return [];
+  return [...strFromU8(data).matchAll(/<si>([\s\S]*?)<\/si>/g)].map((match) =>
+    [...match[1]!.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)]
+      .map((run) => decodeXmlEntities(run[1] ?? ""))
+      .join("")
+      .trim(),
+  );
+}
+
+/**
+ * A number cell holds only `0.35`; the format says whether that is 35% or a
+ * date serial. Resolving it here keeps figures citable instead of cryptic.
+ */
+function xlsxCellFormats(data: Uint8Array | undefined): CellFormat[] {
+  if (!data) return [];
+  const xml = strFromU8(data);
+  const codes = new Map<number, string>();
+  for (const match of xml.matchAll(/<numFmt\b[^>]*>/g)) {
+    const id = Number(/\bnumFmtId="(\d+)"/.exec(match[0])?.[1]);
+    const code = decodeXmlEntities(/\bformatCode="([^"]*)"/.exec(match[0])?.[1] ?? "");
+    if (Number.isFinite(id)) codes.set(id, code);
+  }
+  const xfs = /<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/.exec(xml)?.[1] ?? "";
+  return [...xfs.matchAll(/<xf\b[^>]*>/g)].map((match) => {
+    const id = Number(/\bnumFmtId="(\d+)"/.exec(match[0])?.[1] ?? 0);
+    const code = codes.get(id) ?? "";
+    const bare = code.replace(/"[^"]*"/g, "");
+    return {
+      date: BUILTIN_DATE_FORMATS.has(id) || /[ymd]/i.test(bare),
+      percent: BUILTIN_PERCENT_FORMATS.has(id) || bare.includes("%"),
+      currency: bare.includes("$")
+        ? "$"
+        : bare.includes("€")
+          ? "€"
+          : bare.includes("£")
+            ? "£"
+            : null,
+    };
+  });
+}
+
+/** Cells laid out by column, so a sparse row still lines up under its header. */
+function xlsxSheetRows(
+  xml: string,
+  shared: readonly string[],
+  formats: readonly CellFormat[],
+): { rows: string[][]; truncated: boolean } {
+  const rows: string[][] = [];
+  let truncated = false;
+
+  for (const rowMatch of xml.matchAll(/<row\b[^>]*>([\s\S]*?)<\/row>/g)) {
+    if (rows.length >= XLSX_MAX_ROWS) {
+      truncated = true;
+      break;
+    }
+    const cells: string[] = [];
+    let cursor = 0;
+    for (const cell of rowMatch[1]!.matchAll(/<c\b[^>]*?(?:\/>|>[\s\S]*?<\/c>)/g)) {
+      const raw = cell[0];
+      const head = /^<c\b([^>]*?)\/?>/.exec(raw)?.[1] ?? "";
+      const body = raw.endsWith("</c>")
+        ? raw.slice(raw.indexOf(">") + 1, raw.lastIndexOf("</c>"))
+        : "";
+      const reference = /\br="([A-Z]+)\d+"/.exec(head)?.[1];
+      const column = reference ? xlsxColumnIndex(reference) : cursor;
+      const value = xlsxCellValue(head, body, shared, formats);
+      cursor = column + 1;
+      if (value) cells[column] = value;
+    }
+    while (cells.length > 0 && !cells[cells.length - 1]) cells.pop();
+    if (cells.length > 0) rows.push(cells.map((value) => value ?? ""));
+  }
+
+  return { rows, truncated };
+}
+
+function xlsxCellValue(
+  head: string,
+  body: string,
+  shared: readonly string[],
+  formats: readonly CellFormat[],
+): string {
+  const type = /\bt="([^"]+)"/.exec(head)?.[1];
+  if (type === "inlineStr") {
+    return [...body.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)]
+      .map((match) => decodeXmlEntities(match[1] ?? ""))
+      .join("")
+      .trim();
+  }
+  const raw = decodeXmlEntities(/<v>([\s\S]*?)<\/v>/.exec(body)?.[1] ?? "").trim();
+  if (!raw) return "";
+  if (type === "s") return (shared[Number(raw)] ?? "").trim();
+  if (type === "str") return raw;
+  if (type === "b") return raw === "1" ? "TRUE" : "FALSE";
+  // Error cells (#REF!, #DIV/0!) are not evidence.
+  if (type === "e") return "";
+  if (type === "d") return raw;
+
+  const value = Number(raw);
+  if (!Number.isFinite(value)) return raw;
+  const format = formats[Number(/\bs="(\d+)"/.exec(head)?.[1] ?? -1)];
+  if (format?.date) return xlsxDate(value);
+  if (format?.percent) return `${xlsxNumber(value * 100)}%`;
+  if (format?.currency) return `${format.currency}${xlsxNumber(value)}`;
+  return xlsxNumber(value);
+}
+
+/** Thousands separators, at most six decimals, no scientific notation. */
+function xlsxNumber(value: number): string {
+  const rounded = Number(value.toFixed(6));
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 6 }).format(rounded);
+}
+
+/** 45292 -> 2024-01-01; a fractional serial keeps its time. */
+function xlsxDate(serial: number): string {
+  const date = new Date(EXCEL_EPOCH_MS + serial * DAY_MS);
+  if (!Number.isFinite(date.getTime())) return String(serial);
+  const iso = date.toISOString();
+  return iso.slice(11, 19) === "00:00:00" ? iso.slice(0, 10) : iso.slice(0, 19).replace("T", " ");
+}
+
+function xlsxColumnIndex(letters: string): number {
+  let index = 0;
+  for (const letter of letters) index = index * 26 + (letter.charCodeAt(0) - 64);
+  return Math.max(index - 1, 0);
 }
 
 /** Pipe-delimited rows: the header stays adjacent to every value. */

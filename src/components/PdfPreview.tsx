@@ -1,7 +1,34 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, ExternalLink, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { PDFDocumentProxy } from "pdfjs-dist";
+
+/**
+ * PDF.js page viewer. The page is drawn on an explicit white background: a PDF
+ * page carries no background of its own, so a transparent canvas shows whatever
+ * sits behind it — which reads as a blank dark rectangle in dark browser themes
+ * and in forced-dark modes. White paper is what the document actually means.
+ *
+ * The canvas is also owned here rather than by PDF.js: given a `canvas`, PDF.js
+ * builds its own 2D context with `alpha: false`, and an opaque canvas starts out
+ * black. Any interruption after that point — a worker that never answers, a
+ * cancelled page, a render that never begins — paints nothing and leaves a solid
+ * black page on screen. Papering the canvas white first and handing PDF.js that
+ * same context means the page is white from its first pixel.
+ */
+function paperCanvas(
+  target: HTMLCanvasElement,
+  width: number,
+  height: number,
+): CanvasRenderingContext2D | null {
+  target.width = Math.floor(width);
+  target.height = Math.floor(height);
+  const context = target.getContext("2d", { alpha: false });
+  if (!context) return null;
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, target.width, target.height);
+  return context;
+}
 
 export function PdfPreview({ blob }: { blob: Blob }) {
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -10,6 +37,7 @@ export function PdfPreview({ blob }: { blob: Blob }) {
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
   const [document, setDocument] = useState<PDFDocumentProxy | null>(null);
+  const [objectUrl, setObjectUrl] = useState("");
   useEffect(() => {
     let active = true;
     let destroy: (() => void) | undefined;
@@ -32,7 +60,7 @@ export function PdfPreview({ blob }: { blob: Blob }) {
         setDocument(pdf);
       } catch {
         if (active) {
-          setError("Could not display this PDF. Download the original to open it.");
+          setError("Could not display this PDF here. Open it in a new tab to read it.");
           setBusy(false);
         }
       }
@@ -41,6 +69,14 @@ export function PdfPreview({ blob }: { blob: Blob }) {
       active = false;
       destroy?.();
     };
+  }, [blob]);
+
+  // A native-viewer fallback, so a PDF is never unreachable when the in-app
+  // renderer cannot draw it. The URL is revoked with the blob.
+  useEffect(() => {
+    const url = URL.createObjectURL(blob);
+    setObjectUrl(url);
+    return () => URL.revokeObjectURL(url);
   }, [blob]);
   useEffect(() => {
     if (!document) return;
@@ -54,15 +90,22 @@ export function PdfPreview({ blob }: { blob: Blob }) {
         const target = canvas.current;
         if (!active || !target) return;
         const viewport = sheet.getViewport({ scale: 1.5 });
-        target.width = viewport.width;
-        target.height = viewport.height;
-        const render = sheet.render({ canvas: target, viewport });
+        const context = paperCanvas(target, viewport.width, viewport.height);
+        if (!context) throw new Error("The PDF canvas is unavailable in this browser.");
+        // `canvas: null` tells PDF.js to use the supplied context as-is instead
+        // of building its own opaque one.
+        const render = sheet.render({
+          canvas: null,
+          canvasContext: context,
+          viewport,
+          background: "#ffffff",
+        });
         cancel = () => render.cancel();
         await render.promise;
         if (active) setBusy(false);
       } catch {
         if (active) {
-          setError("Could not display this PDF page.");
+          setError("Could not display this PDF page. Open it in a new tab to read it.");
           setBusy(false);
         }
       }
@@ -96,17 +139,34 @@ export function PdfPreview({ blob }: { blob: Blob }) {
         >
           <ChevronRight />
         </Button>
+        {objectUrl && (
+          <Button size="sm" variant="ghost" asChild>
+            <a href={objectUrl} target="_blank" rel="noopener noreferrer">
+              <ExternalLink /> New tab
+            </a>
+          </Button>
+        )}
       </div>
-      {busy && <Loader2 className="h-5 w-5 animate-spin" aria-label="Rendering PDF" />}
+      {busy && !error && <Loader2 className="h-5 w-5 animate-spin" aria-label="Rendering PDF" />}
       {error && (
-        <p role="alert" className="text-destructive">
-          {error}
-        </p>
+        <div className="flex flex-col items-center gap-3 text-center">
+          <p role="alert" className="max-w-sm text-sm text-destructive">
+            {error}
+          </p>
+          {objectUrl && (
+            <Button size="sm" variant="outline" asChild>
+              <a href={objectUrl} target="_blank" rel="noopener noreferrer">
+                <ExternalLink /> Open the PDF in a new tab
+              </a>
+            </Button>
+          )}
+        </div>
       )}
       <canvas
         ref={canvas}
         aria-label={`PDF page ${page}`}
-        className="h-auto max-w-full shadow-sm"
+        aria-hidden={error.length > 0}
+        className={`h-auto max-w-full bg-white shadow-sm ${error ? "hidden" : ""}`}
       />
     </div>
   );

@@ -205,6 +205,7 @@ async function runOnce(
     title: plan.title,
     layout: plan.layout ?? "bullets",
     ...(plan.section ? { section: plan.section } : {}),
+    ...(plan.kind ? { kind: plan.kind } : {}),
   }));
   const outline = outlinePlan.map((plan) => plan.title);
   const draftWithPlan: DocumentDraft = { ...draft, outline, outlinePlan };
@@ -248,7 +249,7 @@ async function runOnce(
 
   // Render every format from the same model: the model is shared, the three
   // writers are what the user can actually download.
-  const pptx = renderPptx(built.model);
+  const pptx = await renderPptx(built.model);
   const pptxParts = unzipSync(pptx.bytes);
   const pptxSlides = Object.keys(pptxParts).filter((name) =>
     /^ppt\/slides\/slide\d+\.xml$/.test(name),

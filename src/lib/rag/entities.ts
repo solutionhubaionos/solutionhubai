@@ -19,6 +19,17 @@ export type EntityMatchRow = {
   spellings?: string[];
 };
 
+export type ValidatedEntity = {
+  id: string;
+  /** Canonical name from the entities table. */
+  name: string;
+  type: "company" | "airport" | "concept";
+  industry: string | null;
+  score: number;
+  /** Canonical plus aliases, for metadata matching. */
+  spellings: string[];
+};
+
 export type ResolvedEntity = {
   canonical: string;
   matchedName: string;
@@ -30,10 +41,46 @@ export type ResolvedEntity = {
 
 /**
  * Comparison key: lowercase, "&" as "and", punctuation as space, and common
- * legal/venue suffixes dropped. "InterGlobe Hotels, Ltd." -> "interglobe".
+ * legal/venue/sector suffixes dropped. "InterGlobe Hotels, Ltd." -> "interglobe".
  */
-const IGNORED_SUFFIXES =
-  /\b(ltd|limited|inc|incorporated|corp|corporation|co|company|llc|llp|plc|gmbh|pvt|private|group|holdings?|hotels?|airports?|airlines?|airways?|international)\b/g;
+const GENERIC_ENTITY_TOKENS = new Set([
+  "airline",
+  "airlines",
+  "airways",
+  "airport",
+  "airports",
+  "aviation",
+  "group",
+  "holding",
+  "holdings",
+  "hotel",
+  "hotels",
+  "ltd",
+  "limited",
+  "inc",
+  "incorporated",
+  "corp",
+  "corporation",
+  "co",
+  "company",
+  "llc",
+  "llp",
+  "plc",
+  "gmbh",
+  "pvt",
+  "private",
+  "international",
+  "service",
+  "services",
+  "pitch",
+  "pitching",
+  "deck",
+  "decks",
+  "proposal",
+  "proposals",
+]);
+
+const IGNORED_SUFFIXES = new RegExp(`\\b(?:${[...GENERIC_ENTITY_TOKENS].join("|")})\\b`, "g");
 
 export function normalizeEntityKey(name: string): string {
   return name
@@ -42,6 +89,32 @@ export function normalizeEntityKey(name: string): string {
     .replace(IGNORED_SUFFIXES, " ")
     .replace(/[^\p{L}\p{N}]+/gu, " ")
     .replace(/\s+/g, " ")
+    .trim();
+}
+
+function tokenKey(token: string): string {
+  return token.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+/** Lowercase words without dropping sector/legal tokens, for exact containment. */
+function plainKey(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+/**
+ * The part of a name that identifies it: "Ethiopian Airlines" -> "Ethiopian",
+ * "airlines" -> "". Empty means the mention is only a generic word and must
+ * never be matched against a customer.
+ */
+export function distinctiveEntityName(name: string): string {
+  return name
+    .trim()
+    .split(/\s+/)
+    .filter((token) => token && !GENERIC_ENTITY_TOKENS.has(tokenKey(token)))
+    .join(" ")
     .trim();
 }
 
@@ -133,10 +206,15 @@ export function entityCandidates(query: string, maxWords = 4): string[] {
     }
   }
 
-  return spans
-    .sort((a, b) => b.length - a.length || a.join(" ").localeCompare(b.join(" ")))
-    .slice(0, ENTITY_MAX_CANDIDATES)
-    .map((span) => span.join(" "));
+  const distinctive = new Set<string>();
+  for (const span of spans) {
+    const text = distinctiveEntityName(span.join(" "));
+    if (text.length >= MIN_CANDIDATE_CHARS) distinctive.add(text);
+  }
+
+  return [...distinctive]
+    .sort((a, b) => b.length - a.length || a.localeCompare(b))
+    .slice(0, ENTITY_MAX_CANDIDATES);
 }
 
 /** Best row above the threshold, or null. Rows are expected best-first. */
@@ -206,12 +284,20 @@ export async function resolveLibraryEntities(
   const attempts = [...new Set([...mentions, query].map((value) => value.trim()).filter(Boolean))];
 
   const resolved = await Promise.all(
-    attempts.slice(0, 6).map((mention) =>
-      resolveLibraryEntity(client, mention, {
-        candidates: [mention, ...entityCandidates(mention)].slice(0, 12),
+    attempts.slice(0, 6).map((mention) => {
+      // Never send a generic span ("airlines", "pitch deck") to similarity():
+      // it would match every customer in the sector. The raw mention is only
+      // kept when it has a distinctive remainder.
+      const candidates = [
+        ...new Set([distinctiveEntityName(mention), ...entityCandidates(mention)].filter(Boolean)),
+      ].slice(0, 12);
+      if (candidates.length === 0) return Promise.resolve(null);
+      return resolveLibraryEntity(client, mention, {
+        candidates,
+        mention,
         ...(options.threshold !== undefined ? { threshold: options.threshold } : {}),
-      }),
-    ),
+      });
+    }),
   );
 
   const best = new Map<string, ResolvedEntity>();
@@ -238,6 +324,77 @@ export async function resolveLibraryEntities(
 }
 
 /**
+ * Resolves brief names against the canonical `entities` table (migration 0023).
+ * This is the authority for whether a string is a company, an airport or a
+ * concept; deck parties must never be concepts. Before the migration is
+ * applied the RPC is missing, so callers fall back to metadata resolution
+ * instead of failing the export.
+ */
+export type EntityLookup = {
+  /** True when the entities table answered, so absence from `entities` is meaningful. */
+  available: boolean;
+  entities: ValidatedEntity[];
+};
+
+export async function loadValidatedEntities(
+  client: SupabaseClient<Database>,
+  names: readonly string[],
+  options: { threshold?: number; limit?: number } = {},
+): Promise<EntityLookup> {
+  const candidates = [
+    ...new Set(
+      [...names.map(distinctiveEntityName), ...entityCandidates(names.join(" "), 5)]
+        .map((value) => value.trim())
+        .filter(Boolean),
+    ),
+  ].slice(0, 24);
+  if (candidates.length === 0) return { available: true, entities: [] };
+
+  const { data, error } = await client.rpc("match_entities", {
+    p_candidates: candidates,
+    p_threshold: options.threshold ?? 0.4,
+    p_limit: options.limit ?? 8,
+  });
+  if (error) {
+    // 0023 may not be applied yet; ambiguity here must not block a deck.
+    console.warn("[RAG] entity lookup failed", error.message);
+    return { available: false, entities: [] };
+  }
+
+  const fullKeys = names.map(plainKey).filter(Boolean);
+  const entities: ValidatedEntity[] = (data ?? []).flatMap((row) => {
+    const type = row.entity_type;
+    if (type !== "company" && type !== "airport" && type !== "concept") return [];
+    // `spellings` from the RPC also carries `matched_name`, the brief span that
+    // happened to score best. For a near neighbour that span can be another
+    // company's name ("Adani Power" matched against "Adani Airports"), so it
+    // must not be treated as a spelling of this row.
+    const matched = normalizeEntityKey(row.matched_name ?? "");
+    const spellings = (row.spellings ?? [row.name]).filter(
+      (spelling) =>
+        normalizeEntityKey(spelling) === normalizeEntityKey(row.name) ||
+        normalizeEntityKey(spelling) !== matched,
+    );
+    const nameKey = plainKey(row.name ?? "");
+    const named = Boolean(
+      nameKey &&
+      fullKeys.some((key) => key === nameKey || key.includes(nameKey) || nameKey.includes(key)),
+    );
+    return [
+      {
+        id: row.id,
+        name: row.name,
+        type,
+        industry: row.industry,
+        score: named ? Math.max(row.score, 0.99) : row.score,
+        spellings: spellings.length > 0 ? spellings : [row.name],
+      },
+    ];
+  });
+  return { available: true, entities };
+}
+
+/**
  * Asks the database for the closest known customer. A missing function
  * (migration not applied) or an RLS error is not fatal: retrieval simply runs
  * without an entity hint.
@@ -245,7 +402,7 @@ export async function resolveLibraryEntities(
 export async function resolveLibraryEntity(
   client: SupabaseClient<Database>,
   query: string,
-  options: { candidates?: string[]; threshold?: number } = {},
+  options: { candidates?: string[]; threshold?: number; mention?: string } = {},
 ): Promise<ResolvedEntity | null> {
   const candidates = options.candidates ?? entityCandidates(query);
   if (candidates.length === 0) return null;
@@ -260,12 +417,20 @@ export async function resolveLibraryEntity(
     return null;
   }
 
-  const rows = (data ?? []).map((row) => ({
-    canonical: row.canonical,
-    matched_name: row.matched_name,
-    score: row.score,
-    spellings: row.spellings ?? [row.canonical],
-  }));
+  // The candidate is the distinctive remainder ("Zurich"), so several sector
+  // names can tie. When the full mention names one of them ("Zurich airport"),
+  // that row wins over a same-surname neighbour ("Zurich Insurance").
+  const mention = plainKey(options.mention ?? query);
+  const rows = (data ?? []).map((row) => {
+    const name = plainKey(row.matched_name ?? "");
+    const named = Boolean(mention && name && (mention.includes(name) || name.includes(mention)));
+    return {
+      canonical: row.canonical,
+      matched_name: row.matched_name,
+      score: named ? Math.max(row.score, 0.99) : row.score,
+      spellings: row.spellings ?? [row.canonical],
+    };
+  });
   const best = pickEntityMatch(rows, options.threshold ?? ENTITY_SIMILARITY_THRESHOLD);
   if (!best) return null;
   const spellings = [best.canonical];

@@ -13,6 +13,12 @@ import type { Database } from "../../integrations/supabase/types";
 import { entityCandidates, resolveLibraryEntity, splitEntityMentions } from "../rag/entities";
 import type { DocumentDraft, ExportBrief } from "./types";
 import {
+  EMPTY_SCOPE,
+  scopeCompanyNames,
+  scopeIndustryLabels,
+  type ConversationScope,
+} from "../chat/conversationScope";
+import {
   completeWithBudget,
   failureReasonOf,
   parseJsonValue,
@@ -36,6 +42,10 @@ export type ExportHistoryMessage = {
 export type BriefOptions = ProviderOptions & {
   /** Used to canonicalise parties when the brief model fails. */
   client?: SupabaseClient<Database>;
+  /** The conversation's stored scope: every picked company and sector. */
+  scope?: ConversationScope;
+  /** Industry slug -> display name, so the brief says "Airlines", not "airlines". */
+  industryNames?: Record<string, string>;
   log?: (event: string, meta: Record<string, unknown>) => void;
 };
 
@@ -210,6 +220,8 @@ export function fallbackBrief(
   draft: DocumentDraft,
   history: readonly ExportHistoryMessage[],
   resolvedParties: readonly string[] = [],
+  scope?: ConversationScope,
+  industryNames: Record<string, string> = {},
 ): ExportBrief {
   const firstUser =
     history.find((message) => message.role === "user")?.content.trim() ?? draft.prompt;
@@ -219,18 +231,25 @@ export function fallbackBrief(
   // mentions rather than falling back to the wizard's single client.
   const mentioned = cleanPartyMentions(resolvedParties);
   if (mentioned.length === 0) mentioned.push(...cleanPartyMentions(splitEntityMentions(request)));
+  // Every company the user selected belongs in the brief, not just the first:
+  // a three-company scope must produce a three-party document.
+  const selected = scopeCompanyNames(scope ?? EMPTY_SCOPE);
   const parties = [
-    ...new Set([...mentioned, draft.client].filter((value): value is string => Boolean(value))),
-  ].slice(0, 8);
+    ...new Set(
+      [...selected, ...mentioned, draft.client].filter((value): value is string => Boolean(value)),
+    ),
+  ].slice(0, 12);
+  const sectors = scopeIndustryLabels(scope, industryNames);
   const brief: ExportBrief = {
     documentTitle:
-      mentioned.length > 1
+      parties.length > 1 && mentioned.length > 1
         ? `${mentioned.join(" x ")} — ${draft.mode === "pitch" ? "pitch deck" : "proposal"}`
         : draft.title,
     request,
-    subject: mentioned.length > 0 ? mentioned.join(" x ") : (draft.client ?? null),
+    subject: mentioned.length > 0 ? mentioned.join(" x ") : (selected[0] ?? draft.client ?? null),
     partiesInvolved: parties,
-    keyTopics: [],
+    sectors,
+    keyTopics: [...sectors],
     keyEntities: [
       ...new Set(
         [...parties, ...cited.map((document) => document.title)].filter((value): value is string =>
@@ -313,6 +332,8 @@ export const BRIEF_SYSTEM = [
   "goals, constraints, include, exclude, decisions are arrays of short strings. citedDocuments is an array of {title}.",
   "Keep figures, names and explicit instructions verbatim. Never guess a client, industry, budget or date.",
   "The conversation and the explicit request always override the wizard hints. If a wizard hint names a different client, industry or partner than the conversation, ignore the hint and follow the conversation.",
+  "The pitch target is the client we are presenting TO. It is usually not a customer in our library: never treat it as an existing customer, never make it an evidence party, and never ask for its data. Put it in `client` and in partiesInvolved only if the conversation itself makes it a partner in the proposition.",
+  "The library evidence comes from other customers. If an anonymise flag is supplied, describe those customers generically in the document copy.",
   "If a key input is absent, use null (or [] for arrays) and add it to openItems instead of inventing it.",
   "problem is a two-to-four sentence statement of what the client is trying to solve, using only what the conversation says.",
 ].join(" ");
@@ -344,6 +365,44 @@ export function briefUserPrompt(
 }
 
 /**
+ * The user's selected scope is an instruction, not a hint: every company they
+ * picked must appear as a party and every picked sector as a sector, whatever
+ * the brief model decided to keep.
+ */
+export function applyScopeToBrief(
+  brief: ExportBrief,
+  scope: ConversationScope | undefined,
+  industryNames: Record<string, string> = {},
+): ExportBrief {
+  const targets = scope?.targetClients ?? [];
+  if (
+    !scope ||
+    (scope.industries.length === 0 && scope.companies.length === 0 && targets.length === 0)
+  ) {
+    return brief;
+  }
+  const selected = scopeCompanyNames(scope);
+  const sectors = scopeIndustryLabels(scope, industryNames);
+  const partiesInvolved = [...new Set([...selected, ...(brief.partiesInvolved ?? [])])].slice(
+    0,
+    12,
+  );
+  const target = targets[0];
+  return {
+    ...brief,
+    partiesInvolved,
+    sectors: sectors.length > 0 ? sectors : (brief.sectors ?? []),
+    keyTopics: [...new Set([...sectors, ...(brief.keyTopics ?? [])])].slice(0, 10),
+    keyEntities: [...new Set([...partiesInvolved, ...(brief.keyEntities ?? [])])].slice(0, 12),
+    targetClients: targets.map((client) => client.name),
+    anonymise: targets.some((client) => client.anonymise),
+    // The cover names the client we are pitching; parties stay evidence-side.
+    client: target?.name ?? brief.client ?? selected[0] ?? null,
+    industry: brief.industry ?? target?.industry ?? sectors[0] ?? null,
+  };
+}
+
+/**
  * LLM brief, with a deterministic brief as the floor. A failed or unusable
  * completion must never block an export, and must never invent a fact either.
  */
@@ -353,7 +412,12 @@ export async function buildExportBrief(
   options: BriefOptions,
 ): Promise<ExportBrief> {
   const log = options.log ?? (() => undefined);
-  const fallback = fallbackBrief(draft, history);
+  const industryNames = options.industryNames ?? {};
+  const fallback = applyScopeToBrief(
+    fallbackBrief(draft, history, [], options.scope, industryNames),
+    options.scope,
+    industryNames,
+  );
   if (history.length === 0) return fallback;
 
   const rawTranscript = transcriptOf(history);
@@ -413,7 +477,8 @@ export async function buildExportBrief(
       chatFigures: figuresInChat(history),
       openItems: parsed.openItems,
     };
-    return { ...brief, openItems: openItemsFor(brief) };
+    const scoped = applyScopeToBrief(brief, options.scope, industryNames);
+    return { ...scoped, openItems: openItemsFor(scoped) };
   } catch (error) {
     // No silent empty brief: rebuild it from entities resolved over the whole
     // conversation, exactly as chat resolves them.
@@ -422,7 +487,11 @@ export async function buildExportBrief(
       ? await resolveConversationParties(options.client, history, draft).catch(() => [])
       : [];
     if (parties.length > 0) log("brief fallback parties", { parties });
-    return fallbackBrief(draft, history, parties);
+    return applyScopeToBrief(
+      fallbackBrief(draft, history, parties, options.scope, industryNames),
+      options.scope,
+      industryNames,
+    );
   }
 }
 

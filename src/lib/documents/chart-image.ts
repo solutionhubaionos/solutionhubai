@@ -9,7 +9,12 @@ import { DOCUMENT_THEME as THEME } from "./theme";
 
 const WIDTH = 1200;
 const HEIGHT = 675;
-const SERIES_COLORS = [THEME.colors.accent, "#C97B2E", "#4C8C6A", "#8B6BAE", "#B5504B", "#6B7A8F"];
+/** Read per draw so a branded export uses its own chart palette. */
+function seriesColors(): readonly string[] {
+  return THEME.chartSeries.length >= 6
+    ? THEME.chartSeries
+    : [THEME.colors.accent, "#C97B2E", "#4C8C6A", "#8B6BAE", "#B5504B", "#6B7A8F"];
+}
 
 function compact(value: number): string {
   const abs = Math.abs(value);
@@ -97,7 +102,7 @@ export function chartPng(spec: ChartSpec): Uint8Array | null {
 
   if (spec.type === "line") {
     spec.series.forEach((series, seriesIndex) => {
-      ctx.strokeStyle = SERIES_COLORS[seriesIndex % SERIES_COLORS.length] ?? THEME.colors.accent;
+      ctx.strokeStyle = seriesColors()[seriesIndex % seriesColors().length] ?? THEME.colors.accent;
       ctx.lineWidth = 4;
       ctx.beginPath();
       series.values.forEach((value, index) => {
@@ -110,7 +115,7 @@ export function chartPng(spec: ChartSpec): Uint8Array | null {
       series.values.forEach((value, index) => {
         const x = left + categoryWidth * (index + 0.5);
         const y = bottom - (value / ceiling) * plotHeight;
-        ctx.fillStyle = SERIES_COLORS[seriesIndex % SERIES_COLORS.length] ?? THEME.colors.accent;
+        ctx.fillStyle = seriesColors()[seriesIndex % seriesColors().length] ?? THEME.colors.accent;
         ctx.beginPath();
         ctx.arc(x, y, 5, 0, Math.PI * 2);
         ctx.fill();
@@ -124,7 +129,7 @@ export function chartPng(spec: ChartSpec): Uint8Array | null {
         const value = series.values[index] ?? 0;
         const height = (value / ceiling) * plotHeight;
         cursor -= height;
-        ctx.fillStyle = SERIES_COLORS[seriesIndex % SERIES_COLORS.length] ?? THEME.colors.accent;
+        ctx.fillStyle = seriesColors()[seriesIndex % seriesColors().length] ?? THEME.colors.accent;
         ctx.fillRect(left + categoryWidth * (index + 0.5) - barWidth / 2, cursor, barWidth, height);
       });
     });
@@ -132,7 +137,7 @@ export function chartPng(spec: ChartSpec): Uint8Array | null {
     const groupWidth = categoryWidth * 0.7;
     const barWidth = Math.max(8, groupWidth / spec.series.length - 8);
     spec.series.forEach((series, seriesIndex) => {
-      ctx.fillStyle = SERIES_COLORS[seriesIndex % SERIES_COLORS.length] ?? THEME.colors.accent;
+      ctx.fillStyle = seriesColors()[seriesIndex % seriesColors().length] ?? THEME.colors.accent;
       series.values.forEach((value, index) => {
         const height = (value / ceiling) * plotHeight;
         const x =
@@ -146,7 +151,7 @@ export function chartPng(spec: ChartSpec): Uint8Array | null {
   if (spec.series.length > 1) {
     let x = left;
     spec.series.forEach((series, index) => {
-      ctx.fillStyle = SERIES_COLORS[index % SERIES_COLORS.length] ?? THEME.colors.accent;
+      ctx.fillStyle = seriesColors()[index % seriesColors().length] ?? THEME.colors.accent;
       ctx.fillRect(x, HEIGHT - 42, 14, 14);
       ctx.fillStyle = THEME.colors.ink;
       ctx.font = "17px sans-serif";
@@ -184,7 +189,7 @@ function piePng(spec: ChartSpec): Uint8Array | null {
     ctx.moveTo(cx, cy);
     ctx.arc(cx, cy, radius, angle, angle + slice);
     ctx.closePath();
-    ctx.fillStyle = SERIES_COLORS[index % SERIES_COLORS.length] ?? THEME.colors.accent;
+    ctx.fillStyle = seriesColors()[index % seriesColors().length] ?? THEME.colors.accent;
     ctx.fill();
     angle += slice;
   });
@@ -198,7 +203,7 @@ function piePng(spec: ChartSpec): Uint8Array | null {
   ctx.font = "19px sans-serif";
   let y = 205;
   spec.categories.forEach((category, index) => {
-    ctx.fillStyle = SERIES_COLORS[index % SERIES_COLORS.length] ?? THEME.colors.accent;
+    ctx.fillStyle = seriesColors()[index % seriesColors().length] ?? THEME.colors.accent;
     ctx.fillRect(650, y - 14, 16, 16);
     ctx.fillStyle = THEME.colors.ink;
     ctx.fillText(clip(category, 30), 676, y);

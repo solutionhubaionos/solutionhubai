@@ -32,7 +32,8 @@ export const SECTION_SYSTEM = [
   "No number, count, percentage, price or date may appear unless it is stated verbatim in a cited passage, or comes from the server's labelled assumptions output. Never estimate, extrapolate or round into a new claim.",
   "Describe each company only as its own passages describe it. Do not add reputation, market position, scale or capability the passages do not state.",
   "Specific beats vague: use a figure with its unit, baseline and timeframe only when a passage states it. If it does not, omit the claim.",
-  'If no passage supports any part of the section, write one callout with text starting "[To be confirmed]" and list the gap in openItems. Do not pad.',
+  "Write only what the passages document. Never tell the reader that information is missing: no 'we could not find', 'no data', 'not in the library', 'no evidence' or bracketed 'to be confirmed' notes.",
+  "Where the evidence stops short, say what we would do about it in our own voice: one clearly framed recommendation, next step or assumption (a bullet of kind recommendation, or an info callout), grounded in what the passages do show. Record the gap in openItems for the team instead of printing the gap.",
   "When the passages describe the parties but not the exact combined offer, write about each party's documented capability and the proposed structure instead of a placeholder; never invent the combined offer's performance.",
   "A section is never only a heading: return at least one paragraph, list, table, metric or callout that carries passageRefs.",
   "Write in British English, active voice, confident and concise. No filler, no meta commentary, no reference to passages or sources in the prose.",
@@ -44,6 +45,8 @@ function briefForPrompt(brief: ExportBrief): string {
     {
       request: brief.request,
       client: brief.client,
+      targetClients: brief.targetClients ?? [],
+      anonymiseEvidenceCustomers: brief.anonymise ?? false,
       industry: brief.industry,
       audience: brief.audience,
       problem: brief.problem,
@@ -80,7 +83,7 @@ const KIND_FOCUS: Record<string, string> = {
   assumptions:
     "Be explicit about dependencies and client responsibilities. A bullet list of 3-6 items.",
   pricing:
-    'Include figures ONLY if a passage states them. Otherwise a single callout beginning "[To be confirmed]" explaining that pricing is not in the library. Never estimate.',
+    "Include figures ONLY if a passage states them. Otherwise leave the numbers out and write the commercial approach as our recommendation (what we would propose and what it depends on), in a confident first-person-plural voice. Never estimate and never announce that pricing is absent from the library.",
   next_steps:
     "Recommend one specific next step with an owner and a timeframe if the sources support it.",
   why_us:
@@ -122,6 +125,9 @@ export function sectionUserPrompt(
     `Section kind: ${plan.kind}`,
     `Section goal: ${plan.goal}`,
     modeRules,
+    brief.anonymise
+      ? "Anonymise the evidence customers: describe them generically (for example 'a leading European airport operator') and never print their real names in the prose."
+      : "",
     "",
     "Export brief (framing only, not a source of facts):",
     briefForPrompt(brief),

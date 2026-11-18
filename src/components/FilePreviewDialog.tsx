@@ -107,6 +107,11 @@ function FilePreview({ item }: { item: ContentItem }) {
           const width = Math.max(280, iframe.clientWidth - 20);
           const viewer = init(host, { width, height: (width * 9) / 16 });
           await viewer.preview(await blob.arrayBuffer());
+          // A package the viewer cannot parse resolves without throwing and
+          // leaves an empty, black frame; refuse to present that as a preview.
+          if (!host.querySelector(".pptx-preview-slide-wrapper")) {
+            throw new Error("No slides rendered");
+          }
         }
         if (active) setLoading(false);
       } catch {
@@ -170,7 +175,7 @@ function FilePreview({ item }: { item: ContentItem }) {
               <img src={url} alt={item.title} className="h-full w-full object-contain" />
             )}
             {format === "video" && url && <video src={url} controls className="h-full w-full" />}
-            {format === "unsupported" && !loading && (
+            {(format === "unsupported" || format === "xlsx") && !loading && (
               <p className="p-8 text-center text-muted-foreground">
                 {/\.(doc|ppt)$/i.test(item.file_name)
                   ? "This older Office format cannot be displayed here. Upload a PDF, DOCX or PPTX version to view it inline."

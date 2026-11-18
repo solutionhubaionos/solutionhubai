@@ -66,12 +66,16 @@ describe("export brief and outline", () => {
     expect(result.trace.brief.industry).toBe("insurance");
     expect(result.trace.brief.exclude.join(" ")).toContain("pricing");
     expect(result.trace.brief.citedDocuments[0]?.title).toBe("Zurich claims transformation");
-    // One evidence pass, at most two short queries per entity plus topics.
+    // One evidence pass; section queries are sector topics, never the client's
+    // name or the user's sentence.
     expect(queries.length).toBeGreaterThanOrEqual(4);
-    expect(queries.some((query) => query.includes("Zurich Insurance"))).toBe(true);
+    expect(queries.every((query) => !query.includes("Zurich Insurance"))).toBe(true);
+    expect(
+      queries.some((query) => /solution|approach|case study|roadmap|market/i.test(query)),
+    ).toBe(true);
   });
 
-  test("changing the conversation changes the retrieval queries and the content", async () => {
+  test("changing the conversation changes the content but not the topic queries", async () => {
     const zurichQueries: string[] = [];
     const interGlobeQueries: string[] = [];
 
@@ -94,9 +98,12 @@ describe("export brief and outline", () => {
 
     expect(zurich.trace.brief.client).toBe("Zurich Insurance");
     expect(interGlobe.trace.brief.client).toBe("InterGlobe Aviation");
-    expect(zurichQueries.join("|")).not.toBe(interGlobeQueries.join("|"));
+    // Both drafts share the same outline, so they share the same topic queries.
+    // Evidence changes through the industry scope, not through a client term.
+    expect(zurichQueries).toEqual(interGlobeQueries);
+    expect(zurichQueries.every((query) => !/Zurich|InterGlobe/i.test(query))).toBe(true);
     // The confirmed outline is the same for both drafts; only the content and
-    // the retrieval queries should follow the conversation.
+    // the evidence scope should follow the conversation.
     expect(zurich.model.sections[0]?.title).toBe(interGlobe.model.sections[0]?.title);
     expect(JSON.stringify(zurich.model.sections)).not.toBe(
       JSON.stringify(interGlobe.model.sections),

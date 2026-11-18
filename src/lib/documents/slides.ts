@@ -9,6 +9,7 @@
  */
 import type {
   Block,
+  BulletKind,
   ChartSpec,
   ChartType,
   ComparisonBlock,
@@ -16,6 +17,7 @@ import type {
   ExportBrief,
   FlowStep,
   KpiItem,
+  ListItem,
   SlideLayout,
   SlidePlan,
   TableBlock,
@@ -31,6 +33,7 @@ type Raw = {
   section?: unknown;
   layout?: unknown;
   text?: unknown;
+  takeaway?: unknown;
   bullets?: unknown;
   table?: unknown;
   chart?: unknown;
@@ -73,6 +76,8 @@ type Raw = {
 const MAX_BULLETS = 6;
 const MAX_BULLET_WORDS = 20;
 const MAX_TABLE_ROWS = 7;
+/** What a party row says when no passage covers it: our proposal, not a gap. */
+const PROPOSED_PARTNER_ROLE = "Proposed partner - role and scope to agree together";
 const MAX_TABLE_COLS = 5;
 const MAX_CHART_CATEGORIES = 8;
 const MAX_CHART_SERIES = 3;
@@ -397,14 +402,35 @@ function normalizeComparison(value: unknown, sources: string[]): Block | null {
   return comparison;
 }
 
-function normalizeBullets(value: unknown): string[] {
-  return asArray(value)
-    .map((entry) =>
-      typeof entry === "string" ? entry : asString(asRecord(entry).text ?? asRecord(entry).bullet),
-    )
-    .map((text) => clipWords(text.replace(/\s+/g, " ").trim(), MAX_BULLET_WORDS))
-    .filter(Boolean)
-    .slice(0, MAX_BULLETS);
+const BULLET_KINDS: BulletKind[] = ["evidence", "implication", "recommendation"];
+
+/** Bullets accept a plain string or {text, kind, refs}; unknown kinds are dropped. */
+function normalizeBullets(value: unknown, slideRefs: readonly number[]): ListItem[] {
+  const items: ListItem[] = [];
+  for (const entry of asArray(value)) {
+    if (typeof entry === "string") {
+      const text = clipWords(entry.replace(/\s+/g, " ").trim(), MAX_BULLET_WORDS);
+      if (text) items.push({ text });
+      continue;
+    }
+    const record = asRecord(entry);
+    const text = clipWords(
+      asString(record.text ?? record.bullet)
+        .replace(/\s+/g, " ")
+        .trim(),
+      MAX_BULLET_WORDS,
+    );
+    if (!text) continue;
+    const declared = asString(record["kind"]).toLowerCase() as BulletKind;
+    const refs = refNumbers(record.refs);
+    items.push({
+      text,
+      ...(BULLET_KINDS.includes(declared) ? { kind: declared } : {}),
+      ...(refs.length > 0 ? { refs } : slideRefs.length > 0 ? { refs: [...slideRefs] } : {}),
+    });
+    if (items.length === MAX_BULLETS) break;
+  }
+  return items;
 }
 
 function resolveLayout(
@@ -473,7 +499,12 @@ export function normalizeDeck(
     const refs = refNumbers(raw.refs ?? raw.passageRefs);
     const sources = chunkIdsFor(refs, chunks);
     const slideWarnings: string[] = [];
-    if (sources.length === 0) slideWarnings.push("No passage cited.");
+    // A slide of proposals is not expected to cite; only evidence copy is.
+    const proposalOnly =
+      Array.isArray(raw.bullets) &&
+      raw.bullets.length > 0 &&
+      asArray(raw.bullets).every((entry) => asString(asRecord(entry)["kind"]) === "recommendation");
+    if (sources.length === 0 && !proposalOnly) slideWarnings.push("No passage cited.");
 
     const blocks: Block[] = [];
     if (raw.table !== undefined) {
@@ -508,13 +539,9 @@ export function normalizeDeck(
 
     const text = asString(raw.text).slice(0, 1400);
     if (text) blocks.push({ type: "paragraph", text, sources });
-    const bullets = normalizeBullets(raw.bullets);
+    const bullets = normalizeBullets(raw.bullets, refs);
     if (bullets.length > 0) {
-      blocks.push({
-        type: "bullet_list",
-        items: bullets.map((textValue) => ({ text: textValue })),
-        sources,
-      });
+      blocks.push({ type: "bullet_list", items: bullets, sources });
     }
 
     if (blocks.length === 0) {
@@ -525,25 +552,188 @@ export function normalizeDeck(
     const layout = resolveLayout(raw, plan, blocks);
     const title = plan.title;
     const notes = asString(raw.notes).slice(0, 1200);
-    const sectionTag = plan.section ?? sectionTagFor(plan.kind);
+    const sectionTag = matchingSectionTag(plan);
     const deterministicNotes =
       refs.length > 0
         ? `${title}. Section: ${sectionTag}. Draws on passages ${refs.join(", ")}.`
         : `${title}. No passage was cited for this slide; review before sharing.`;
-    sections.push({
+    const takeaway = asString(raw.takeaway).slice(0, 320);
+    const section: DocumentSection = {
       id: plan.id,
       kind: plan.kind || inferSectionKind(title, planIndex, brief.mode),
       title,
       layout,
       blocks,
       speakerNotes: notes || deterministicNotes,
+      ...(takeaway ? { takeaway } : {}),
       flagged: false,
       warnings: slideWarnings,
-    });
+    };
+    sections.push(ensurePartyRows(section, brief));
     warnings.push(...slideWarnings.map((warning) => `${title}: ${warning}`));
   }
 
   return { sections, missing, warnings };
+}
+
+/**
+ * A slide's tag must describe its content: next steps, risks and the ask are
+ * never "Evidence", whatever the planner suggested.
+ */
+export function matchingSectionTag(plan: SectionPlan): string {
+  const canonical = sectionTagFor(plan.kind);
+  const declared = plan.section?.trim();
+  if (!declared) return canonical;
+  if (declared.toLowerCase() === "evidence" && !["proof", "results"].includes(plan.kind)) {
+    return canonical;
+  }
+  return declared;
+}
+
+/**
+ * Every party named in the brief gets a row on the parties slide. Missing
+ * evidence is stated as such rather than silently dropping a party, which is
+ * how two of three parties disappeared from a real proposal.
+ */
+export function ensurePartyRows(section: DocumentSection, brief: ExportBrief): DocumentSection {
+  if (section.kind !== "parties") return section;
+  const names = [
+    ...new Set(
+      [...(brief.partiesInvolved ?? []), ...(brief.keyEntities ?? [])]
+        .map((name) => name.replace(/\s+/g, " ").trim())
+        .filter(Boolean),
+    ),
+  ].slice(0, 6);
+  if (names.length === 0) return section;
+  const sectionText = JSON.stringify(section.blocks).toLowerCase();
+  const missing = names.filter((name) => {
+    const tokens = name
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((token) => token.length > 3);
+    return !tokens.some((token) => sectionText.includes(token));
+  });
+
+  const existing = section.blocks.find(
+    (block): block is TableBlock => block.type === "table" && block.headers.length >= 2,
+  );
+  if (!existing) {
+    // The model wrote prose for a parties slide. Give every brief party a row,
+    // naming the evidence we actually have instead of dropping the party.
+    const rows = names.map((name) => {
+      const tokens = name
+        .toLowerCase()
+        .split(/[^a-z0-9]+/)
+        .filter((token) => token.length > 3);
+      const line = section.blocks
+        .flatMap((block) =>
+          block.type === "bullet_list" || block.type === "numbered_list"
+            ? block.items.map((item) => item.text)
+            : block.type === "paragraph"
+              ? [block.text]
+              : [],
+        )
+        .find((text) => tokens.some((token) => text.toLowerCase().includes(token)));
+      // A party we have no passage for still gets a row, worded as the role we
+      // propose: the deck never tells the client what the library is missing.
+      return [name, line ? clipWords(line, 18) : PROPOSED_PARTNER_ROLE];
+    });
+    const table: TableBlock = {
+      type: "table",
+      headers: ["Party", "What the library documents"],
+      rows: rows.slice(0, MAX_TABLE_ROWS),
+      sources: [],
+    };
+    return {
+      ...section,
+      blocks: [table, ...section.blocks],
+      warnings: [
+        ...section.warnings,
+        `Parties slide rebuilt as a table; parties without evidence: ${missing.join(", ") || "none"}.`,
+      ],
+    };
+  }
+
+  if (missing.length === 0) return section;
+  const rows = [
+    ...existing.rows,
+    ...missing.map((name) =>
+      [
+        name,
+        PROPOSED_PARTNER_ROLE,
+        ...Array(Math.max(0, existing.headers.length - 2)).fill(""),
+      ].slice(0, existing.headers.length),
+    ),
+  ].slice(0, MAX_TABLE_ROWS + 2);
+  return {
+    ...section,
+    blocks: section.blocks.map((block) => (block === existing ? { ...existing, rows } : block)),
+    warnings: [...section.warnings, `Parties without library evidence: ${missing.join(", ")}.`],
+  };
+}
+
+export type ThinSlide = { id: string; title: string; reasons: string[] };
+
+const TEXT_LAYOUTS: ReadonlySet<SlideLayout> = new Set(["text", "summary", "bullets"]);
+const VISUAL_LAYOUTS: ReadonlySet<SlideLayout> = new Set([
+  "table",
+  "chart",
+  "kpis",
+  "flow",
+  "timeline",
+  "comparison",
+  "raci",
+]);
+
+function blockWords(block: Block): number {
+  if (block.type === "heading") return 0;
+  const text =
+    block.type === "bullet_list" || block.type === "numbered_list"
+      ? block.items.map((item) => item.text).join(" ")
+      : block.type === "table"
+        ? [...block.headers, ...block.rows.flat()].join(" ")
+        : block.type === "chart"
+          ? block.chart.title
+          : block.type === "comparison"
+            ? [
+                block.title ?? "",
+                ...block.criteria,
+                ...block.options.flatMap((o) => [o.name, ...o.values]),
+              ].join(" ")
+            : block.type === "timeline"
+              ? block.items.map((item) => `${item.label} ${item.detail}`).join(" ")
+              : block.type === "flow"
+                ? block.steps.map((step) => `${step.label} ${step.detail ?? ""}`).join(" ")
+                : block.type === "kpis" || block.type === "metrics"
+                  ? block.items.map((item) => `${item.label} ${item.value}`).join(" ")
+                  : block.text;
+  return text.split(/\s+/).filter(Boolean).length;
+}
+
+/**
+ * Thin-slide flags for the one enrichment call: a text slide under 60 words or
+ * with fewer than three bullets, or a visual slide with no takeaway.
+ */
+export function thinSlides(sections: readonly DocumentSection[]): ThinSlide[] {
+  const flagged: ThinSlide[] = [];
+  for (const section of sections) {
+    const reasons: string[] = [];
+    const words = section.blocks.reduce((sum, block) => sum + blockWords(block), 0);
+    const bullets = section.blocks
+      .filter(
+        (block): block is Extract<Block, { type: "bullet_list" }> => block.type === "bullet_list",
+      )
+      .reduce((sum, block) => sum + block.items.length, 0);
+    const layout = section.layout ?? "text";
+    if (TEXT_LAYOUTS.has(layout)) {
+      if (words < 60) reasons.push(`${words} words`);
+      if (bullets < 3) reasons.push(`${bullets} bullets`);
+    } else if (VISUAL_LAYOUTS.has(layout) && !section.takeaway) {
+      reasons.push("no takeaway");
+    }
+    if (reasons.length > 0) flagged.push({ id: section.id, title: section.title, reasons });
+  }
+  return flagged;
 }
 
 /** A deterministic, honest table for a plan item the model left empty. */
@@ -576,17 +766,4 @@ export function fallbackSlide(
   };
 }
 
-/** Renders an assumptions table as a normal table block. */
-export function assumptionTable(
-  rows: { item: string; value: string; note: string }[],
-  sources: string[] = [],
-): Block {
-  const table: TableBlock = {
-    type: "table",
-    caption: "Illustrative assumptions — replace with actuals",
-    headers: ["Assumption", "Value", "Basis"],
-    rows: rows.slice(0, MAX_TABLE_ROWS).map((row) => [row.item, row.value, row.note]),
-    sources,
-  };
-  return table;
-}
+/** Renders a generic table block. */

@@ -12,6 +12,8 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { buildDocument } from "./build";
 import { buildExportBrief } from "./brief";
+import { EMPTY_SCOPE } from "../chat/conversationScope";
+import { readConversationScope } from "../chat/scope.functions";
 import { buildDraft } from "./intent";
 import { planOutline } from "./outline";
 import {
@@ -61,6 +63,30 @@ const historySchema = z
   .max(40)
   .optional();
 
+const sectionKindSchema = z.enum([
+  "executive_summary",
+  "problem",
+  "solution",
+  "approach",
+  "proof",
+  "timeline",
+  "deliverables",
+  "assumptions",
+  "pricing",
+  "next_steps",
+  "why_us",
+  "how_it_works",
+  "results",
+  "ask",
+  "parties",
+  "pointers",
+  "shortcomings",
+  "economics",
+  "governance",
+  "open_questions",
+  "journey",
+]);
+
 const slidePlanSchema = z.object({
   title: z.string().trim().min(1).max(120),
   layout: z.enum([
@@ -76,6 +102,7 @@ const slidePlanSchema = z.object({
     "raci",
   ]),
   section: z.string().trim().max(40).optional(),
+  kind: sectionKindSchema.optional(),
 });
 
 const draftSchema = z.object({
@@ -135,6 +162,8 @@ export const planDocument = createServerFn({ method: "POST" })
         mode: z.enum(["proposal", "pitch"]),
         context: planContextSchema.optional(),
         industryNames: z.record(z.string()).optional(),
+        /** The conversation whose stored scope this export covers. */
+        conversationId: z.string().uuid().optional(),
         history: historySchema,
       })
       .parse(data),
@@ -152,6 +181,10 @@ export const planDocument = createServerFn({ method: "POST" })
       industries: data.context?.industries ?? [],
       sectors: data.context?.sectors ?? [],
       website: data.context?.website ?? "",
+      // The target is read from the conversation row below; this copy only has
+      // to satisfy the shared ChatContext shape for `buildDraft`.
+      targetClients: [],
+      anonymise: true,
     };
 
     try {
@@ -164,10 +197,17 @@ export const planDocument = createServerFn({ method: "POST" })
         }),
         mode: data.mode,
       };
+      // Scope comes from the conversation row the client points at, so an
+      // export covers everything the user selected, not just the first pick.
+      const scope = data.conversationId
+        ? await readConversationScope(requestContext.supabase, data.conversationId)
+        : EMPTY_SCOPE;
       const brief = await buildExportBrief(draft, data.history ?? [], {
         apiKey,
         baseUrl,
         client: requestContext.supabase,
+        scope,
+        ...(data.industryNames ? { industryNames: data.industryNames } : {}),
         log: (event, meta) => console.log(`[DOC] plan ${event}`, meta),
       });
       const planned = await planOutline(brief, draft, {
@@ -183,12 +223,13 @@ export const planDocument = createServerFn({ method: "POST" })
         subject: brief.subject ?? null,
         parties: [
           ...new Set([...(brief.partiesInvolved ?? []), ...(brief.keyEntities ?? [])]),
-        ].slice(0, 8),
+        ].slice(0, 12),
         outline: planned.plans.map((plan) => plan.title),
         outlinePlan: planned.plans.map((plan) => ({
           title: plan.title,
           layout: plan.layout ?? "bullets",
           ...(plan.section ? { section: plan.section } : {}),
+          ...(plan.kind ? { kind: plan.kind } : {}),
         })),
         usedFallback: planned.usedFallback,
       };
@@ -204,7 +245,14 @@ export const planDocument = createServerFn({ method: "POST" })
 export const generateDocument = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data: unknown) =>
-    z.object({ draft: draftSchema, history: historySchema }).parse(data),
+    z
+      .object({
+        draft: draftSchema,
+        history: historySchema,
+        conversationId: z.string().uuid().optional(),
+        industryNames: z.record(z.string()).optional(),
+      })
+      .parse(data),
   )
   .handler(async ({ data, context }): Promise<GenerateDocumentResult> => {
     const { draft } = data;
@@ -217,11 +265,16 @@ export const generateDocument = createServerFn({ method: "POST" })
     }
 
     try {
+      const scope = data.conversationId
+        ? await readConversationScope(context.supabase, data.conversationId)
+        : EMPTY_SCOPE;
       const built = await buildDocument({
         draft,
         history,
         client: context.supabase,
         provider: { apiKey, baseUrl },
+        scope,
+        ...(data.industryNames ? { industryNames: data.industryNames } : {}),
         log: (event, meta) => console.log(`[DOC] ${event}`, meta),
       });
 
@@ -239,7 +292,10 @@ export const generateDocument = createServerFn({ method: "POST" })
         });
         return {
           ok: false,
-          error: built.gate.message,
+          error:
+            built.gate.sections.length === 0 && built.model.warnings[0]
+              ? built.model.warnings[0]
+              : built.gate.message,
           missingSections: built.gate.sections.filter((section) => section.reason !== null),
           canGeneratePartial: true,
         };
@@ -255,7 +311,7 @@ export const generateDocument = createServerFn({ method: "POST" })
         ({ bytes, pages } = renderDocx(built.model));
       } else {
         const { renderPptx } = await import("./render/pptx");
-        ({ bytes, pages } = renderPptx(built.model));
+        ({ bytes, pages } = await renderPptx(built.model));
       }
 
       const file: GeneratedDocument = {
@@ -290,6 +346,7 @@ export const generateDocument = createServerFn({ method: "POST" })
         "[DOC] generation failed",
         error instanceof Error ? (error.stack ?? error.message) : String(error),
       );
-      return { ok: false, error: "Could not build that document. Please try again." };
+      const failure = error instanceof Error ? error.name : "UnknownError";
+      return { ok: false, error: `Could not build that document (${failure}). Please try again.` };
     }
   });

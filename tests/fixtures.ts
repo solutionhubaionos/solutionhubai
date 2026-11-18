@@ -575,7 +575,22 @@ export function createMockSupabase(
                 .map((chunk) => chunk.contentId),
             ),
           ];
-          return resolve({ data: ids.map((id) => ({ id })), error: null });
+          return resolve({
+            data: ids.map((id) => {
+              const chunk = source().find((entry) => entry.contentId === id);
+              return {
+                id,
+                title: chunk?.title ?? "",
+                file_name: chunk?.fileName ?? "",
+                file_path: chunk?.filePath ?? "",
+                customer_name: chunk?.customerName ?? null,
+                industry: chunk?.industry ?? "",
+                content_type: "pitch_deck",
+                created_at: "2026-01-01T00:00:00.000Z",
+              };
+            }),
+            error: null,
+          });
         }
 
         const ids = filters.ids ?? [];
@@ -744,6 +759,190 @@ function outlineFrom(user: string): Record<string, unknown> {
       query: `${client} ${industry} ${kind} outcomes evidence`,
     })),
   };
+}
+
+function deckPlanFrom(user: string): Record<string, unknown> {
+  const titles = (() => {
+    const match = /"confirmedOutline":\s*(\[[\s\S]*?\])/.exec(user);
+    if (!match) return [] as string[];
+    try {
+      return (JSON.parse(match[1]!) as unknown[]).filter(
+        (value): value is string => typeof value === "string",
+      );
+    } catch {
+      return [];
+    }
+  })();
+  const layouts = [
+    "context-bullets",
+    "partner-hub",
+    "table-compact",
+    "process-roadmap",
+    "kpi-cards",
+    "chart-with-takeaway",
+    "next-steps-ask",
+  ] as const;
+  const base =
+    titles.length >= 6
+      ? titles
+      : [
+          ...titles,
+          "The current model leaves value on the table",
+          "Each party owns a distinct leg of the journey",
+          "A phased start reaches first value quickly",
+          "The evidence supports a measured pilot",
+          "The decision needed next is a scoped pilot",
+        ];
+  return {
+    deckTitle: "Customer-ready pitch deck",
+    audience: "COO",
+    storyline: "The current model constrains growth; one integrated route can prove value quickly.",
+    slides: base.slice(0, 8).map((title, index) => ({
+      layout: layouts[index % layouts.length],
+      actionTitle: title,
+      purpose: `Cover slide ${index + 1} for the client.`,
+      evidenceRefs: [],
+      tier: index < 5 ? "sourced" : "inferred",
+    })),
+  };
+}
+
+function deckClaims(user: string): { id: string; value: string; metric: string }[] {
+  return [...user.matchAll(/^(CL-\d+) \| ([^|]+) \| ([^|]+) \|/gm)].map((match) => ({
+    id: match[1]!,
+    value: match[2]!.trim(),
+    metric: match[3]!.trim(),
+  }));
+}
+
+function deckSlideFrom(user: string): Record<string, unknown> {
+  const layout = /Layout: ([\w-]+)/.exec(user)?.[1] ?? "context-bullets";
+  const claims = deckClaims(user);
+  const parties =
+    /Validated parties: ([^\n]+)/
+      .exec(user)?.[1]
+      ?.split(";")
+      .map((value) => value.trim())
+      .filter(Boolean) ?? [];
+  const notes = "Supporting detail is held in the cited passages.";
+  const claimIds = claims.slice(0, 2).map((claim) => claim.id);
+  const token = claims[0] ? `{{${claims[0].id}}}` : "";
+  const shaped: Record<string, unknown> = (() => {
+    switch (layout) {
+      case "section-divider":
+        return {
+          layout,
+          label: "The opportunity",
+          statement: "A focused change can reset the economics.",
+        };
+      case "kpi-cards":
+        return {
+          layout,
+          cards: claims.slice(0, 4).map((claim) => ({ label: claim.metric, claimId: claim.id })),
+        };
+      case "partner-hub":
+        return {
+          layout,
+          centre: "Integrated customer proposition",
+          spokes: parties.slice(0, 3).map((party) => ({
+            entity: party,
+            role: "Documented capability in the customer journey",
+            claimIds: [],
+            inferred: false,
+          })),
+        };
+      case "two-column-compare":
+      case "before-after":
+        return {
+          layout,
+          left: { heading: "Today", points: ["Handoffs split ownership.", "Data is re-keyed."] },
+          right: {
+            heading: "Proposed",
+            points: ["One queue owns each case.", "Shared data removes rework."],
+          },
+        };
+      case "table-compact":
+        return {
+          layout,
+          headers: ["Offer line", "What changes"],
+          rows: [
+            ["Intake", "A single front door for every request"],
+            ["Triage", "Work is routed to the right owner"],
+          ],
+        };
+      case "shortcomings-table":
+        return {
+          layout,
+          headers: ["Risk", "How we manage it"],
+          rows: [
+            ["Data quality", "Profile sources before the pilot"],
+            ["Adoption", "Name a business owner in week one"],
+          ],
+        };
+      case "collaboration-pointers-table":
+        return {
+          layout,
+          headers: ["Party", "What they own"],
+          rows: parties.slice(0, 3).map((party) => [party, "A defined leg of the journey"]),
+        };
+      case "process-roadmap":
+        return {
+          layout,
+          steps: [
+            { label: "Diagnose", detail: "Map the current flow and agree the baseline." },
+            { label: "Pilot", detail: "Prove the model in one business unit." },
+            { label: "Scale", detail: "Extend the proven pattern to other teams." },
+          ],
+        };
+      case "chart-with-takeaway":
+        return {
+          layout,
+          chart: {
+            kind: "bar",
+            title: "Reported outcomes",
+            series: [
+              {
+                name: "Reported result",
+                points: claims.slice(0, 4).map((claim) => ({
+                  label: claim.metric,
+                  claimId: claim.id,
+                })),
+              },
+            ],
+          },
+          takeaway: "The evidence supports a measured start.",
+        };
+      case "image-with-caption":
+        return {
+          layout,
+          caption: "A visual from comparable work",
+          sourceNote: "Solution Hub library",
+        };
+      case "next-steps-ask":
+        return {
+          layout,
+          ask: "Approve a scoped pilot and name the decision owner",
+          steps: [
+            { text: "Agree the pilot scope and measures", owner: "Joint", when: "Two weeks" },
+            { text: "Name the business owner", owner: "Client", when: "Before kick-off" },
+          ],
+        };
+      default:
+        return {
+          layout: "context-bullets",
+          bullets: [
+            {
+              text: token
+                ? `Comparable work reports ${token} after the change.`
+                : "The current model splits ownership and slows delivery.",
+              claimIds,
+            },
+            { text: "One integrated flow gives every case a clear owner.", claimIds: [] },
+          ],
+        };
+    }
+  })();
+  return { content: shaped, notes };
 }
 
 function sectionFrom(user: string): Record<string, unknown> {
@@ -963,6 +1162,10 @@ export function createMockFetch(): typeof fetch {
 
     let content: unknown;
     if (system.includes("extract a document brief")) content = briefFrom(user);
+    else if (system.includes("senior pre-sales strategist")) content = deckPlanFrom(user);
+    else if (system.includes("You write one slide of a client-ready sales deck"))
+      content = deckSlideFrom(user);
+    else if (system.includes("skeptical CXO")) content = { flagged: [] };
     else if (system.includes("You plan a client-ready sales document")) content = outlineFrom(user);
     else if (system.includes("You write a client-ready sales deck")) content = deckFrom(user);
     else if (system.includes("grounding auditor")) content = { unsupported: [] };

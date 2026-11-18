@@ -8,12 +8,29 @@
  * the names join the search text instead of silently narrowing to the first.
  */
 
+/**
+ * What we are pitching to. A hint for relevance and wording only: the name is
+ * never a retrieval filter, because a new client is normally not in the library.
+ */
+export type TargetHints = {
+  name: string;
+  industry: string | null;
+  websiteUrl: string | null;
+  description: string | null;
+  /** Opt-in: allow the library's own material about this client. */
+  includePriorWork: boolean;
+};
+
 export type ChatContext = {
+  /** Evidence customers (existing library customers), not the pitching target. */
   clients: string[];
   personas: string[];
   industries: string[];
   sectors: string[];
   website: string;
+  targetClients: TargetHints[];
+  /** External decks describe evidence customers generically. */
+  anonymise: boolean;
 };
 
 export const EMPTY_CONTEXT: ChatContext = {
@@ -22,6 +39,8 @@ export const EMPTY_CONTEXT: ChatContext = {
   industries: [],
   sectors: [],
   website: "",
+  targetClients: [],
+  anonymise: true,
 };
 
 export const PERSONAS = [
@@ -75,6 +94,15 @@ export function retrievalInputs(context: ChatContext): {
   }
 
   hints.push(...context.personas, ...context.sectors);
+
+  // The pitch target shapes the question, never the filter. Its industry is a
+  // mild relevance hint; its name is deliberately not appended as a customer.
+  for (const target of context.targetClients) {
+    hints.push(target.name);
+    if (target.industry) hints.push(target.industry);
+    if (target.description) hints.push(target.description.slice(0, 200));
+  }
+
   const website = normaliseWebsite(context.website);
   if (website) hints.push(website);
 
@@ -137,6 +165,7 @@ export function contextSummary(
   industryNames: Record<string, string> = {},
 ): string[] {
   return [
+    ...context.targetClients.map((target) => `To: ${target.name}`),
     ...context.clients,
     ...context.personas,
     ...context.industries.map((slug) => industryNames[slug] ?? slug),

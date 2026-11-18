@@ -212,10 +212,13 @@ const deckVerifySchema = z.object({
 
 const DECK_VERIFY_SYSTEM = [
   "You are a grounding auditor for a sales deck.",
-  "You receive each slide's claims and the numbered passages it cites.",
-  "List every claim that is not supported by that slide's cited passages, word for word from the slide.",
+  "You receive each slide's claims and the numbered passages it cites. Lines may start with a kind label: [evidence], [implication], [recommendation] or [takeaway].",
+  "Check [evidence] and unlabelled claims fully against that slide's cited passages, word for word from the slide.",
+  "For [implication] claims, list only one that introduces a number, count, percentage, date, named entity or claim about a company that the passages do not support.",
+  "[recommendation] items are our proposal, not sourced claims: do not judge their sourcing, but list one when it states a figure, count, percentage or date the passages do not contain.",
   "Treat as unsupported: outside knowledge, reputational claims, figures, counts, percentages, dates and prices the passages do not state, and any description of a company the passages do not make.",
-  "Do not rewrite the deck. Do not list a claim the passages support.",
+  "Quote claims without the kind label. Do not rewrite the deck. Do not list a claim the passages support.",
+  "A row or line that states a proposed role, a next step or a recommended action is our proposal, not a factual claim: judge it only for invented figures, as above.",
   "List at most twelve claims, the most serious first. Omit nitpicks and anything already marked illustrative.",
   'Return JSON only: {"unsupported":[{"slide":1,"claim":"...","reason":"..."}]}. Use an empty list when everything is supported.',
 ].join(" ");
@@ -269,6 +272,40 @@ function removeClaim(section: DocumentSection, claim: string): DocumentSection {
   };
 }
 
+/** Slide copy with kind labels, so the verifier knows what it may challenge. */
+function labelledContent(section: DocumentSection): string {
+  const lines: string[] = [];
+  for (const block of section.blocks) {
+    if (block.type === "heading") continue;
+    if (block.type === "bullet_list" || block.type === "numbered_list") {
+      for (const item of block.items) {
+        lines.push(`${item.kind ? `[${item.kind}] ` : ""}${item.text}`);
+      }
+      continue;
+    }
+    lines.push(blockText(block));
+  }
+  if (section.takeaway) lines.push(`[takeaway] ${section.takeaway}`);
+  return lines.join("\n").slice(0, 1_600);
+}
+
+function cleanClaimLabel(claim: string): string {
+  return claim.replace(/^\[(evidence|implication|recommendation|takeaway)\]\s*/i, "").trim();
+}
+
+/** The kind of the bullet a claim quotes, when it quotes one. */
+function itemKindFor(section: DocumentSection, claim: string): string | null {
+  const needle = normalise(claim);
+  if (needle.length < 8) return null;
+  for (const block of section.blocks) {
+    if (block.type !== "bullet_list" && block.type !== "numbered_list") continue;
+    for (const item of block.items) {
+      if (normalise(item.text).includes(needle)) return item.kind ?? "evidence";
+    }
+  }
+  return null;
+}
+
 /**
  * One VERIFY call for the whole deck, thinking off and 4000 output tokens.
  * Non-fatal: a failed verifier leaves the deterministic checks in charge.
@@ -290,11 +327,7 @@ export async function verifyDeckClaims(
       const refs = [...new Set(section.blocks.flatMap(sourceIdsOf))]
         .map((id) => indexByChunk.get(id))
         .filter((value): value is number => value !== undefined);
-      const content = section.blocks
-        .filter((block) => block.type !== "heading")
-        .map(blockText)
-        .join("\n")
-        .slice(0, 1_600);
+      const content = labelledContent(section);
       return `${index + 1}. ${section.title}\nrefs: [${refs.join(", ")}]\n${content}`;
     })
     .join("\n\n");
@@ -331,13 +364,30 @@ export async function verifyDeckClaims(
 
   const unsupported = parsed.unsupported.map((entry) => ({
     slide: String(entry.slide),
-    claim: entry.claim,
+    claim: cleanClaimLabel(entry.claim),
   }));
   if (unsupported.length === 0) {
     return { sections: [...sections], unsupported: [], warnings: [] };
   }
 
+  const chunkText = new Map(chunks.map((chunk) => [chunk.chunkId, chunk.content]));
+  const passageTextFor = (section: DocumentSection): string =>
+    [...new Set(section.blocks.flatMap(sourceIdsOf))]
+      .map((id) => chunkText.get(id) ?? "")
+      .join(" ")
+      .toLowerCase();
+  const newEntityIn = (section: DocumentSection, claim: string): boolean => {
+    const passage = passageTextFor(section);
+    // Capitalised tokens after the first word: company and product names.
+    return claim
+      .split(/\s+/)
+      .slice(1)
+      .filter((word) => /^[A-Z][A-Za-z&.-]{2,}/.test(word))
+      .some((word) => !passage.includes(word.toLowerCase().replace(/[.,;:)]+$/, "")));
+  };
+
   const result = [...sections];
+  const reported: typeof unsupported = [];
   for (const entry of parsed.unsupported) {
     const index =
       typeof entry.slide === "number"
@@ -345,12 +395,24 @@ export async function verifyDeckClaims(
         : result.findIndex((section) => section.title === entry.slide);
     const target = result[index];
     if (!target) continue;
-    result[index] = removeClaim(target, entry.claim);
+    const claim = cleanClaimLabel(entry.claim);
+    // Honest absence is not an unsupported claim; it is what the parties slide
+    // must say when the library has nothing for a party.
+    if (/no library evidence found/i.test(claim)) continue;
+    const kind = itemKindFor(target, claim);
+    // An implication may connect and weigh cited facts. Only a new figure or a
+    // new named entity makes it unsupported; tone or a different framing does not.
+    if (kind === "implication" && !/\d/.test(claim) && !newEntityIn(target, claim)) continue;
+    // A recommendation is our proposal: it is only removed when it carries a
+    // figure the passages cannot support, never for lacking a citation.
+    if (kind === "recommendation" && !/\d/.test(claim)) continue;
+    result[index] = removeClaim(target, claim);
+    reported.push({ slide: String(entry.slide), claim });
   }
 
-  const warnings = unsupported
+  const warnings = reported
     .slice(0, 8)
     .map((entry) => `VERIFY flagged "${entry.claim.slice(0, 100)}" on slide ${entry.slide}.`);
-  log("deck verified", { unsupported: unsupported.length, slides: usable.length });
-  return { sections: result, unsupported, warnings };
+  log("deck verified", { unsupported: reported.length, slides: usable.length });
+  return { sections: result, unsupported: reported, warnings };
 }

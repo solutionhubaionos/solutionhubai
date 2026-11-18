@@ -1,7 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import type { Block, DocumentSection, ExportBrief } from "../src/lib/documents/types";
 import type { SectionPlan } from "../src/lib/documents/outline";
-import { sanitizeSection, validateModel, validateSection } from "../src/lib/documents/validate";
+import {
+  sanitizeSection,
+  statesMissingData,
+  validateModel,
+  validateSection,
+} from "../src/lib/documents/validate";
 
 const chunks = new Map<string, string>([
   [
@@ -132,7 +137,7 @@ describe("section validation", () => {
     expect(result.removed).toBe(1);
   });
 
-  test("replaces a wholly unsupported section with a marked placeholder", () => {
+  test("drops a wholly unsupported section instead of writing a gap note", () => {
     const bad: Block = {
       type: "paragraph",
       text: "Invented claim with 77% improvement.",
@@ -140,8 +145,15 @@ describe("section validation", () => {
     };
     const result = sanitizeSection(plan, section([bad]), chunks, brief);
     expect(result.section.flagged).toBe(true);
-    expect(result.section.blocks[0]).toMatchObject({ type: "callout" });
-    expect(JSON.stringify(result.section.blocks)).toContain("[To be confirmed]");
+    expect(result.section.blocks).toHaveLength(0);
+    expect(JSON.stringify(result.section.blocks)).not.toContain("[To be confirmed]");
+  });
+
+  test("recognises reader-facing copy about missing data", () => {
+    expect(statesMissingData("We could not find any data for the region.")).toBe(true);
+    expect(statesMissingData("No library evidence was found for this party.")).toBe(true);
+    expect(statesMissingData("Commercial terms are [To be confirmed] pending pricing.")).toBe(true);
+    expect(statesMissingData("The network carried 42% more passengers in 2025.")).toBe(false);
   });
 });
 

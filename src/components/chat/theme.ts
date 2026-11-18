@@ -25,6 +25,21 @@ export const labelColCls = (expanded: boolean) =>
 
 export const dividerCls = "mx-3 my-1 h-px shrink-0 bg-border";
 
+/**
+ * The small pill used by the wizard chips, the scope row and the composer
+ * hints. One token so the three never drift apart.
+ */
+export const chipCls =
+  `${FOCUS} inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 ` +
+  "text-[11px] text-foreground transition-colors duration-150 hover:bg-secondary";
+
+/** The wizard's opening options: the same pill, one comfortable size up. */
+export const chipLargeCls = "gap-2 px-3.5 py-1.5 text-xs";
+
+/** Selected chip: the accent colour, not a second surface. */
+export const chipSelectedCls =
+  "border-primary/60 bg-primary/10 font-medium text-primary hover:bg-primary/15";
+
 export const menuItemCls =
   `${FOCUS} flex w-full items-center gap-2.5 rounded-xl px-2 py-2 text-left text-sm ` +
   "text-muted-foreground transition-colors duration-150 hover:bg-secondary/70 hover:text-foreground";

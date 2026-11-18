@@ -6,7 +6,7 @@ import { FilePreviewDialog } from "@/components/FilePreviewDialog";
 import type { ContentItem } from "@/lib/content";
 import type { ChatSource } from "@/lib/chat/answer";
 import type { ExampleCard } from "@/lib/chat/scope";
-import { FOCUS } from "./theme";
+import { FOCUS, chipCls } from "./theme";
 import { DocumentCard } from "./DocumentCard";
 import { MarkdownAnswer } from "./MarkdownAnswer";
 import type { ChatMessageView } from "./types";
@@ -22,6 +22,7 @@ export function Conversation({
   onCancelDocument,
   onDocumentModeChange,
   intake,
+  onAddToScope,
 }: {
   messages: ChatMessageView[];
   isTyping: boolean;
@@ -33,6 +34,8 @@ export function Conversation({
   onDocumentModeChange: (messageId: string, mode: "proposal" | "pitch") => void;
   /** The guided sector/company picker, shown under the latest prompt. */
   intake?: ReactNode;
+  /** Adds the organisations an answer reached outside scope to the scope. */
+  onAddToScope?: (names: string[]) => void;
 }) {
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -84,6 +87,7 @@ export function Conversation({
             onGenerateDocument={onGenerateDocument}
             onCancelDocument={onCancelDocument}
             onDocumentModeChange={onDocumentModeChange}
+            {...(onAddToScope ? { onAddToScope } : {})}
           />
         ))}
         {intake}
@@ -179,11 +183,13 @@ function Bubble({
   onGenerateDocument,
   onCancelDocument,
   onDocumentModeChange,
+  onAddToScope,
 }: {
   message: ChatMessageView;
   onGenerateDocument: (messageId: string) => void;
   onCancelDocument: (messageId: string) => void;
   onDocumentModeChange: (messageId: string, mode: "proposal" | "pitch") => void;
+  onAddToScope?: (names: string[]) => void;
 }) {
   if (message.role === "user") {
     return (
@@ -226,6 +232,15 @@ function Bubble({
             onCancel={() => onCancelDocument(message.id)}
             onModeChange={(mode) => onDocumentModeChange(message.id, mode)}
           />
+        )}
+        {message.addedEntities && message.addedEntities.length > 0 && onAddToScope && (
+          <button
+            type="button"
+            onClick={() => onAddToScope(message.addedEntities ?? [])}
+            className={`${chipCls} border-dashed text-muted-foreground hover:text-foreground`}
+          >
+            <Plus size={11} aria-hidden /> Add {message.addedEntities.join(", ")} to scope
+          </button>
         )}
         {message.sources && message.sources.length > 0 && (
           <SourceList sources={message.sources} anchorPrefix={message.id} />

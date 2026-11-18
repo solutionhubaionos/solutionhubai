@@ -76,7 +76,12 @@ function DocumentPreview({ file, type }: { file: GeneratedDocument; type: Docume
   const [frameReady, setFrameReady] = useState(false);
 
   useEffect(() => {
-    setBlob(decodeDocument(file));
+    try {
+      setBlob(decodeDocument(file));
+    } catch {
+      setError("This document could not be read. Download it to open the file.");
+      setLoading(false);
+    }
   }, [file]);
 
   useEffect(() => {
@@ -99,6 +104,11 @@ function DocumentPreview({ file, type }: { file: GeneratedDocument; type: Docume
           const width = Math.max(280, iframe.clientWidth - 20);
           const viewer = init(host, { width, height: (width * 9) / 16 });
           await viewer.preview(await blob.arrayBuffer());
+          // A package the viewer cannot parse resolves without throwing and
+          // leaves an empty, black frame; refuse to present that as a preview.
+          if (!host.querySelector(".pptx-preview-slide-wrapper")) {
+            throw new Error("No slides rendered");
+          }
         }
         if (active) setLoading(false);
       } catch {
@@ -123,7 +133,11 @@ function DocumentPreview({ file, type }: { file: GeneratedDocument; type: Docume
           <Download /> Download
         </Button>
       </div>
-      <div className="relative min-h-0 flex-1 overflow-auto rounded-md border bg-muted">
+      <div
+        className={`relative min-h-0 flex-1 overflow-auto rounded-md border ${
+          type === "pdf" ? "bg-white" : "bg-muted"
+        }`}
+      >
         {loading && (
           <div className="absolute inset-0 z-10 flex items-center justify-center gap-2 bg-background text-muted-foreground">
             <Loader2 className="h-5 w-5 animate-spin" /> Opening…

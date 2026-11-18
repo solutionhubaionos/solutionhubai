@@ -89,6 +89,72 @@ export type Database = {
         };
         Relationships: [];
       };
+      claims: {
+        Row: {
+          chunk_id: string | null;
+          context: string | null;
+          created_at: string;
+          doc_id: string;
+          entity_id: string | null;
+          id: string;
+          metric: string | null;
+          source_title: string | null;
+          source_year: number | null;
+          unit: string | null;
+          value_max: number | null;
+          value_min: number | null;
+          value_text: string;
+        };
+        Insert: {
+          chunk_id?: string | null;
+          context?: string | null;
+          created_at?: string;
+          doc_id: string;
+          entity_id?: string | null;
+          id?: string;
+          metric?: string | null;
+          source_title?: string | null;
+          source_year?: number | null;
+          unit?: string | null;
+          value_max?: number | null;
+          value_min?: number | null;
+          value_text: string;
+        };
+        Update: {
+          chunk_id?: string | null;
+          context?: string | null;
+          created_at?: string;
+          doc_id?: string;
+          entity_id?: string | null;
+          id?: string;
+          metric?: string | null;
+          source_title?: string | null;
+          source_year?: number | null;
+          unit?: string | null;
+          value_max?: number | null;
+          value_min?: number | null;
+          value_text?: string;
+        };
+        Relationships: [];
+      };
+      chunk_entities: {
+        Row: {
+          chunk_id: string;
+          created_at: string;
+          entity_id: string;
+        };
+        Insert: {
+          chunk_id: string;
+          created_at?: string;
+          entity_id: string;
+        };
+        Update: {
+          chunk_id?: string;
+          created_at?: string;
+          entity_id?: string;
+        };
+        Relationships: [];
+      };
       content_items: {
         Row: {
           content_type: string;
@@ -137,6 +203,33 @@ export type Database = {
           title?: string;
           uploaded_by?: string;
           uploader_email?: string | null;
+        };
+        Relationships: [];
+      };
+      conversations: {
+        Row: {
+          created_at: string;
+          id: string;
+          scope: Json;
+          target_client: Json | null;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          id: string;
+          scope?: Json;
+          target_client?: Json | null;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          scope?: Json;
+          target_client?: Json | null;
+          updated_at?: string;
+          user_id?: string;
         };
         Relationships: [];
       };
@@ -204,6 +297,87 @@ export type Database = {
           id?: string;
           page?: number | null;
           slide?: number | null;
+        };
+        Relationships: [];
+      };
+      entities: {
+        Row: {
+          aliases: string[];
+          created_at: string;
+          entity_type: string;
+          id: string;
+          industry: string | null;
+          name: string;
+          sector: string | null;
+        };
+        Insert: {
+          aliases?: string[];
+          created_at?: string;
+          entity_type?: string;
+          id?: string;
+          industry?: string | null;
+          name: string;
+          sector?: string | null;
+        };
+        Update: {
+          aliases?: string[];
+          created_at?: string;
+          entity_type?: string;
+          id?: string;
+          industry?: string | null;
+          name?: string;
+          sector?: string | null;
+        };
+        Relationships: [];
+      };
+      entity_assets: {
+        Row: {
+          created_at: string;
+          entity_id: string;
+          id: string;
+          kind: string;
+          path: string;
+        };
+        Insert: {
+          created_at?: string;
+          entity_id: string;
+          id?: string;
+          kind: string;
+          path: string;
+        };
+        Update: {
+          created_at?: string;
+          entity_id?: string;
+          id?: string;
+          kind?: string;
+          path?: string;
+        };
+        Relationships: [];
+      };
+      entity_facts: {
+        Row: {
+          entity_id: string;
+          fact_type: string;
+          fetched_at: string;
+          id: string;
+          source_url: string | null;
+          text: string;
+        };
+        Insert: {
+          entity_id: string;
+          fact_type: string;
+          fetched_at?: string;
+          id?: string;
+          source_url?: string | null;
+          text: string;
+        };
+        Update: {
+          entity_id?: string;
+          fact_type?: string;
+          fetched_at?: string;
+          id?: string;
+          source_url?: string | null;
+          text?: string;
         };
         Relationships: [];
       };
@@ -343,6 +517,22 @@ export type Database = {
       };
       is_allowed_email: { Args: { _email: string }; Returns: boolean };
       is_content_admin: { Args: never; Returns: boolean };
+      match_entities: {
+        Args: {
+          p_candidates: string[];
+          p_limit?: number;
+          p_threshold?: number;
+        };
+        Returns: Array<{
+          entity_type: string;
+          id: string;
+          industry: string | null;
+          matched_name: string;
+          name: string;
+          score: number;
+          spellings: string[];
+        }>;
+      };
       match_document_chunks: {
         Args: {
           filter_industry?: string | null;
@@ -371,6 +561,13 @@ export type Database = {
           _new_name?: string;
         };
         Returns: undefined;
+      };
+      worker_attach_chunk_facts: {
+        Args: {
+          p_content_id: string;
+          p_facts: Json;
+        };
+        Returns: Json;
       };
       replace_document_chunks: {
         Args: {

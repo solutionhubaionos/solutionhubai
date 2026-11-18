@@ -8,6 +8,7 @@ import { describe, expect, test } from "bun:test";
 import { buildDocument } from "../src/lib/documents/build";
 import { outlineFor } from "../src/lib/documents/intent";
 import type { DocumentModel } from "../src/lib/documents/types";
+import { visibleStrings } from "../src/lib/documents/deck/writer";
 import { CHUNKS, createMockFetch, createMockSupabase, deckHistory, draftFor } from "./fixtures";
 
 const STATIC_DECK_HEADINGS = new Set(
@@ -22,9 +23,18 @@ export function regressionIssues(model: DocumentModel): string[] {
   const content = model.sections.flatMap((section) =>
     section.blocks.filter((block) => block.type !== "heading"),
   );
-  if (content.length < 16) issues.push(`only ${content.length} content blocks`);
+  const deckText = model.deck
+    ? model.deck.slides.flatMap((slide) => [slide.actionTitle, ...visibleStrings(slide.content)])
+    : [];
+  const substantive = content.length + (model.deck ? model.deck.slides.length : 0);
+  // A deck slide is one substantive unit by design; the legacy document model
+  // spread the same content across several blocks per section.
+  const minimum = model.deck ? 8 : 16;
+  if (substantive < minimum) issues.push(`only ${substantive} content blocks`);
 
-  const characters = content.reduce((sum, block) => sum + JSON.stringify(block).length, 0);
+  const characters =
+    content.reduce((sum, block) => sum + JSON.stringify(block).length, 0) +
+    deckText.join(" ").length;
   if (characters < 1500) issues.push(`only ${characters} characters of content`);
 
   for (const section of model.sections) {

@@ -22,7 +22,7 @@ import {
   pickEntityMatch,
   type EntityMatchRow,
 } from "../../src/lib/rag/entities";
-import { selectRelevantChunks } from "../../src/lib/rag/relevance";
+import { selectRelevantChunks } from "../../src/lib/rag/search";
 import {
   HISTORY_ADANI,
   HOTEL_RETRIEVAL,

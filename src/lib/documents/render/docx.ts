@@ -514,21 +514,21 @@ function sourcesXml(model: DocumentModel, citations: ReadonlyMap<string, number>
 }
 
 export function renderDocx(model: DocumentModel): { bytes: Uint8Array; pages: number } {
+  return renderThemedDocx(model);
+}
+
+function renderThemedDocx(model: DocumentModel): { bytes: Uint8Array; pages: number } {
   const citations = new Map(model.sources.map((source, index) => [source.chunkId, index + 1]));
   const body: string[] = [coverXml(model, citations)];
-  const includeContents = model.mode === "proposal" && model.sections.length >= 5;
+  // Sections without grounded copy are omitted: the file never carries a note
+  // about what the library could not supply.
+  const sections = model.sections.filter((section) => section.blocks.length > 0);
+  const includeContents = model.mode === "proposal" && sections.length >= 5;
   if (includeContents) body.push(contentsXml());
 
-  model.sections.forEach((section: DocumentSection) => {
+  sections.forEach((section: DocumentSection) => {
     body.push(paragraph(section.title, "Heading1"));
     body.push(blocksToXml(section.blocks, citations, { isLast: false }));
-    if (section.flagged) {
-      body.push(
-        paragraph("This section is marked for completion before the document is sent.", "Caption", {
-          color: THEME.colors.warning,
-        }),
-      );
-    }
   });
 
   body.push(sourcesXml(model, citations));
