@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Check, Plus, Undo2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { FOCUS, chipCls, chipLargeCls, chipSelectedCls } from "./theme";
+import { FOCUS, chipCls, chipLargeCls, chipSelectedCls, eyebrowCls } from "./theme";
 
 /**
  * One selectable chip. Deliberately the same surface as the premade prompt
@@ -51,11 +51,7 @@ export function ChipGroup({
   if (options.length === 0) return null;
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      {label && (
-        <span className="mr-0.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-          {label}
-        </span>
-      )}
+      {label && <span className={`mr-0.5 ${eyebrowCls}`}>{label}</span>}
       {options.map((option) => (
         <ChipButton
           key={option.value}
@@ -152,7 +148,7 @@ export function SelectionCard({
         <p className="text-xs font-medium text-foreground">
           {title}
           {count > 0 && (
-            <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">
+            <span className="ml-1.5 text-xs font-normal text-muted-foreground">
               {count} selected
             </span>
           )}
@@ -181,7 +177,7 @@ export function SelectionCard({
                       setCustom((previous) => previous.filter((entry) => entry !== name))
                     }
                     aria-label={`Remove ${name}`}
-                    className="grid h-4 w-4 place-items-center rounded-full"
+                    className={`${FOCUS} grid h-5 w-5 shrink-0 place-items-center rounded-full text-primary/70 transition-colors hover:text-primary`}
                   >
                     <X size={11} />
                   </button>
@@ -200,6 +196,8 @@ export function SelectionCard({
               }}
               placeholder={freeTextPlaceholder ?? freeTextLabel}
               aria-label={freeTextLabel}
+              name="custom-option"
+              autoComplete="off"
               className={`${FOCUS} min-w-[180px] flex-1 rounded-full border border-border bg-card px-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:border-primary`}
             />
             <button
@@ -227,7 +225,7 @@ export function SelectionCard({
           <button
             type="button"
             onClick={onSkip}
-            className={`${FOCUS} rounded-md px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground underline underline-offset-4 transition-colors hover:text-foreground`}
+            className={`${FOCUS} rounded-md px-1.5 py-0.5 text-xs font-medium text-muted-foreground underline underline-offset-4 transition-colors hover:text-foreground`}
           >
             {skipLabel}
           </button>
@@ -236,7 +234,7 @@ export function SelectionCard({
           <button
             type="button"
             onClick={onUndo}
-            className={`${FOCUS} inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground underline underline-offset-4 transition-colors hover:text-foreground`}
+            className={`${FOCUS} inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-muted-foreground underline underline-offset-4 transition-colors hover:text-foreground`}
           >
             <Undo2 size={11} aria-hidden /> Undo
           </button>

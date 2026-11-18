@@ -82,7 +82,7 @@ const components = {
       </code>
     ),
   pre: ({ children }: ComponentProps<"pre">) => (
-    <pre className="my-3 overflow-x-auto rounded-lg border border-border bg-secondary/60 p-3 font-mono text-[11.5px] leading-relaxed text-foreground">
+    <pre className="my-3 overflow-x-auto rounded-lg border border-border bg-secondary/60 p-3 font-mono text-xs leading-relaxed text-foreground">
       {children}
     </pre>
   ),
@@ -103,7 +103,7 @@ const components = {
         <sup className="mx-0.5">
           <a
             href={href}
-            className={`citation-chip ${FOCUS} rounded bg-primary/10 px-1 py-0.5 text-[10px] font-semibold text-primary no-underline transition-colors hover:bg-primary/20`}
+            className={`citation-chip ${FOCUS} rounded bg-primary/10 px-1 py-0.5 text-[11px] font-semibold text-primary no-underline transition-colors hover:bg-primary/20`}
             {...props}
           >
             {children}

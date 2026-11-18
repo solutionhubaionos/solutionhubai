@@ -89,6 +89,16 @@
   * {
     border-color: var(--color-border);
   }
+  /* Remove the 300ms double-tap-zoom delay on every interactive control. */
+  a,
+  button,
+  [role="button"],
+  input,
+  textarea,
+  select,
+  summary {
+    touch-action: manipulation;
+  }
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);

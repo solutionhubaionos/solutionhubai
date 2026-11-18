@@ -7,6 +7,19 @@
 export const FOCUS =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background";
 
+/**
+ * One content column, shared by the scope row, the transcript and the composer
+ * so their left and right edges line up down the whole page.
+ */
+export const columnCls = "mx-auto w-full max-w-4xl px-4 sm:px-6";
+
+/** A square 32px icon control — the minimum comfortable tap target. */
+export const iconBtnCls = `${FOCUS} grid h-8 w-8 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground`;
+
+/** The small all-caps section label repeated above chips, sources and cards. */
+export const eyebrowCls =
+  "text-[11px] font-semibold uppercase tracking-wider text-muted-foreground";
+
 /** Row shared by the sidebar's rail and expanded states: 40px icon cell + label. */
 export const rowCls =
   "group flex w-full items-center rounded-xl transition-colors duration-150 outline-none";
