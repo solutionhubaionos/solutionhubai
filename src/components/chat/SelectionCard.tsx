@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check, Plus, X } from "lucide-react";
+import { Check, Plus, Undo2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { FOCUS, chipCls, chipLargeCls, chipSelectedCls } from "./theme";
 
@@ -87,6 +87,7 @@ export function SelectionCard({
   freeTextAction = "Use",
   onDone,
   onSkip,
+  onUndo,
 }: {
   /** Omitted when the prompt above the card already asks the question. */
   title?: string;
@@ -104,6 +105,8 @@ export function SelectionCard({
   freeTextAction?: string;
   onDone: (selected: string[]) => void;
   onSkip?: () => void;
+  /** Returns to the previous step; shown only when there is a step to undo. */
+  onUndo?: () => void;
 }) {
   const [chosen, setChosen] = useState<Set<string>>(() => new Set(initial ?? []));
   const [typed, setTyped] = useState("");
@@ -227,6 +230,15 @@ export function SelectionCard({
             className={`${FOCUS} rounded-md px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground underline underline-offset-4 transition-colors hover:text-foreground`}
           >
             {skipLabel}
+          </button>
+        )}
+        {onUndo && (
+          <button
+            type="button"
+            onClick={onUndo}
+            className={`${FOCUS} inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground underline underline-offset-4 transition-colors hover:text-foreground`}
+          >
+            <Undo2 size={11} aria-hidden /> Undo
           </button>
         )}
       </div>

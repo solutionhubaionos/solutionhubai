@@ -102,6 +102,8 @@ type ChatThread = {
   title: string;
   messages: ChatMessageView[];
   intake: IntakeState;
+  /** Steps already taken, for Undo: the state and message count before each one. */
+  intakeUndo?: { state: IntakeState; messages: number }[];
 };
 
 /** A fresh chat opens with the assistant's greeting already in the transcript. */
@@ -111,6 +113,22 @@ function greetingThread(): ChatThread {
     title: "New conversation",
     messages: [{ id: crypto.randomUUID(), role: "assistant", content: INTAKE_GREETING }],
     intake: INITIAL_INTAKE,
+  };
+}
+
+/**
+ * Moves the intake to its next step, appending the echoed user message and the
+ * assistant's follow-up, and remembering the previous step so Undo can return.
+ */
+function advanceThread(thread: ChatThread, next: IntakeState, appended: ChatMessageView[]): ChatThread {
+  return {
+    ...thread,
+    intake: next,
+    intakeUndo: [
+      ...(thread.intakeUndo ?? []),
+      { state: thread.intake, messages: thread.messages.length },
+    ],
+    messages: [...thread.messages, ...appended],
   };
 }
 
@@ -675,15 +693,10 @@ function ChatPage() {
       setThreads((previous) =>
         previous.map((item): ChatThread =>
           item.id === thread.id
-            ? {
-                ...item,
-                intake: optionsDone(),
-                messages: [
-                  ...item.messages,
-                  { id: crypto.randomUUID(), role: "user", content: summary },
-                  { id: crypto.randomUUID(), role: "assistant", content: SECTOR_QUESTION },
-                ],
-              }
+            ? advanceThread(item, optionsDone(), [
+                { id: crypto.randomUUID(), role: "user", content: summary },
+                { id: crypto.randomUUID(), role: "assistant", content: SECTOR_QUESTION },
+              ])
             : item,
         ),
       );
@@ -730,13 +743,7 @@ function ChatPage() {
 
       setThreads((previous) =>
         previous.map((item): ChatThread =>
-          item.id === thread.id
-            ? {
-                ...item,
-                intake: next,
-                messages: [...item.messages, userMessage, ...followUp],
-              }
-            : item,
+          item.id === thread.id ? advanceThread(item, next, [userMessage, ...followUp]) : item,
         ),
       );
     },
@@ -802,13 +809,7 @@ function ChatPage() {
 
       setThreads((previous) =>
         previous.map((item): ChatThread =>
-          item.id === thread.id
-            ? {
-                ...item,
-                intake: next,
-                messages: [...item.messages, userMessage, ...followUp],
-              }
-            : item,
+          item.id === thread.id ? advanceThread(item, next, [userMessage, ...followUp]) : item,
         ),
       );
     },
@@ -848,18 +849,35 @@ function ChatPage() {
 
       setThreads((previous) =>
         previous.map((item): ChatThread =>
-          item.id === thread.id
-            ? {
-                ...item,
-                intake: next,
-                messages: [...item.messages, userMessage, ...followUp],
-              }
-            : item,
+          item.id === thread.id ? advanceThread(item, next, [userMessage, ...followUp]) : item,
         ),
       );
     },
     [activeThread, completeIntake, industryNameBySlug, queueTargetWebsite, setContextValue],
   );
+
+  /** Undo the last intake step: restore its previous state and trim its messages. */
+  const undoIntake = useCallback(() => {
+    const thread = activeThread;
+    if (!thread) return;
+    const stack = thread.intakeUndo ?? [];
+    const last = stack[stack.length - 1];
+    if (!last) return;
+    setThreads((previous) =>
+      previous.map((item): ChatThread =>
+        item.id === thread.id
+          ? {
+              ...item,
+              intake: last.state,
+              messages: item.messages.slice(0, last.messages),
+              intakeUndo: stack.slice(0, -1),
+            }
+          : item,
+      ),
+    );
+  }, [activeThread]);
+
+  const canUndo = (activeThread?.intakeUndo?.length ?? 0) > 0;
 
   const industryOptions = useMemo(
     () => industries.map((industry) => ({ value: industry.slug, label: industry.name })),
@@ -884,6 +902,7 @@ function ChatPage() {
           skipLabel="Skip"
           onDone={finishOptions}
           onSkip={() => finishOptions([])}
+          {...(canUndo ? { onUndo: undoIntake } : {})}
         />
       );
     }
@@ -893,11 +912,13 @@ function ChatPage() {
           key="intake-sectors"
           title="Sectors & industries"
           options={industryOptions}
+          initial={scope.industries}
           freeTextLabel="Other industry"
           freeTextPlaceholder="Type your own, e.g. Airports"
           freeTextAction="Use industry"
           onDone={finishSectors}
           onSkip={() => finishSectors([])}
+          {...(canUndo ? { onUndo: undoIntake } : {})}
         />
       );
     }
@@ -915,6 +936,7 @@ function ChatPage() {
           freeTextAction="Use as new client"
           onDone={finishClients}
           onSkip={() => finishClients([])}
+          {...(canUndo ? { onUndo: undoIntake } : {})}
         />
       );
     }
@@ -930,6 +952,7 @@ function ChatPage() {
           skipLabel="Skip website"
           onDone={finishUrl}
           onSkip={() => finishUrl([])}
+          {...(canUndo ? { onUndo: undoIntake } : {})}
         />
       );
     }
@@ -1272,6 +1295,38 @@ function ChatPage() {
               onChange={setInput}
               onSend={send}
               isTyping={ask.isPending}
+              busy={
+                ask.isPending ||
+                documentGeneration.isPending ||
+                documentPlanning.isPending ||
+                messages.some((message) => message.document?.status === "generating")
+              }
+              onStop={() => {
+                ask.reset();
+                documentGeneration.reset();
+                documentPlanning.reset();
+                const threadId = activeThread?.id;
+                if (threadId) {
+                  setThreads((previous) =>
+                    previous.map((item): ChatThread =>
+                      item.id === threadId
+                        ? {
+                            ...item,
+                            messages: item.messages.map((message) =>
+                              message.document && message.document.status === "generating"
+                                ? {
+                                    ...message,
+                                    document: { ...message.document, status: "cancelled" as const },
+                                  }
+                                : message,
+                            ),
+                          }
+                        : item,
+                    ),
+                  );
+                }
+                toast("Stopped");
+              }}
               focusSignal={focusSignal}
               onCreateTool={onCreateTool}
               disabled={picking}

@@ -1,5 +1,5 @@
 import { useEffect, useRef, type ReactNode } from "react";
-import { ArrowUp, File, FileSpreadsheet, FileText, Plus, Presentation } from "lucide-react";
+import { ArrowUp, File, FileSpreadsheet, FileText, Plus, Presentation, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -33,6 +33,8 @@ export function Composer({
   onCreateTool,
   disabled = false,
   placeholder,
+  busy = false,
+  onStop,
 }: {
   value: string;
   onChange: (next: string) => void;
@@ -45,6 +47,9 @@ export function Composer({
   /** Locked while the guided scope picker is waiting for a choice. */
   disabled?: boolean;
   placeholder?: string;
+  /** A request or generation is in flight; the send button becomes Stop. */
+  busy?: boolean;
+  onStop?: () => void;
 }) {
   const areaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -108,17 +113,30 @@ export function Composer({
 
         <div className="flex items-center gap-3">
           <span className="hidden text-[11px] text-muted-foreground sm:inline">
-            Enter to send · Shift+Enter for a new line
+            {busy ? "Working… press stop to cancel" : "Enter to send · Shift+Enter for a new line"}
           </span>
-          <Button
-            size="icon"
-            onClick={onSend}
-            disabled={disabled || isTyping || value.trim().length === 0}
-            aria-label="Send question"
-            className="h-9 w-9 rounded-xl"
-          >
-            <ArrowUp />
-          </Button>
+          {busy && onStop ? (
+            <Button
+              size="icon"
+              variant="outline"
+              onClick={onStop}
+              aria-label="Stop"
+              title="Stop"
+              className="h-9 w-9 rounded-xl"
+            >
+              <Square size={14} />
+            </Button>
+          ) : (
+            <Button
+              size="icon"
+              onClick={onSend}
+              disabled={disabled || isTyping || value.trim().length === 0}
+              aria-label="Send question"
+              className="h-9 w-9 rounded-xl"
+            >
+              <ArrowUp />
+            </Button>
+          )}
         </div>
       </div>
     </div>
