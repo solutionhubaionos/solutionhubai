@@ -24,6 +24,12 @@ describe("client logo detection", () => {
     // apple-touch-icon outranks the header image.
     expect(candidates[0]?.url).toBe("https://example.com/touch.png");
   });
+
+  test("finds a logo named by class or id outside the header", () => {
+    const html = `<body><footer><img class="brand-logo" src="/img/footer-logo.svg" /></footer></body>`;
+    const urls = logoCandidates(html, new URL("https://example.com/")).map((entry) => entry.url);
+    expect(urls).toContain("https://example.com/img/footer-logo.svg");
+  });
 });
 
 function specWithLogo(): DeckSpec {

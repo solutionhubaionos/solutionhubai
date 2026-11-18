@@ -60,7 +60,7 @@
     "flat": ["2148FB", "1C2453", "FFAF75", "BAD6FF"]
   },
   "surfaces": {
-    "$comment": "Content slides alternate BLUE (aionos_navy) and WHITE strictly; cover and closing are solid deep_navy. There is no electric_blue full-bleed surface and no gradient.",
+    "$comment": "Rhythm: the cover is WHITE, then content slides alternate BLUE (aionos_navy) and WHITE strictly; closing is solid deep_navy. There is no electric_blue full-bleed surface and no gradient.",
     "cover": "deepNavy",
     "closing": "deepNavy",
     "blue": "navy",

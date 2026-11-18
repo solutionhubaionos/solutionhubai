@@ -1,15 +1,17 @@
 /**
  * Client logo extraction from a website URL.
  *
- * Only the logo is wanted; the target's colours are not used. Every fetch goes
- * through the SSRF guard, redirects are followed manually with the guard re-run
- * per hop, and the result is rasterised to a PNG (SVG included) so the PPTX/PDF
- * writers can place it. `og:image` is deliberately never used: it is a hero
- * banner, not a logo.
+ * Only the logo is wanted; the target's colours are not used. Every fetch of the
+ * target goes through the SSRF guard, redirects are followed manually with the
+ * guard re-run per hop, and the result is rasterised to a PNG (SVG included) so
+ * the PPTX/PDF writers can place it. `og:image` is deliberately never used: it
+ * is a hero banner, not a logo. When the static HTML has no logo, the rendered
+ * DOM is read once through Cloudflare Browser Run (see `renderedHtml`).
  *
  * Server-only: uses node:dns and @napi-rs/canvas.
  */
 import { createCanvas, loadImage } from "@napi-rs/canvas";
+import * as cheerio from "cheerio";
 import { assertAllowedUrl, assertPublicDns } from "../brand/ssrf";
 
 export type ClientLogo = {
@@ -64,15 +66,11 @@ async function guardedFetch(url: URL): Promise<{ bytes: Uint8Array; contentType:
 
 type Candidate = { url: string; score: number };
 
-function attribute(tag: string, name: string): string | null {
-  const match = tag.match(new RegExp(`${name}\\s*=\\s*["']([^"']+)["']`, "i"));
-  return match?.[1]?.trim() ?? null;
-}
-
 /** Ordered logo candidates from the page HTML. Never og:image. */
 export function logoCandidates(html: string, base: URL): Candidate[] {
+  const $ = cheerio.load(html);
   const candidates: Candidate[] = [];
-  const push = (raw: string | null, score: number) => {
+  const push = (raw: string | null | undefined, score: number) => {
     if (!raw || raw.startsWith("data:")) return;
     try {
       candidates.push({ url: new URL(raw, base).toString(), score });
@@ -81,23 +79,25 @@ export function logoCandidates(html: string, base: URL): Candidate[] {
     }
   };
 
-  for (const tag of html.match(/<link\b[^>]*>/gi) ?? []) {
-    const rel = (attribute(tag, "rel") ?? "").toLowerCase();
-    const href = attribute(tag, "href");
+  $("link[rel]").each((_, element) => {
+    const rel = ($(element).attr("rel") ?? "").toLowerCase();
+    const href = $(element).attr("href");
     if (rel.includes("apple-touch-icon")) push(href, 90);
     else if (rel.split(/\s+/).includes("icon")) push(href, 55);
-  }
+  });
 
-  // An <img>/<svg> whose own attributes mention "logo" is the strongest signal.
-  for (const tag of html.match(/<(?:img|svg)\b[^>]*>/gi) ?? []) {
-    if (/logo/i.test(tag)) push(attribute(tag, "src") ?? attribute(tag, "href"), 85);
-  }
+  // An <img>/<svg> that names itself a logo (class, id, alt, src) is the
+  // strongest in-page signal, wherever it sits.
+  $("img, svg").each((_, element) => {
+    const node = $(element);
+    const text = ["src", "href", "class", "id", "alt", "aria-label"]
+      .map((name) => node.attr(name) ?? "")
+      .join(" ");
+    if (/logo/i.test(text)) push(node.attr("src") ?? node.attr("href"), 85);
+  });
 
-  // Any header/nav image is a weaker signal.
-  const header = html.match(/<(?:header|nav)\b[\s\S]*?<\/(?:header|nav)>/i)?.[0] ?? "";
-  for (const tag of header.match(/<img\b[^>]*>/gi) ?? []) {
-    push(attribute(tag, "src"), 45);
-  }
+  // Any header or nav image is a weaker signal.
+  $("header img, nav img").each((_, element) => push($(element).attr("src"), 45));
 
   push(new URL("/apple-touch-icon.png", base).toString(), 25);
   push(new URL("/favicon.ico", base).toString(), 10);
@@ -145,6 +145,89 @@ async function toPng(bytes: Uint8Array): Promise<ClientLogo | null> {
   };
 }
 
+/** Best usable logo in an HTML document, or null. */
+async function logoFromHtml(
+  html: string,
+  base: URL,
+  log: (event: string, meta: Record<string, unknown>) => void,
+): Promise<ClientLogo | null> {
+  for (const candidate of logoCandidates(html, base)) {
+    let target: URL;
+    try {
+      target = assertAllowedUrl(candidate.url);
+    } catch {
+      continue;
+    }
+    const asset = await guardedFetch(target);
+    if (!asset || !asset.contentType.startsWith("image/")) continue;
+    const logo = await toPng(asset.bytes);
+    if (logo) {
+      log("client logo: found", { url: target.href, width: logo.width, light: logo.light });
+      return logo;
+    }
+  }
+  return null;
+}
+
+const RENDER_TIMEOUT_MS = 20_000;
+
+/**
+ * Fully rendered HTML from Cloudflare Browser Run, for sites that build the
+ * header with JavaScript and ship no logo in the static HTML. Returns null
+ * unless the account and token are configured, so the static path is the only
+ * one when they are not. Reads happen on Cloudflare's network, so the caller's
+ * SSRF guard cannot see this hop; the URL passed in was already cleared by it.
+ */
+async function renderedHtml(
+  url: string,
+  log: (event: string, meta: Record<string, unknown>) => void,
+): Promise<string | null> {
+  const account = process.env["CLOUDFLARE_ACCOUNT_ID"];
+  const token = process.env["CLOUDFLARE_BROWSER_TOKEN"];
+  if (!account || !token) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), RENDER_TIMEOUT_MS);
+  try {
+    const response = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${account}/browser-run/content`,
+      {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({ url, gotoOptions: { waitUntil: "networkidle2" } }),
+        signal: controller.signal,
+      },
+    );
+    if (!response.ok) {
+      // shortcut: no Retry-After retry; the Free plan allows 1 Quick Action per
+      // 10s, so a concurrent lookup 429s and the deck falls back to the name.
+      log("client logo: render failed", { url, status: response.status });
+      return null;
+    }
+    // REST wraps the HTML in {success, result}; the SDK unwraps it, we must not.
+    const body = await response.text();
+    let html = body;
+    try {
+      const parsed = JSON.parse(body) as { success?: boolean; result?: unknown };
+      if (parsed.success === false) {
+        log("client logo: render failed", { url, status: response.status });
+        return null;
+      }
+      if (typeof parsed.result === "string") html = parsed.result;
+    } catch {
+      // A raw HTML body (no envelope) is used as-is.
+    }
+    html = html.slice(0, MAX_HTML_BYTES);
+    if (!html) return null;
+    log("client logo: rendered", { url, chars: html.length });
+    return html;
+  } catch (error) {
+    log("client logo: render error", { url, error: String(error).slice(0, 120) });
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * Returns the best usable logo for a website, or null. Best effort: a failure
  * must never block a deck, which falls back to the client's name in text.
@@ -162,27 +245,19 @@ export async function extractClientLogo(
   }
 
   const page = await guardedFetch(base);
-  if (!page || !/text\/html|application\/xhtml/i.test(page.contentType)) {
+  if (page && /text\/html|application\/xhtml/i.test(page.contentType)) {
+    const logo = await logoFromHtml(new TextDecoder().decode(page.bytes), base, log);
+    if (logo) return logo;
+  } else {
     log("client logo: no html", { url: base.href });
-    return null;
   }
-  const html = new TextDecoder().decode(page.bytes);
 
-  for (const candidate of logoCandidates(html, base)) {
-    let target: URL;
-    try {
-      target = assertAllowedUrl(candidate.url);
-    } catch {
-      continue;
-    }
-    const asset = await guardedFetch(target);
-    if (!asset || !asset.contentType.startsWith("image/")) continue;
-    const logo = await toPng(asset.bytes);
-    if (logo) {
-      log("client logo: found", { url: target.href, width: logo.width, light: logo.light });
-      return logo;
-    }
-  }
+  // Nothing in the static HTML: ask Browser Run for the rendered DOM and look
+  // again, covering logos injected by JavaScript. No-op when unconfigured.
+  const rendered = await renderedHtml(base.href, log);
+  const renderedLogo = rendered ? await logoFromHtml(rendered, base, log) : null;
+  if (renderedLogo) return renderedLogo;
+
   log("client logo: none", { url: base.href });
   return null;
 }

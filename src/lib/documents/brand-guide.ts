@@ -40,7 +40,7 @@ export const AIONOS_AGENT_GUIDE = [
   'Naming: write "Aionos" (title case) in all body copy. Use "AIONOS" only for headlines/signage. Never write "AionOS".',
   "Avoid: jargon, exaggeration, unsupported claims, hype words (revolutionary, cutting-edge, game-changing, seamless, unleash, supercharge), and technical complexity without explanation.",
   "Grounded: evidence over claims. Every claim needs a number, source or example from the retrieved passages; no evidence, no claim.",
-  "Background rhythm: COVER (deep navy) first, then content slides alternate BLUE (aionos navy) and WHITE strictly, never two of the same in a row, with CLOSING (deep navy) last. Charts, tables, KPI cards and images are always WHITE; statements, quotes, outcomes and summaries are BLUE.",
+  "Background rhythm: COVER (WHITE) first, then content slides alternate BLUE (aionos navy) and WHITE strictly, never two of the same in a row, with CLOSING (deep navy) last.",
   "Colour: the only colours are aionos navy, deep navy, electric blue, warm clay, pearl, soft blue and white. On a WHITE slide, boxes, table headers and borders are electric blue with white text; body text is deep navy; the eyebrow label is electric blue. On a BLUE slide, every box or border is white or pearl with deep navy text; text is white; the eyebrow label is soft blue. Never navy boxes with light text.",
   "Charts: use only real, sourced numbers; if there is no real number, do not make a chart. Label axes and units and prefer direct labels over a legend. No chart of two identical placeholder values.",
   "Imagery: real people and work environments only. Never generic futuristic AI visuals (robots, glowing brains, circuit art). If no authentic image exists, use none.",
@@ -52,44 +52,13 @@ export const AIONOS_AGENT_GUIDE = [
 export const CHART_SERIES_LIGHT = [...TOKENS.chartSeries.light];
 export const CHART_SERIES_NAVY = [...TOKENS.chartSeries.navy];
 
-/** Layouts that must sit on a WHITE slide (charts, tables, KPI cards, images). */
-const WHITE_LAYOUTS = new Set([
-  "table-compact",
-  "shortcomings-table",
-  "collaboration-pointers-table",
-  "chart-with-takeaway",
-  "kpi-cards",
-  "image-with-caption",
-]);
-
-/** The surface a layout wants before the rhythm pass. */
-export function surfaceForLayout(layout: string): Surface {
-  if (layout === "next-steps-ask") return "closing";
-  return WHITE_LAYOUTS.has(layout) ? "light" : "navy";
-}
-
 /**
- * The rhythm pass. Content slides alternate BLUE (navy) and WHITE strictly,
- * with the closing slide deep navy and last. Charts/tables prefer WHITE; the
- * start colour is chosen so as many of them as possible land on a white slide.
- * Never returns two adjacent content slides on the same colour.
+ * The rhythm pass. The cover is WHITE, then content slides alternate BLUE
+ * (aionos navy) and WHITE strictly, starting BLUE, with the closing slide deep
+ * navy and last. Never two adjacent content slides on the same colour.
  */
 export function assignSurfaces(layouts: readonly string[]): Surface[] {
-  const build = (firstLight: boolean): Surface[] =>
-    layouts.map((layout, index) => {
-      if (layout === "next-steps-ask") return "closing" as Surface;
-      const isLight = firstLight ? index % 2 === 0 : index % 2 === 1;
-      return (isLight ? "light" : "navy") as Surface;
-    });
-
-  const wantsWhite = (index: number): boolean => WHITE_LAYOUTS.has(layouts[index] ?? "");
-  const conflicts = (surfaces: Surface[]): number =>
-    surfaces.reduce(
-      (total, surface, index) => total + (wantsWhite(index) && surface !== "light" ? 1 : 0),
-      0,
-    );
-
-  const navyFirst = build(false);
-  const lightFirst = build(true);
-  return conflicts(navyFirst) <= conflicts(lightFirst) ? navyFirst : lightFirst;
+  return layouts.map((layout, index) =>
+    layout === "next-steps-ask" ? "closing" : index % 2 === 0 ? "navy" : "light",
+  );
 }

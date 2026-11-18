@@ -85,8 +85,9 @@ function slideBackground(xml: string): string | null {
 }
 
 /**
- * The strict rhythm: cover and closing are deep navy, and the content slides in
- * between alternate BLUE (navy) and WHITE with no two neighbours the same.
+ * The strict rhythm: the cover is WHITE, the closing is deep navy, and the
+ * content slides in between alternate BLUE (navy) and WHITE with no two
+ * neighbours the same.
  */
 export function checkDeckBackgrounds(parts: Record<string, Uint8Array>): {
   sequence: string[];
@@ -103,9 +104,12 @@ export function checkDeckBackgrounds(parts: Record<string, Uint8Array>): {
   const white = palette.white;
   slides.forEach((name, index) => {
     const colour = sequence[index]!;
-    if (index === 0 || index === slides.length - 1) {
-      if (colour !== deepNavy)
-        findings.push({ part: name, reason: "cover/closing must be deep navy" });
+    if (index === 0) {
+      if (colour !== white) findings.push({ part: name, reason: "cover must be white" });
+      return;
+    }
+    if (index === slides.length - 1) {
+      if (colour !== deepNavy) findings.push({ part: name, reason: "closing must be deep navy" });
       return;
     }
     if (colour !== navy && colour !== white) {
