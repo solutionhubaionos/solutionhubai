@@ -37,16 +37,14 @@ import {
 } from "../deck-theme";
 import { sectionTagFor } from "../outline";
 import { dropDanglingOverrides } from "./pptx-package";
+import { palette } from "../tokens";
 
-// The house palette. `BRANDED`/`HIGHLIGHT` remain as inert variables so the
-// still-present theme branches compile; they are removed when the renderer
-// theme is rewritten.
-const HOUSE_COLORS = { ...T.colors };
+// The house palette, read from the brand tokens. The legacy renderer stays as
+// the fallback for fixtures; the deck pipeline uses render/deck.ts.
 const C: Record<keyof typeof T.colors, string> = { ...T.colors };
-let SERIES: string[] = [...T.chartSeries];
-let BRANDED = false;
+const SERIES: string[] = [...T.chartSeries];
 /** Heading ink on the dark masters. */
-let HIGHLIGHT = C.navy;
+const HIGHLIGHT = C.navy;
 
 const G = T.geometry;
 const S = T.type;
@@ -91,8 +89,9 @@ function runsFor(
 }
 
 /**
- * Rough line count without a font engine. Calibri averages about half an em per
- * glyph, so an inch holds ~144/size characters. Deliberately conservative:
+ * Rough line count without a font engine. A typical body font averages about
+ * half an em per glyph, so an inch holds ~144/size characters. Deliberately
+ * conservative:
  * over-estimating produces a slightly roomier slide, under-estimating overflows.
  */
 function lineCount(text: string, widthIn: number, size: number): number {
@@ -169,11 +168,11 @@ const TAG_H = 0.26;
 function toneFill(tone: Tone): { fill: string; bar: string } {
   switch (tone) {
     case "warning":
-      return { fill: "FDF4E7", bar: C.amber };
+      return { fill: palette.pearl, bar: C.amber };
     case "success":
-      return { fill: "E9F7F5", bar: C.teal };
+      return { fill: palette.pearl, bar: C.teal };
     default:
-      return { fill: "EDF3F8", bar: C.blue };
+      return { fill: palette.softBlue, bar: C.blue };
   }
 }
 
@@ -410,7 +409,7 @@ function illustrativeBadge(slide: Slide, x: number, y: number): void {
     y,
     w: 2.34,
     h: 0.3,
-    fill: { color: "FDF4E7" },
+    fill: { color: palette.pearl },
     line: { color: C.amber, width: 0.75 },
     rectRadius: 0.1,
   });
@@ -422,7 +421,7 @@ function illustrativeBadge(slide: Slide, x: number, y: number): void {
     fontFace: T.fonts.body,
     fontSize: 9.5,
     bold: true,
-    color: "8A5A12",
+    color: palette.deepNavy,
     align: "center",
     valign: "middle",
     margin: 0,
@@ -1173,7 +1172,7 @@ function addBodyItems(
             y: cursor + 0.01,
             w: 0.84,
             h: TAG_H,
-            fill: { color: "E9F7F5" },
+            fill: { color: palette.pearl },
             line: { color: C.teal, width: 0.5 },
             rectRadius: 0.08,
           });
@@ -1240,8 +1239,8 @@ function coverSlide(pres: PptxGenJS, model: DocumentModel, cfg: ResolvedDeckConf
         y: y - 0.12,
         w: width + 0.28,
         h: height + 0.24,
-        fill: { color: "FFFFFF" },
-        line: { color: "FFFFFF", width: 0 },
+        fill: { color: palette.white },
+        line: { color: palette.white, width: 0 },
         rectRadius: 0.08,
       });
     }
@@ -1260,7 +1259,7 @@ function coverSlide(pres: PptxGenJS, model: DocumentModel, cfg: ResolvedDeckConf
     fontFace: cfg.headingFont,
     fontSize: title.length > 68 ? 32 : title.length > 46 ? 36 : 40,
     bold: true,
-    color: BRANDED ? HIGHLIGHT : C.onDark,
+    color: C.onDark,
     valign: "bottom",
     margin: 0,
     isTextBox: true,
@@ -1339,7 +1338,7 @@ function dividerSlide(pres: PptxGenJS, section: DocumentSection, cfg: ResolvedDe
     fontFace: cfg.headingFont,
     fontSize: 34,
     bold: true,
-    color: BRANDED ? HIGHLIGHT : C.onDark,
+    color: C.onDark,
     valign: "top",
     margin: 0,
     isTextBox: true,
@@ -1902,7 +1901,7 @@ function defineMasters(pres: PptxGenJS, cfg: ResolvedDeckConfig): void {
   pres.defineSlideMaster({
     title: "cover",
     // Branded covers are white like every other branded page.
-    background: { color: BRANDED ? "FFFFFF" : C.navy },
+    background: { color: C.navy },
     objects: [
       {
         text: {
@@ -1928,7 +1927,7 @@ function defineMasters(pres: PptxGenJS, cfg: ResolvedDeckConfig): void {
           y: G.height - 0.86,
           w: CONTENT_W,
           h: 0,
-          line: { color: "24395A", width: 1 },
+          line: { color: palette.deepNavy, width: 1 },
         },
       },
       {
@@ -1963,13 +1962,13 @@ function defineMasters(pres: PptxGenJS, cfg: ResolvedDeckConfig): void {
 
   pres.defineSlideMaster({
     title: "section",
-    background: { color: BRANDED ? "FFFFFF" : C.navy },
+    background: { color: C.navy },
   });
 
   pres.defineSlideMaster({
     title: "closing",
-    background: { color: BRANDED ? "FFFFFF" : C.navy },
-    objects: [titlePlaceholder({ color: BRANDED ? HIGHLIGHT : C.onDark, y: 0.85 })],
+    background: { color: C.navy },
+    objects: [titlePlaceholder({ color: C.onDark, y: 0.85 })],
   });
 }
 

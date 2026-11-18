@@ -11,149 +11,110 @@ import {
   AIONOS_TOKENS,
   CHART_SERIES_LIGHT,
   CHART_SERIES_NAVY,
+  SURFACE_BACKGROUND,
   assignSurfaces,
   type Surface,
 } from "../brand-guide";
+import { palette } from "../tokens";
+import { AIONOS_LOGO } from "../assets/aionos-logo";
 import { claimValue, untracedNumbers } from "../deck/claims";
 import { hasPlaceholders } from "../deck/text-guards";
 import { tidyPie, validateChart } from "../deck/chart-validate";
 import { visibleStrings } from "../deck/writer";
-import { contrastRatio, readableTextOn } from "../../brand/color";
+import { contrastRatio } from "../../brand/color";
 import { dropDanglingOverrides } from "./pptx-package";
-import { coverBackgroundDataUrl, orbDataUrl } from "./gradient";
 
 /**
- * The house palette, plus a mutable copy the brand applies over it. PptxGenJS
- * reads colours while slides are composed synchronously, so the copy is set at
- * the top of one render and reset in its finally block.
+ * The brand theme, read once from `aionos.tokens.json` (via DECK_THEME). C, FONTS
+ * and SERIES are the colours, typefaces and chart marks; the per-slide `VIEW`
+ * below holds the box/border rules for whichever surface the current slide uses.
  *
- * shortcut: the copy is module-level, so two exports rendering with different
- * brands at the exact same moment could swap palettes. Upgrade to a theme
- * threaded through every helper if concurrent multi-brand rendering matters.
+ * shortcut: `VIEW` is module-level and set per slide, so two exports rendering
+ * concurrently could interleave surfaces. Upgrade to a surface passed through
+ * every helper if concurrent rendering ever matters.
  */
-const HOUSE_COLORS = { ...T.colors };
 const C: Record<keyof typeof T.colors, string> = { ...T.colors };
 const FONTS: { heading: string; body: string; chart: string } = { ...T.fonts };
-let SERIES: string[] = [...T.chartSeries];
-let FOOTER: string = T.config.footer;
-let WORDMARK: string = T.config.wordmark;
-
-const BLACK = "000000";
-const WHITE = "FFFFFF";
-
-let BRANDED = false;
+const SERIES: string[] = [...T.chartSeries];
 
 const WHITE_HEX = AIONOS_TOKENS.white;
 const NAVY_HEX = AIONOS_TOKENS.aionos_navy;
 const DEEP_HEX = AIONOS_TOKENS.deep_navy;
 const BLUE_HEX = AIONOS_TOKENS.electric_blue;
-const CYAN_HEX = AIONOS_TOKENS.electric_cyan;
-const CLAY_HEX = AIONOS_TOKENS.warm_clay;
 const SOFT_HEX = AIONOS_TOKENS.soft_blue;
-const MIST_HEX = AIONOS_TOKENS.mist;
-const GREY_HEX = AIONOS_TOKENS.light_grey;
-const INK_MUTED_LIGHT = NAVY_HEX;
+const PEARL_HEX = AIONOS_TOKENS.pearl;
 
 type SurfaceView = {
   background: string;
+  /** Body and heading ink for text placed straight on the page background. */
   ink: string;
   inkMuted: string;
   label: string;
   heading: string;
+  /** Fills for extra boxes/cards/borders, plus the ink for text inside them. */
   card: string;
   cardBorder: string;
   cardInk: string;
   cardMuted: string;
+  /** Table banding, and the ink that sits on those bands. */
   rowEven: string;
   rowOdd: string;
+  rowInk: string;
+  /** Accent marks (chips, dots, tags) and the ink for text inside them. */
   accent: string;
+  onAccent: string;
+  /** The Aionos wordmark variant that reads on this surface. */
+  logo: string;
   series: string[];
 };
 
-/** The kit's layout enum: cover, light, navy, blue, closing. */
+/**
+ * The kit's box/border rules per surface. On a WHITE page a box is electric blue
+ * with white text; on a BLUE (navy) or deep-navy page a box is white/pearl with
+ * deep navy text. Tables band white/pearl with deep navy text on every surface.
+ */
 function surfaceView(surface: Surface): SurfaceView {
-  switch (surface) {
-    case "light":
-      return {
-        background: WHITE_HEX,
-        ink: NAVY_HEX,
-        inkMuted: INK_MUTED_LIGHT,
-        label: BLUE_HEX,
-        heading: NAVY_HEX,
-        card: GREY_HEX,
-        cardBorder: MIST_HEX,
-        cardInk: NAVY_HEX,
-        cardMuted: INK_MUTED_LIGHT,
-        rowEven: WHITE_HEX,
-        rowOdd: GREY_HEX,
-        accent: BLUE_HEX,
-        series: CHART_SERIES_LIGHT,
-      };
-    case "blue":
-      return {
-        background: BLUE_HEX,
-        ink: WHITE_HEX,
-        inkMuted: SOFT_HEX,
-        label: WHITE_HEX,
-        heading: WHITE_HEX,
-        card: NAVY_HEX,
-        cardBorder: SOFT_HEX,
-        cardInk: WHITE_HEX,
-        cardMuted: SOFT_HEX,
-        rowEven: BLUE_HEX,
-        rowOdd: NAVY_HEX,
-        accent: CYAN_HEX,
-        series: CHART_SERIES_NAVY,
-      };
-    case "closing":
-      return {
-        background: DEEP_HEX,
-        ink: WHITE_HEX,
-        inkMuted: SOFT_HEX,
-        label: SOFT_HEX,
-        heading: WHITE_HEX,
-        card: DEEP_HEX,
-        cardBorder: SOFT_HEX,
-        cardInk: WHITE_HEX,
-        cardMuted: SOFT_HEX,
-        rowEven: DEEP_HEX,
-        rowOdd: NAVY_HEX,
-        accent: CYAN_HEX,
-        series: CHART_SERIES_NAVY,
-      };
-    case "cover":
-      return {
-        background: BLUE_HEX,
-        ink: WHITE_HEX,
-        inkMuted: SOFT_HEX,
-        label: WHITE_HEX,
-        heading: WHITE_HEX,
-        card: NAVY_HEX,
-        cardBorder: SOFT_HEX,
-        cardInk: WHITE_HEX,
-        cardMuted: SOFT_HEX,
-        rowEven: BLUE_HEX,
-        rowOdd: NAVY_HEX,
-        accent: CYAN_HEX,
-        series: CHART_SERIES_NAVY,
-      };
-    default:
-      return {
-        background: NAVY_HEX,
-        ink: WHITE_HEX,
-        inkMuted: SOFT_HEX,
-        label: SOFT_HEX,
-        heading: WHITE_HEX,
-        card: DEEP_HEX,
-        cardBorder: SOFT_HEX,
-        cardInk: WHITE_HEX,
-        cardMuted: SOFT_HEX,
-        rowEven: NAVY_HEX,
-        rowOdd: DEEP_HEX,
-        accent: CYAN_HEX,
-        series: CHART_SERIES_NAVY,
-      };
+  const background = palette[SURFACE_BACKGROUND[surface]];
+  if (surface === "light") {
+    return {
+      background,
+      ink: DEEP_HEX,
+      inkMuted: NAVY_HEX,
+      label: BLUE_HEX,
+      heading: DEEP_HEX,
+      card: BLUE_HEX,
+      cardBorder: BLUE_HEX,
+      cardInk: WHITE_HEX,
+      cardMuted: WHITE_HEX,
+      rowEven: WHITE_HEX,
+      rowOdd: PEARL_HEX,
+      rowInk: DEEP_HEX,
+      accent: BLUE_HEX,
+      onAccent: WHITE_HEX,
+      logo: AIONOS_LOGO.navy,
+      series: CHART_SERIES_LIGHT,
+    };
   }
+  // navy/blue content slides, the deep-navy cover and closing all follow the
+  // light-box rule: boxes are pearl with deep navy text.
+  return {
+    background,
+    ink: WHITE_HEX,
+    inkMuted: SOFT_HEX,
+    label: surface === "cover" ? WHITE_HEX : SOFT_HEX,
+    heading: WHITE_HEX,
+    card: PEARL_HEX,
+    cardBorder: PEARL_HEX,
+    cardInk: DEEP_HEX,
+    cardMuted: NAVY_HEX,
+    rowEven: WHITE_HEX,
+    rowOdd: PEARL_HEX,
+    rowInk: DEEP_HEX,
+    accent: WHITE_HEX,
+    onAccent: DEEP_HEX,
+    logo: AIONOS_LOGO.white,
+    series: CHART_SERIES_NAVY,
+  };
 }
 
 let VIEW: SurfaceView = surfaceView("navy");
@@ -170,9 +131,7 @@ function headingColor(_index = 0): string {
 
 /** A preferred ink, unless it would be unreadable on this slide's canvas. */
 function readableInk(background: string, preferred: string): string {
-  return contrastRatio(preferred, background) >= 4.5
-    ? preferred
-    : readableTextOn(background).replace("#", "").toUpperCase();
+  return contrastRatio(preferred, background) >= 4.5 ? preferred : WHITE_HEX;
 }
 
 function cardInk(): string {
@@ -297,9 +256,12 @@ function chrome(pres: PptxGenJS, options: ChromeOptions): Slide {
     fill: { color: VIEW.cardBorder },
     line: { color: VIEW.cardBorder, width: 0 },
   });
-  addText(slide, FOOTER, M, H - 0.4, CONTENT_W - 0.7, 0.22, {
-    fontSize: S.caption,
-    color: VIEW.inkMuted,
+  slide.addImage({
+    data: VIEW.logo,
+    x: M,
+    y: H - 0.5,
+    w: 0.9,
+    h: 0.9 / AIONOS_LOGO.aspect,
   });
   addText(slide, String(options.index), W - M - 0.5, H - 0.4, 0.5, 0.22, {
     fontSize: S.caption,
@@ -327,7 +289,7 @@ function tierBadge(slide: Slide, tier: DeckSpecSlide["tier"]): void {
     y: G.tagY - 0.02,
     w: 1.35,
     h: 0.28,
-    fill: { color: "F5F4F1" },
+    fill: { color: AIONOS_TOKENS.pearl },
     line: { color, width: 0.75 },
     rectRadius: 0.08,
   });
@@ -368,8 +330,8 @@ function drawClientLogo(
       y: y - 0.12,
       w: width + 0.28,
       h: height + 0.24,
-      fill: { color: WHITE },
-      line: { color: WHITE, width: 0 },
+      fill: { color: WHITE_HEX },
+      line: { color: WHITE_HEX, width: 0 },
       rectRadius: 0.08,
     });
   }
@@ -386,30 +348,17 @@ function cover(
   meta: { date: string; subtitle: string },
   clientLogo: { dataUrl: string; light: boolean; aspect: number } | null = null,
 ): void {
-  const slide = pres.addSlide();
-  slide.background = { data: coverBackgroundDataUrl() };
-  // The orb is the brand's one gradient accent on the cover.
-  try {
-    slide.addImage({ data: orbDataUrl(), x: W - 3.0, y: H - 3.0, w: 4.6, h: 4.6 });
-  } catch {
-    // A canvas failure leaves the gradient cover without the orb, never broken.
-  }
+  const slide = chrome(pres, { dark: true, index: 1 });
   drawClientLogo(slide, clientLogo);
   slide.addShape("rect", {
     x: 0,
     y: 0,
     w: 0.16,
     h: H,
-    fill: { color: BRANDED ? headingColor(1) : VIEW.accent },
-    line: { color: BRANDED ? headingColor(1) : VIEW.accent, width: 0 },
+    fill: { color: VIEW.accent },
+    line: { color: VIEW.accent, width: 0 },
   });
-  addText(slide, WORDMARK, M, 0.66, 6, 0.24, {
-    fontSize: 10,
-    bold: true,
-    color: VIEW.ink,
-    charSpacing: 2,
-    fontFace: FONTS.heading,
-  });
+  slide.addImage({ data: VIEW.logo, x: M, y: 0.62, w: 1.35, h: 1.35 / AIONOS_LOGO.aspect });
   slide.addText(clean(spec.deckTitle), {
     x: M,
     y: 2.05,
@@ -506,7 +455,7 @@ function bulletsSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number):
       y,
       w: 0.07,
       h: rowH,
-      fill: { color: position === 0 ? VIEW.accent : C.blue },
+      fill: { color: VIEW.accent },
       line: { color: VIEW.accent, width: 0 },
     });
     addText(slide, bullet.text, M + 0.32, y + 0.1, CONTENT_W - 0.6, rowH - 0.18, {
@@ -651,7 +600,7 @@ function hubSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number): voi
   addText(slide, slideSpec.content.centre, centreX - 1.32, centreY - 0.45, 2.64, 0.9, {
     fontSize: 14,
     bold: true,
-    color: BRANDED ? cardHeading(0) : VIEW.ink,
+    color: cardInk(),
     align: "center",
     valign: "middle",
     fontFace: FONTS.heading,
@@ -669,15 +618,10 @@ function compareSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number):
   tierBadge(slide, slideSpec.tier);
   const gap = 0.3;
   const panelW = (CONTENT_W - gap) / 2;
-  const sides = BRANDED
-    ? [
-        { ...content.left, color: cardHeading(0), bg: WHITE },
-        { ...content.right, color: cardHeading(1), bg: WHITE },
-      ]
-    : [
-        { ...content.left, color: VIEW.accent, bg: VIEW.card },
-        { ...content.right, color: VIEW.heading, bg: VIEW.card },
-      ];
+  const sides = [
+    { ...content.left, color: VIEW.accent, bg: VIEW.card },
+    { ...content.right, color: VIEW.heading, bg: VIEW.card },
+  ];
   sides.forEach((side, position) => {
     const x = M + position * (panelW + gap);
     slide.addShape("roundRect", {
@@ -692,7 +636,7 @@ function compareSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number):
     addText(slide, side.heading, x + 0.22, 2.18, panelW - 0.44, 0.42, {
       fontSize: 16,
       bold: true,
-      color: VIEW.ink,
+      color: cardInk(),
       fontFace: FONTS.heading,
     });
     side.points.slice(0, 4).forEach((point, pointIndex) => {
@@ -746,7 +690,7 @@ function tableSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, tag: string, inde
       text: header,
       options: {
         bold: true,
-        color: VIEW.ink,
+        color: WHITE_HEX,
         fill: { color: C.blue },
         fontSize: S.tableHeader,
         fontFace: FONTS.heading,
@@ -757,7 +701,7 @@ function tableSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, tag: string, inde
       row.map((cell) => ({
         text: cell,
         options: {
-          color: cardInk(),
+          color: VIEW.rowInk,
           fill: { color: rowIndex % 2 === 0 ? VIEW.rowEven : VIEW.rowOdd },
           fontSize: S.table,
           fontFace: FONTS.body,
@@ -811,13 +755,13 @@ function roadmapSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number):
     addText(slide, String(position + 1), x + 0.18, 2.38, 0.44, 0.28, {
       fontSize: 13,
       bold: true,
-      color: BRANDED ? cardHeading(position) : VIEW.ink,
+      color: cardInk(),
       align: "center",
     });
     addText(slide, step.label, x + 0.18, 2.92, cardW - 0.36, 0.55, {
       fontSize: 16,
       bold: true,
-      color: VIEW.ink,
+      color: cardInk(),
       fontFace: FONTS.heading,
     });
     if (step.detail) {
@@ -872,10 +816,10 @@ function chartSlide(
       // not be printed as if they were the range itself.
       showValue: !pie && !range,
       showPercent: pie,
-      dataLabelPosition: pie ? "bestFit" : kind === "line" ? "t" : "outEnd",
+      dataLabelPosition: pie ? "outEnd" : kind === "line" ? "t" : "outEnd",
       dataLabelFontFace: FONTS.chart,
       dataLabelFontSize: 11,
-      dataLabelColor: pie ? C.navy : VIEW.ink,
+      dataLabelColor: VIEW.ink,
       dataLabelFontBold: true,
       dataLabelFormatCode: "#,##0;-#,##0;;",
       catAxisLabelFontFace: FONTS.chart,
@@ -897,7 +841,6 @@ function chartSlide(
       border: { pt: 0, color: pageBackground() },
       ...(kind === "line" ? { lineSize: 2.5, lineDataSymbol: "circle" } : {}),
       ...(pie ? { holeSize: 55 } : {}),
-      ...(BRANDED ? { legendColor: headingColor(1) } : {}),
     };
     slide.addChart(kind, data, options);
   }
@@ -959,7 +902,10 @@ function chartData(
   // A pie is drawn from one series and must sum to a readable whole.
   if (chart.kind === "doughnut") {
     const tidied = tidyPie(categories, series[0]!.values);
-    const pie = { categories: tidied.categories, series: [{ name: series[0]!.name, values: tidied.values }] };
+    const pie = {
+      categories: tidied.categories,
+      series: [{ name: series[0]!.name, values: tidied.values }],
+    };
     return validateChart({ kind: "doughnut", ...pie }).ok ? pie : null;
   }
   const result = { categories, series };
@@ -994,12 +940,6 @@ function imageSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number): v
 
 function askSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number): void {
   const slide = chrome(pres, { dark: true, index });
-  // Deep-navy closing: one soft orb accent, bottom-right, partially off-slide.
-  try {
-    slide.addImage({ data: orbDataUrl(), x: W - 2.8, y: H - 2.8, w: 4.4, h: 4.4 });
-  } catch {
-    // Keep the closing slide intact if the orb cannot be drawn.
-  }
   if (slideSpec.content.layout !== "next-steps-ask") return;
   addText(slide, "THE ASK", M, 0.85, 4, 0.3, {
     fontSize: 12,
@@ -1016,7 +956,7 @@ function askSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number): voi
     fontFace: FONTS.heading,
     fontSize: 32,
     bold: true,
-    color: BRANDED ? headingColor(0) : VIEW.ink,
+    color: VIEW.ink,
     margin: 0,
     valign: "middle",
     isTextBox: true,
@@ -1030,13 +970,13 @@ function askSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number): voi
       y: y + 0.02,
       w: 0.42,
       h: 0.42,
-      fill: { color: BRANDED ? WHITE : VIEW.accent },
-      line: { color: VIEW.accent, width: BRANDED ? 1.5 : 0 },
+      fill: { color: VIEW.accent },
+      line: { color: VIEW.accent, width: 0 },
     });
     addText(slide, String(position + 1), M, y + 0.09, 0.42, 0.28, {
       fontSize: 13,
       bold: true,
-      color: BRANDED ? cardHeading(position) : C.navy,
+      color: VIEW.onAccent,
       align: "center",
     });
     addText(slide, step.text, M + 0.62, y, 8.2, 0.42, {
@@ -1114,7 +1054,7 @@ function maturitySlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number)
     addText(slide, String(position + 1), centre - 0.2, trackY - 0.09, 0.4, 0.24, {
       fontSize: 12,
       bold: true,
-      color: isTarget ? C.navy : VIEW.ink,
+      color: isTarget ? VIEW.onAccent : cardInk(),
       align: "center",
     });
 
@@ -1138,7 +1078,7 @@ function maturitySlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number)
     addText(slide, stage.label, x + 0.16, 3.42, stepW - 0.32, 0.6, {
       fontSize: 14,
       bold: true,
-      color: VIEW.ink,
+      color: cardInk(),
       fontFace: FONTS.heading,
       valign: "top",
     });
@@ -1151,14 +1091,14 @@ function maturitySlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number)
 
     const marker = isTarget ? "TARGET" : isCurrent ? "TODAY" : "";
     if (marker) {
-      const markerInk = isTarget ? C.navy : VIEW.ink;
+      const markerInk = isTarget ? VIEW.onAccent : cardInk();
       slide.addShape("roundRect", {
         x: centre - 0.52,
         y: 5.86,
         w: 1.04,
         h: 0.28,
         fill: { color: isTarget ? VIEW.accent : VIEW.card },
-        line: { color: markerInk, width: BRANDED ? 1 : 0 },
+        line: { color: markerInk, width: 0 },
         rectRadius: 0.08,
       });
       addText(slide, marker, centre - 0.52, 5.89, 1.04, 0.22, {
@@ -1202,29 +1142,19 @@ function horizonSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number):
       y: 1.98,
       w: colW,
       h: 0.72,
-      fill: { color: VIEW.series[position % SERIES.length]! },
-      line: { color: VIEW.cardBorder, width: 0 },
+      fill: { color: VIEW.accent },
+      line: { color: VIEW.accent, width: 0 },
     });
-    if (BRANDED) {
-      slide.addShape("rect", {
-        x,
-        y: 1.98,
-        w: colW,
-        h: 0.08,
-        fill: { color: VIEW.series[position % SERIES.length]! },
-        line: { color: VIEW.series[position % SERIES.length]!, width: 0 },
-      });
-    }
     addText(slide, `${position + 1}`, x + 0.16, 2.12, 0.3, 0.4, {
       fontSize: 20,
       bold: true,
-      color: C.navy,
+      color: VIEW.onAccent,
       fontFace: FONTS.heading,
     });
     addText(slide, horizon.label, x + 0.5, 2.18, colW - 0.66, 0.4, {
       fontSize: 16,
       bold: true,
-      color: C.navy,
+      color: VIEW.onAccent,
       fontFace: FONTS.heading,
       valign: "middle",
     });
@@ -1281,7 +1211,7 @@ function layeredSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number):
     addText(slide, layer.label, M + 0.18, y + 0.08, labelW - 0.36, bandH - 0.16, {
       fontSize: 14,
       bold: true,
-      color: VIEW.ink,
+      color: cardInk(),
       fontFace: FONTS.heading,
       valign: "middle",
     });
@@ -1303,7 +1233,7 @@ function layeredSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number):
       bandH - 0.16,
       {
         fontSize: 13,
-        color: cardInk(),
+        color: VIEW.rowInk,
         valign: "middle",
       },
     );

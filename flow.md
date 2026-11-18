@@ -302,9 +302,6 @@ in a separate column, because `content` is the one field both the FTS index and
 the embedding see. It is not placed in `heading`, because citations must show the
 real section title.
 
-`scripts/backfill-chunk-context.ts` re-embeds existing chunks with the header
-(≤ 200 rows per `worker_update_chunk_context` call).
-
 ### 4.7 Embeddings and idempotency
 
 `embeddings.ts` calls `qwen/qwen3-embedding-8b` at **1536 dimensions**, in
@@ -1253,136 +1250,50 @@ destination needs a new confirmation, not a default.
 
 ---
 
-## 18. Client brand kits (OpenBrand)
 
-A deck can wear the pitched client's own brand. The brand is read once from their
-website, kept as a **reviewable** set of candidates, and only repaints an export
-after a person has saved it. Nothing here is evidence from the library: a brand
-kit decides how a deck looks, never what it claims. The extraction engine is
-[OpenBrand](https://openbrand.sh) as a library, with no API key and no hosted
-service.
+## 18. The pitch target and its website
 
-### 18.1 The flow
+A deck can be pitched *to* a named client the library does not hold. The target is
+stored in `conversations.target_client` (owner-only under RLS): its name, optional
+website, the logo detected on that website, and its own words about itself. None of
+it is evidence — the name is never a retrieval filter; it only shapes wording and the
+cover. The website field above the composer is saved through `scope.functions.ts`,
+and a new or changed URL triggers `analyzeTargetSite` once
+(`src/lib/documents/logo.functions.ts`).
 
-```mermaid
-flowchart LR
-  A["URL typed in TargetClientBar"] --> B["normalise to origin<br/>no path, query or fragment"]
-  B --> C["SSRF guard:<br/>scheme, host, every DNS answer"]
-  C --> D["OpenBrand extractBrandAssets"]
-  D -->|ok| E["validate asset URLs, then download<br/>logo + chosen backdrop through guarded fetch"]
-  D -->|error| X["explicit status:<br/>failed / requires_manual_input"]
-  E --> F["assemble kit:<br/>candidates, roles as hints, house fallbacks signalled"]
-  F --> G["review panel: name, logo, swatches,<br/>typed HEX, role assignment, backdrop, upload"]
-  G -->|"Save client = approval"| H["approved profile in the conversation scope"]
-  H --> I["buildDocument → brandTheme(requireApproval)"]
-  I --> J["deckPalette / documentPalette<br/>→ PPTX, PDF, DOCX"]
-```
+### 18.1 What the homepage read returns
 
-### 18.2 Module map
+`analyzeTargetSite` reads the homepage through the SSRF guard in
+`src/lib/brand/ssrf.ts` and returns two best-effort values:
 
-| Path                                                           | Owns                                                                                                                    |
-| -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `src/lib/brand/types.ts`                                       | `BrandProfile`, colour keys, explicit statuses, provenance, overrides, legacy-profile normalisation.                    |
-| `src/lib/brand/url.ts`                                         | Pasted text → origin + domain cache key; tracking-parameter stripping.                                                  |
-| `src/lib/brand/ssrf.ts`                                        | Private/link-local/metadata rejection, blocked hostnames, check-every-answer DNS validation.                            |
-| `src/lib/brand/openbrand.ts`                                   | The only import of `openbrand`; payload normalisation, error classification, capped raw provenance.                     |
-| `src/lib/brand/extract.ts`                                     | Pure Brand Kit assembly: candidates kept in order, role hints, neutral skipping, house fallbacks, safe fonts, coverage. |
-| `src/lib/brand/fetch.ts`                                       | The service pipeline: guard → package call → asset validation/download → logo raster + palette → backdrops.             |
-| `src/lib/brand/brand.functions.ts`                             | `extractBrand` / `prepareBrandBackdrop` server functions, 30-day domain cache, 5/minute/user in-process limit.          |
-| `src/lib/brand/theme.ts`                                       | `BrandTheme`, approval gate, overrides merge, deck/document palette mapping, contrast-safe text pairs.                  |
-| `src/components/chat/TargetClientBar.tsx`                      | Client entry, re-extract, review panel, manual logo upload, typed HEX, save-and-approve.                                |
-| `drizzle/migrations/0024_target_client_and_brand_profiles.sql` | `brand_profiles` cache (RLS, allowed users) and `conversations.target_client`.                                          |
+- **Logo** (`src/lib/documents/client-logo.ts`): ordered candidates from
+  `<link rel="icon">` / `apple-touch-icon`, then `img`/`svg` tags whose attributes
+  mention "logo", then header images, then `/apple-touch-icon.png` and
+  `/favicon.ico`. The first usable one is drawn to a capped PNG with
+  `@napi-rs/canvas`; the luminance of its opaque pixels decides whether it sits on
+  navy without a panel. It is never recoloured. `og:image` is deliberately not a
+  candidate — it is a hero banner, not a logo.
+- **Homepage text**: title, meta description and body text, stripped and capped at
+  1600 characters, so the deck can be grounded on what the client says about
+  itself rather than on model memory.
 
-`openbrand` is imported by exactly one file, and the renderers see only
-`BrandTheme`; the presentation engine never depends on the package's types or
-response shape.
+Both are best effort: a failure returns null and the cover falls back to the
+client's name in text, so a slow or unreadable site never blocks a deck.
 
-### 18.3 Statuses, not guesses
+### 18.2 No brand colour, no third party
 
-`completed` needs a brand name, at least one usable logo and at least one colour.
-Anything missing downgrades to `partial`; an unreadable site is `failed`; a page
-with nothing usable is `requires_manual_input`. A payload whose only "logo" is
-`data:,` (example.com) is correctly not a success.
+There are no brand colours, no backdrop and no hosted service. The target's palette
+is never extracted; the house theme (`aionos.tokens.json`) always paints the deck.
+There is no headless browser either — extraction is plain `fetch` plus
+`@napi-rs/canvas`, so it needs a Node runtime (`node:dns`, canvas), like the rest of
+the document pipeline.
 
-OpenBrand labels up to three colours primary/secondary/accent **by rank**, not by
-semantics. Every colour is therefore kept in `candidateColors` with that label as
-a `suggestedUsage` hint; the user assigns or corrects the roles. A white or grey
-suggestion is skipped as furniture, and a missing role takes the neutral house
-value with a `signals` entry saying so. No brand colour is invented.
+### 18.3 Security
 
-| Extracted signal             | What reaches the deck                                                |
-| ---------------------------- | -------------------------------------------------------------------- |
-| Primary / secondary / accent | `BrandTheme.colors`, chart series seed, slide chrome                 |
-| Background                   | Always painted white; a brand never becomes the page canvas          |
-| Logo                         | Rasterised PNG data URL, embedded — exports never hotlink the client |
-| Backdrop                     | Only when the user picks one; downloaded once as a capped JPEG       |     | Typography | Not extracted; safe house faces, flagged as a fallback |
-
-**Surface rules.** Every branded page is white and every line of copy is black;
-the brand never paints body text or the canvas, so even a dark or low-contrast
-extraction cannot make a slide unreadable. The kit's colours appear only where
-they read as accents: headings and subheadings cycle the brand highlights —
-primary dark → primary → secondary → accent, deduped and filtered to ≥ 4.5:1
-contrast on white by `brandHighlights`, so a pale extract yields fewer
-highlights instead of an invented colour — and the text inside graphs, images
-and charts uses them too (title, axis labels, legend), while data labels stay
-black because they sit on the coloured series fills. Chart bars keep the
-approved `chartSeries`; chart and plot areas are white. Cards, table cells and
-badges stay white with black copy and highlight headings. The opt-in cover
-backdrop is not drawn for a branded deck; the logo, wordmark and accent rules
-carry the identity instead. The unbranded house deck keeps its navy cover and
-teal accents unchanged.
-
-### 18.4 Approval and persistence
-
-- The domain cache (`brand_profiles`) is a **proposal** shared by domain and
-  expires after 30 days. A cached profile is always returned `approved: false`,
-  so another user's extraction can never paint this user's deck.
-- Saving the target client is the approval step; the approved profile and any
-  manual overrides live in `conversations.target_client`, which is owner-only
-  under RLS and read server-side by every export.
-- Overrides are stored apart from extraction, so re-extracting cannot wipe a
-  manual logo, HEX value or backdrop choice.
-- `build.ts` asks for `brandTheme(..., { requireApproval: true })`; an unapproved
-  kit leaves the neutral house theme untouched. The review panel previews
-  without the flag.
-- Editing the kit (colour, logo, fonts, backdrop) repaints every template at
-  once, because all renderers read `deckPalette` / `documentPalette` from the
-  same `BrandTheme`.
-
-### 18.5 Security
-
-- Only `http`/`https` origins with no embedded credentials; bare words and
-  private, loopback, link-local, metadata and unroutable addresses are rejected
-  before any call.
-- Every DNS answer is checked (not just the first), closing the one-public-one-
-  internal rebinding case; our own asset fetches follow redirects manually and
-  re-validate each hop.
-- Assets returned by OpenBrand are untrusted: scheme-checked, DNS-checked,
-  content-type checked, size-capped (2 MB logo, 6 MB backdrop) and time-capped
-  (10 s), then stored inline. Data URLs are accepted only for image mimes.
-- No key, no hosted API and no browser: extraction stays server-side, and no
-  OpenBrand or cheerio code appears in the client bundle.
-
-### 18.6 Verification and known gaps
-
-`bun scripts/verify-brand-extraction.ts` runs the real pipeline against a simple
-static site, a page with no usable assets, a large corporate site, a JS-heavy
-site, an SVG-logo site, a raster-logo site and an unreachable host, and asserts
-explicit statuses, no pre-approved profile and no false success. Automated rules
-live in `tests/brand.test.ts`; `tests/deck-pipeline.test.ts` proves an approved
-brand's palette reaches the PPTX XML instead of the house blue.
-
-Known gaps, accepted with eyes open:
-
-- OpenBrand's own page fetch follows redirects internally, so our guard secures
-  the submitted URL but not the package's redirect chain; a pinned dispatcher or
-  proxy would be needed to close that fully.
-- The package falls back to `r.jina.ai` for thin pages, which sends the public
-  page URL through a third party.
-- No font extraction, so decks stay on safe house faces.
-- One extraction can take ~30 s worst case (15 s direct + 15 s fallback), which
-  matters under short serverless limits; assets are the only part we control
-  with a hard 10 s timeout.
-- Extraction needs a Node runtime (sharp, cheerio, `node:dns`), like the rest of
-  the document pipeline; it is not a Cloudflare Workers target.
-- The 5/minute limit is per process, correct for a single instance only.
+- Only `http`/`https` origins with no embedded credentials; bare words and private,
+  loopback, link-local, metadata and unroutable addresses are rejected before any
+  fetch.
+- Every DNS answer is checked (not just the first), and redirects are followed
+  manually with the guard re-run on each hop.
+- Page and asset fetches are content-type checked, size-capped (600 KB HTML, 2 MB
+  image) and time-boxed (8 s).

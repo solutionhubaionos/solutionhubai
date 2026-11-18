@@ -639,13 +639,14 @@ describe("consulting layouts", () => {
       {},
     );
     const parts = unzipSync(rendered.bytes);
-    // The cover uses the kit's gradient image as its background.
+    // The cover uses a solid brand canvas, never a gradient image or blob.
     const coverXml = new TextDecoder().decode(parts["ppt/slides/slide1.xml"]!);
-    expect(coverXml).toMatch(/blip/i);
-    // The divider is the BLUE surface, and its title is legible on it.
+    expect(coverXml).toMatch(/<p:bg>[\s\S]*?val="030C44"/);
+    expect(coverXml).not.toMatch(/gradFill/i);
+    // The divider is a BLUE (navy) surface, and its title is legible on it.
     const dividerXml = new TextDecoder().decode(parts["ppt/slides/slide2.xml"]!);
     const background = dividerXml.match(/<p:bg>.*?val="([0-9A-F]{6})"/s)?.[1] ?? "";
-    expect(background).toBe("2148FB");
+    expect(background).toBe("1C2453");
     const inks = [
       ...dividerXml
         .replace(/<p:bg>.*?<\/p:bg>/s, "")
@@ -781,7 +782,12 @@ describe("cross-client isolation", () => {
   test("a deck for a new client never names the source clients", async () => {
     const REFERENCE_NAMES = ["Zurich", "InterGlobe", "IndiGo", "Adani", "Northwind", "Fly++"];
     const result = await buildDocument({
-      draft: draftFor({ mode: "pitch", type: "pptx", client: "Ethiopian Airlines", industry: "airlines" }),
+      draft: draftFor({
+        mode: "pitch",
+        type: "pptx",
+        client: "Ethiopian Airlines",
+        industry: "airlines",
+      }),
       history: deckHistory("Ethiopian Airlines", "airlines"),
       client: createMockSupabase(CHUNKS, []),
       provider: PROVIDER,

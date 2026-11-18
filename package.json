@@ -16,7 +16,9 @@
     "eval:chat": "bun scripts/run-chat-eval.ts",
     "ingest": "bun scripts/ingest-worker.ts",
     "ingest:cron": "bun scripts/ingest-worker.ts --cron",
-    "ingest:facts": "bun scripts/backfill-claims.ts"
+    "ingest:facts": "bun scripts/backfill-claims.ts",
+    "render:golden": "bun scripts/render-golden.ts",
+    "check:deck": "bun scripts/check-deck.ts"
   },
   "overrides": {
     "rolldown": "1.2.1",

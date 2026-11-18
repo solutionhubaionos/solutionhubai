@@ -1,103 +1,52 @@
 /**
- * Aionos contrast rules, enforced in code rather than by memory. The deck is
- * navy with white text; the only other legal text colour is navy, and only on a
- * light fill. Every chart/diagram/table accent colour is a graphics colour and
- * must never be used as a text run.
+ * Aionos contrast rules, enforced in code rather than by memory. The allowed
+ * text colours and the generated safe-pair matrix come from `aionos.tokens.json`
+ * (see `tokens.ts`); this module turns them into a pass/fail verdict. A text run
+ * in a fill colour (pearl, warm clay, ...) is always a defect, and any pair that
+ * does not clear the ratio for its size is rejected.
  */
+import { TEXT_INKS, SAFE_PAIRS, TOKENS, type PaletteName } from "./tokens";
 import { contrastRatio } from "../brand/color";
 
-export const PALETTE = {
-  navy: "#1C2453",
-  deepNavy: "#030C44",
-  electricBlue: "#2148FB",
-  cyan: "#00ECFF",
-  clay: "#FFAF75",
-  softBlue: "#BAD6FF",
-  pearl: "#F5F4F1",
-  mist: "#D2D7E2",
-  lightGrey: "#EDEDED",
-  white: "#FFFFFF",
-} as const;
+/** #RRGGBB for every palette entry, keyed by name, for callers that want them. */
+export const PALETTE: Record<PaletteName, string> = Object.fromEntries(
+  Object.entries(TOKENS.palette).map(([name, value]) => [name, `#${value}`]),
+) as Record<PaletteName, string>;
 
-/** Backgrounds that may carry white text. */
-const DARK_BACKDROPS = new Set<string>([
-  PALETTE.navy,
-  PALETTE.deepNavy,
-  PALETTE.electricBlue,
-]);
+/** The generated safe-pair matrix, exposed for docs and tests. */
+export { SAFE_PAIRS };
 
-/** Light fills that may carry navy text. */
-const LIGHT_BACKDROPS = new Set<string>([
-  PALETTE.white,
-  PALETTE.pearl,
-  PALETTE.mist,
-  PALETTE.lightGrey,
-  PALETTE.softBlue,
-  PALETTE.clay,
-  PALETTE.cyan,
-]);
+/** The minimum contrast ratio (WCAG AA for normal text) the tokens demand. */
+export const MIN_CONTRAST = TOKENS.contrast.minRatio;
 
-/** Graphics-only colours: a text run in one of these is always a defect. */
-const GRAPHICS_ONLY = new Set<string>([
-  PALETTE.cyan,
-  PALETTE.clay,
-  PALETTE.pearl,
-  PALETTE.mist,
-  PALETTE.lightGrey,
-]);
+/** Minimum for large text (>= 18.66pt bold or >= 24pt), per WCAG AA. */
+export const LARGE_CONTRAST = TOKENS.contrast.largeMin;
 
-function hex(value: string): string {
+function up(value: string): string {
   return `#${value.replace("#", "").toUpperCase()}`;
 }
 
 export type ContrastVerdict = { ok: true } | { ok: false; reason: string };
 
 /**
- * True when `text` on `background` is an allowed Aionos pair. When the
- * background is unknown (`null`), the pair is accepted if the text colour is
- * legal anywhere (white, or navy which is only used inside a light fill).
+ * True when `text` on `background` may be legible under the brand rules.
+ * `minRatio` defaults to the body minimum; pass `LARGE_CONTRAST` for large text.
+ * An unknown background (`null`) only checks that the ink is a legal text colour.
  */
-export function checkTextPair(text: string, background: string | null): ContrastVerdict {
-  const ink = hex(text);
-  // Electric blue is the label colour on light slides; on a dark ground it fails.
-  if (ink === PALETTE.electricBlue) {
-    if (background && !LIGHT_BACKDROPS.has(hex(background))) {
-      return { ok: false, reason: `electric blue text on dark background ${hex(background)}` };
-    }
-    return { ok: true };
-  }
-  // Soft blue is the section-label colour on navy slides, never on a light ground.
-  if (ink === PALETTE.softBlue) {
-    if (background && !DARK_BACKDROPS.has(hex(background))) {
-      return { ok: false, reason: `soft blue text on light background ${hex(background)}` };
-    }
-    return { ok: true };
-  }
-  if (GRAPHICS_ONLY.has(ink)) {
-    return { ok: false, reason: `${ink} is a graphics colour and cannot be text` };
-  }
-  if (ink !== PALETTE.white && ink !== PALETTE.navy) {
+export function checkTextPair(
+  text: string,
+  background: string | null,
+  minRatio: number = MIN_CONTRAST,
+): ContrastVerdict {
+  const ink = up(text);
+  if (!TEXT_INKS.has(ink.slice(1))) {
     return { ok: false, reason: `${ink} is not an allowed text colour` };
   }
-  if (!background) {
-    return { ok: true };
-  }
-  const bg = hex(background);
-  if (ink === PALETTE.white) {
-    if (LIGHT_BACKDROPS.has(bg)) {
-      return { ok: false, reason: `white text on light fill ${bg}` };
-    }
-    if (contrastRatio(ink, bg) < 4.5) {
-      return { ok: false, reason: `white on ${bg} is below 4.5:1` };
-    }
-    return { ok: true };
-  }
-  // Navy text is legal only on a light fill.
-  if (DARK_BACKDROPS.has(bg)) {
-    return { ok: false, reason: `navy text on dark background ${bg}` };
-  }
-  if (contrastRatio(ink, bg) < 4.5) {
-    return { ok: false, reason: `navy on ${bg} is below 4.5:1` };
+  if (!background) return { ok: true };
+  const bg = up(background);
+  const ratio = contrastRatio(ink, bg);
+  if (ratio < minRatio) {
+    return { ok: false, reason: `${ink} on ${bg} is ${ratio.toFixed(2)}:1, below ${minRatio}:1` };
   }
   return { ok: true };
 }

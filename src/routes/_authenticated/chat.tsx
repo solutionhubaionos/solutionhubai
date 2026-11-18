@@ -14,6 +14,7 @@ import {
   READY_QUESTION,
   SECTOR_QUESTION,
   capabilityOptions,
+  capabilitySummary,
   clientQuestion,
   clientsDone,
   isPickingScope,
@@ -90,13 +91,6 @@ const HISTORY_TURNS = 6;
 const DOCUMENT_HISTORY_TURNS = 40;
 
 /** The opening tools, phrased as the user's own sentence once Done is clicked. */
-const CAPABILITY_PHRASES = [
-  { id: "research", phrase: "research on client data" },
-  { id: "deck", phrase: "create a pitch deck" },
-  { id: "proposal", phrase: "create a proposal doc" },
-  { id: "onepager", phrase: "create a PDF doc" },
-];
-
 type ChatThread = {
   /** Also the persisted conversation id, so its scope can be loaded later. */
   id: string;
@@ -121,7 +115,11 @@ function greetingThread(): ChatThread {
  * Moves the intake to its next step, appending the echoed user message and the
  * assistant's follow-up, and remembering the previous step so Undo can return.
  */
-function advanceThread(thread: ChatThread, next: IntakeState, appended: ChatMessageView[]): ChatThread {
+function advanceThread(
+  thread: ChatThread,
+  next: IntakeState,
+  appended: ChatMessageView[],
+): ChatThread {
   return {
     ...thread,
     intake: next,
@@ -324,7 +322,8 @@ function ChatPage() {
       const website = normaliseWebsite(raw);
       if (!website || !conversationId) return;
       const read = () =>
-        queryClient.getQueryData<ConversationScope>(["conversation-scope", conversationId]) ?? scope;
+        queryClient.getQueryData<ConversationScope>(["conversation-scope", conversationId]) ??
+        scope;
       const current = read();
       if (!current.targetClients[0]) return;
       if (current.targetClients[0].websiteUrl !== website) {
@@ -372,7 +371,8 @@ function ChatPage() {
     (name: string) => {
       if (!conversationId) return;
       const current =
-        queryClient.getQueryData<ConversationScope>(["conversation-scope", conversationId]) ?? scope;
+        queryClient.getQueryData<ConversationScope>(["conversation-scope", conversationId]) ??
+        scope;
       const next = withPrimaryTargetName(current, name);
       if (next === current) return;
       void persistScope(next);
@@ -722,12 +722,7 @@ function ChatPage() {
       const thread = activeThread;
       if (!thread || thread.intake.stage !== "options") return;
 
-      const phrases = CAPABILITY_PHRASES.filter((entry) => selected.includes(entry.id)).map(
-        (entry) => entry.phrase,
-      );
-      const summary = phrases.length
-        ? `I want to ${phrases.join(", ")}.`
-        : "I want to explore the library.";
+      const summary = capabilitySummary(selected);
 
       setThreads((previous) =>
         previous.map((item): ChatThread =>
@@ -771,9 +766,7 @@ function ChatPage() {
       const userMessage: ChatMessageView = {
         id: crypto.randomUUID(),
         role: "user",
-        content: pickedNames.length
-          ? `Sectors: ${pickedNames.join(", ")}.`
-          : "I'll search the whole library.",
+        content: pickedNames.length ? pickedNames.join(", ") : "All sectors",
       };
       const followUp: ChatMessageView[] =
         next.stage === "clients"
@@ -835,9 +828,7 @@ function ChatPage() {
       const userMessage: ChatMessageView = {
         id: crypto.randomUUID(),
         role: "user",
-        content: selected.length
-          ? `We're pitching ${selected.join(", ")}.`
-          : "No specific client yet.",
+        content: selected.length ? selected.join(", ") : "No specific client yet",
       };
       const followUp: ChatMessageView[] =
         next.stage === "clients"
@@ -879,7 +870,7 @@ function ChatPage() {
       const userMessage: ChatMessageView = {
         id: crypto.randomUUID(),
         role: "user",
-        content: website ? `Their website is ${website}.` : "No website for them yet.",
+        content: website || "No website for them yet",
       };
       const followUp: ChatMessageView[] =
         next.stage === "clients"

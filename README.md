@@ -24,6 +24,36 @@ bun run dev
 `bun run eval:chat` runs the offline answer-quality eval (fixtures plus a mocked
 completion endpoint, no database or provider key).
 
+## Brand styling (one token file)
+
+Every generated deck, PDF and DOCX reads its colours, fonts, sizes, chart series
+and slide backgrounds from **`aionos.tokens.json`** at the repo root. Change a
+value there and every export restyles; nothing else should hard-code a colour or
+a font.
+
+A test fails the build if `src/lib/documents/render/` contains a colour or font
+literal, and `bun scripts/check-deck.ts <deck.pptx>` fails on any colour that is
+not in the palette.
+
+| Token group               | Controls                                                                  |
+| ------------------------- | ------------------------------------------------------------------------- |
+| `palette`                 | The closed Aionos palette: navy, deep navy, electric blue, warm clay, pearl, soft blue, white |
+| `fonts`                   | Deck & Word (Century Gothic / Aptos); chart text uses the `+mn-lt` theme ref; PDF standard faces |
+| `type`, `geometry`        | The deck type scale and the 13.33" x 7.5" margins and bands               |
+| `chartSeries`             | Chart marks by surface (`light` on white, `navy` on dark, `flat` legacy)  |
+| `surfaces`                | The background each surface uses; content slides are BLUE (navy) or WHITE, cover/closing deep navy |
+| `contrast`                | Min ratio, legal text inks, and the six generated safe pairs              |
+| `config`                  | Deck limits (max table rows/cols, KPI cards, flow steps, timeline items)  |
+
+The loader is `src/lib/documents/tokens.ts`, which also **generates the contrast
+matrix** from the palette with the WCAG formula; `brand-guide.ts` (voice, rhythm
+and box rules), `deck-theme.ts` (PPTX), `theme.ts` (PDF/DOCX) and `contrast.ts`
+all derive from it.
+
+Curated images and fonts are the only non-token assets: the Aionos wordmark lives in
+`src/lib/documents/assets/aionos-logo.ts` (white/navy), and `scripts/render-golden.ts`
+builds the four reference decks in `qa/golden/`.
+
 ## Environment
 
 | Variable                                             | Used by                  | Purpose                                                                |

@@ -172,7 +172,11 @@ function tableXml(
 
 function callout(text: string, tone: "info" | "warning" | "success"): string {
   const fill =
-    tone === "warning" ? "#FFF4E5" : tone === "success" ? "#E9F5EF" : THEME.colors.accentSoft;
+    tone === "warning"
+      ? THEME.colors.surface
+      : tone === "success"
+        ? THEME.colors.accentSoft
+        : THEME.colors.accentSoft;
   const bar = tone === "warning" ? THEME.colors.warning : THEME.colors.accent;
   return (
     `<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/><w:tblBorders>` +

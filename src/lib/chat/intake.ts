@@ -41,9 +41,28 @@ export type Capability = {
 export const CAPABILITIES: Capability[] = [
   { id: "research", label: "Research", type: null },
   { id: "deck", label: "Create Pitch Deck", type: "pptx" },
-  { id: "proposal", label: "Create a Proposal", type: "docx" },
-  { id: "onepager", label: "Create a PDF one-pager", type: "pdf" },
+  { id: "proposal", label: "Proposal", type: "docx" },
+  { id: "onepager", label: "PDF One Pager", type: "pdf" },
 ];
+
+/** The phrase a capability echoes as a user message once it is picked. */
+const CAPABILITY_PHRASE: Record<string, string> = {
+  research: "research",
+  deck: "create a pitch deck",
+  proposal: "create a proposal",
+  onepager: "create a PDF one pager",
+};
+
+/**
+ * How the opening pick is echoed back into the transcript, e.g.
+ * `I want to research and create a pitch deck`.
+ */
+export function capabilitySummary(selected: readonly string[]): string {
+  const phrases = CAPABILITIES.filter((capability) => selected.includes(capability.id)).map(
+    (capability) => CAPABILITY_PHRASE[capability.id]!,
+  );
+  return phrases.length ? `I want to ${phrases.join(" and ")}` : "I want to explore the library";
+}
 
 export const capabilityOptions: { value: string; label: string }[] = CAPABILITIES.map(
   (capability) => ({ value: capability.id, label: capability.label }),

@@ -1,60 +1,47 @@
 /**
- * One place for the look of every export. Renderers must read from here rather
- * than hard-coding colours or fonts, so DOCX, PDF and PPTX stay consistent and
- * a rebrand is a single edit.
+ * One place for the look of every export, read from `aionos.tokens.json`.
+ * Renderers must read from here rather than hard-coding colours or fonts, so
+ * DOCX, PDF and PPTX stay consistent and a rebrand is a single edit.
  *
- * The default is deliberately neutral: near-black ink, one blue accent, light
- * grey surfaces. Fonts are chosen per format because Word, PowerPoint and the
- * PDF writer have different reliable families.
+ * Values are `#RRGGBB` for the PDF/DOCX writers; the deck theme keeps the same
+ * colours without the hash because that is what PptxGenJS expects.
  */
+import { TOKENS, palette } from "./tokens";
 
-const HOUSE_COLORS = {
-  /** Navy ink on the white PDF/DOCX page. */
-  ink: "#1C2453",
-  /** Electric blue accent. */
-  accent: "#2148FB",
-  accentDark: "#030C44",
-  accentSoft: "#BAD6FF",
-  muted: "#4B5573",
-  border: "#D2D7E2",
-  surface: "#F5F4F1",
-  white: "#FFFFFF",
-  success: "#0E7C66",
-  warning: "#B45309",
-  danger: "#B42318",
-  /** Chart series for the light document page (readable on white). */
-  teal: "#0E7C66",
-  amber: "#B45309",
-  coral: "#7A1022",
-  slate: "#5B6B7C",
-  navy: "#1C2453",
-};
-
-const HOUSE_FONTS = {
-  heading: "Aptos",
-  body: "Aptos",
-  /** Serif headlines over sans copy; both ship with Office and Google Slides. */
-  deckHeading: "Georgia",
-  deckBody: "Aptos",
-  /** Standard 14 fonts, always available to the PDF writer. */
-  pdfHeading: "Helvetica-Bold",
-  pdfBody: "Helvetica",
-  pdfOblique: "Helvetica-Oblique",
-};
-
-const HOUSE_SERIES = ["#2148FB", "#0E7C66", "#B45309", "#7A1022", "#5B6B7C"];
+const hash = (value: string): string => `#${value}`;
 
 export const DOCUMENT_THEME = {
   brand: {
-    name: "Aionos",
-    wordmark: "AIONOS",
+    name: TOKENS.brand.name,
+    wordmark: TOKENS.brand.wordmark,
     /** No logo file is bundled; the wordmark stands in on the cover. */
     logo: null as string | null,
   },
-  colors: { ...HOUSE_COLORS },
-  /** Same order as the deck palette so a chart looks the same in every export. */
-  chartSeries: [...HOUSE_SERIES] as string[],
-  fonts: { ...HOUSE_FONTS },
+  colors: {
+    /** Navy ink on the white PDF/DOCX page. */
+    ink: hash(palette.navy),
+    /** Electric blue accent. */
+    accent: hash(palette.electricBlue),
+    accentDark: hash(palette.deepNavy),
+    accentSoft: hash(palette.softBlue),
+    /** Secondary ink on the white PDF/DOCX page. */
+    muted: hash(palette.navy),
+    border: hash(palette.softBlue),
+    surface: hash(palette.pearl),
+    white: hash(palette.white),
+    /** Warning ink for callouts, from the same closed palette. */
+    warning: hash(palette.deepNavy),
+  },
+  /** Same brand marks as the deck so a chart looks the same in every export. */
+  chartSeries: TOKENS.chartSeries.light.map(hash) as string[],
+  fonts: {
+    heading: TOKENS.fonts.documentHeading,
+    body: TOKENS.fonts.documentBody,
+    /** Standard 14 fonts, always available to the PDF writer. */
+    pdfHeading: TOKENS.fonts.pdfHeading,
+    pdfBody: TOKENS.fonts.pdfBody,
+    pdfOblique: TOKENS.fonts.pdfOblique,
+  },
   spacing: {
     /** A4 points. */
     pageMargin: 56,

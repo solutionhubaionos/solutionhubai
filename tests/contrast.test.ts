@@ -13,21 +13,23 @@ describe("Aionos contrast table", () => {
   });
 
   test("navy on the light fills is allowed, on dark it is not", () => {
-    expect(checkTextPair("1C2453", "00ECFF").ok).toBe(true);
+    expect(checkTextPair("1C2453", "BAD6FF").ok).toBe(true);
     expect(checkTextPair("1C2453", "FFAF75").ok).toBe(true);
+    expect(checkTextPair("1C2453", "F5F4F1").ok).toBe(true);
     expect(checkTextPair("1C2453", "1C2453").ok).toBe(false);
   });
 
   test("white on a light fill and graphics colours as text are forbidden", () => {
-    expect(checkTextPair("FFFFFF", "00ECFF").ok).toBe(false);
+    expect(checkTextPair("FFFFFF", "F5F4F1").ok).toBe(false);
     expect(checkTextPair("2148FB", "1C2453").ok).toBe(false);
     expect(checkTextPair("BAD6FF", "FFFFFF").ok).toBe(false);
+    expect(checkTextPair("FFAF75", "FFFFFF").ok).toBe(false);
   });
 
   test("the palette matches the Aionos guide", () => {
     expect(PALETTE.navy).toBe("#1C2453");
     expect(PALETTE.electricBlue).toBe("#2148FB");
-    expect(PALETTE.cyan).toBe("#00ECFF");
+    expect(PALETTE.softBlue).toBe("#BAD6FF");
   });
 });
 
@@ -66,6 +68,20 @@ function spec(): DeckSpec {
         },
         claimIds: ["CL-1"],
       },
+      {
+        id: "slide-3",
+        layout: "next-steps-ask",
+        actionTitle: "Agree the pilot scope",
+        purpose: "Ask",
+        tier: "sourced",
+        content: {
+          layout: "next-steps-ask",
+          ask: "Approve the pilot",
+          steps: [{ text: "Sign off the scope", owner: "COO" }],
+        },
+        notes: "Notes.",
+        claimIds: [],
+      },
     ],
     claims: {
       "CL-1": {
@@ -81,7 +97,7 @@ function spec(): DeckSpec {
 }
 
 describe("rendered deck contrast", () => {
-  test("every slide is navy and every text run passes the table", async () => {
+  test("every text run passes the table against its nearest filled ancestor", async () => {
     const rendered = await renderDeck(spec(), { date: "18 November 2026", subtitle: "Pitch" });
     const parts = unzipSync(rendered.bytes);
     const firstSlides = Object.fromEntries(
@@ -89,8 +105,9 @@ describe("rendered deck contrast", () => {
     );
     const findings = checkDeckContrast(firstSlides);
     expect(findings).toEqual([]);
-    // The cover uses the kit's gradient image background.
+    // The cover uses a solid brand canvas, never a gradient image or blob.
     const cover = new TextDecoder().decode(parts["ppt/slides/slide1.xml"]!);
-    expect(cover).toMatch(/blip/i);
+    expect(cover).toMatch(/<p:bg>[\s\S]*?val="030C44"/);
+    expect(cover).not.toMatch(/gradFill/i);
   });
 });

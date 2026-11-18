@@ -425,9 +425,9 @@ function drawCallout(
   ctx.y -= height;
   const fill =
     block.tone === "warning"
-      ? "#FFF4E5"
+      ? THEME.colors.surface
       : block.tone === "success"
-        ? "#E9F5EF"
+        ? THEME.colors.accentSoft
         : THEME.colors.accentSoft;
   ctx.page.drawRectangle({
     x: ctx.margin,

@@ -11,9 +11,7 @@ const WIDTH = 1200;
 const HEIGHT = 675;
 /** Read per draw so a branded export uses its own chart palette. */
 function seriesColors(): readonly string[] {
-  return THEME.chartSeries.length >= 6
-    ? THEME.chartSeries
-    : [THEME.colors.accent, "#C97B2E", "#4C8C6A", "#8B6BAE", "#B5504B", "#6B7A8F"];
+  return THEME.chartSeries;
 }
 
 function compact(value: number): string {
@@ -46,7 +44,7 @@ export function chartPng(spec: ChartSpec): Uint8Array | null {
 
   const canvas = createCanvas(WIDTH, HEIGHT);
   const ctx = canvas.getContext("2d");
-  ctx.fillStyle = "#FFFFFF";
+  ctx.fillStyle = THEME.colors.white;
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
   const left = 105;
@@ -172,7 +170,7 @@ function piePng(spec: ChartSpec): Uint8Array | null {
 
   const canvas = createCanvas(WIDTH, HEIGHT);
   const ctx = canvas.getContext("2d");
-  ctx.fillStyle = "#FFFFFF";
+  ctx.fillStyle = THEME.colors.white;
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
   ctx.fillStyle = THEME.colors.ink;
   ctx.font = "600 30px sans-serif";
@@ -196,7 +194,7 @@ function piePng(spec: ChartSpec): Uint8Array | null {
   if (inner > 0) {
     ctx.beginPath();
     ctx.arc(cx, cy, inner, 0, Math.PI * 2);
-    ctx.fillStyle = "#FFFFFF";
+    ctx.fillStyle = THEME.colors.white;
     ctx.fill();
   }
 

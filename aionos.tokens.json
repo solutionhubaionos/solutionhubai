@@ -1,0 +1,99 @@
+{
+  "$comment": "Aionos brand tokens - the single source of truth for every generated document. Change a value here and every exported deck, PDF and DOCX restyles. Colours are six-digit hex without '#'. The palette is closed: aionos_navy, deep_navy, electric_blue, warm_clay, pearl, soft_blue, plus pure white. Do not add any other colour or typeface.",
+  "brand": {
+    "name": "Aionos",
+    "wordmark": "AIONOS",
+    "footer": "Aionos"
+  },
+  "palette": {
+    "navy": "1C2453",
+    "deepNavy": "030C44",
+    "electricBlue": "2148FB",
+    "warmClay": "FFAF75",
+    "pearl": "F5F4F1",
+    "softBlue": "BAD6FF",
+    "white": "FFFFFF"
+  },
+  "fonts": {
+    "deckHeading": "Century Gothic",
+    "deckBody": "Aptos",
+    "deckChart": "+mn-lt",
+    "documentHeading": "Century Gothic",
+    "documentBody": "Aptos",
+    "pdfHeading": "Helvetica-Bold",
+    "pdfBody": "Helvetica",
+    "pdfOblique": "Helvetica-Oblique"
+  },
+  "type": {
+    "title": 28,
+    "titleMin": 22,
+    "body": 16,
+    "bodyMin": 12,
+    "bodyMax": 18,
+    "table": 12,
+    "tableHeader": 12,
+    "kpiValue": 40,
+    "kpiLabel": 13,
+    "closing": 22,
+    "caption": 10,
+    "tag": 11
+  },
+  "geometry": {
+    "width": 13.333,
+    "height": 7.5,
+    "margin": 0.6,
+    "tagY": 0.34,
+    "titleY": 0.7,
+    "titleH": 0.85,
+    "ruleY": 1.62,
+    "bodyTop": 1.92,
+    "bodyBottom": 6.5,
+    "footerY": 7.02,
+    "sourceY": 6.68,
+    "gap": 0.32,
+    "cardRadius": 0.12
+  },
+  "chartSeries": {
+    "$comment": "Approved chart marks only. 'light' is read on a white page (electric_blue, navy, warm_clay, soft_blue); 'navy' on the dark canvases (white, soft_blue, warm_clay, pearl). 'flat' keeps the legacy section renderer on the same brand marks.",
+    "light": ["2148FB", "1C2453", "FFAF75", "BAD6FF"],
+    "navy": ["FFFFFF", "BAD6FF", "FFAF75", "F5F4F1"],
+    "flat": ["2148FB", "1C2453", "FFAF75", "BAD6FF"]
+  },
+  "surfaces": {
+    "$comment": "Content slides alternate BLUE (aionos_navy) and WHITE strictly; cover and closing are solid deep_navy. There is no electric_blue full-bleed surface and no gradient.",
+    "cover": "deepNavy",
+    "closing": "deepNavy",
+    "blue": "navy",
+    "navy": "navy",
+    "light": "white",
+    "white": "white"
+  },
+  "contrast": {
+    "$comment": "Contrast is checked, never hardcoded. minRatio is WCAG AA for body text; large text may drop to largeMin. textInks are the only colours a text run may use; graphicsOnly fills may never carry text. The six safe pairs (white on navy/deep_navy/electric_blue, navy on pearl/soft_blue/warm_clay) are the only legal combinations and are verified against minRatio at load.",
+    "minRatio": 4.5,
+    "largeMin": 3,
+    "textInks": ["white", "navy", "deepNavy", "electricBlue", "softBlue"],
+    "darkBackdrops": ["navy", "deepNavy", "electricBlue"],
+    "lightBackdrops": ["white", "pearl", "softBlue", "warmClay"],
+    "graphicsOnly": ["warmClay", "pearl"],
+    "safePairs": [
+      { "text": "white", "background": "navy" },
+      { "text": "white", "background": "deepNavy" },
+      { "text": "white", "background": "electricBlue" },
+      { "text": "navy", "background": "pearl" },
+      { "text": "navy", "background": "softBlue" },
+      { "text": "navy", "background": "warmClay" }
+    ]
+  },
+  "config": {
+    "showSourceLine": false,
+    "includeSourcesSlide": false,
+    "showTemplateFooter": true,
+    "maxTableRows": 6,
+    "maxTableCols": 4,
+    "maxKpiCards": 4,
+    "maxFlowSteps": 4,
+    "maxTimelineItems": 5,
+    "maxTableWordsPerCell": 20
+  }
+}

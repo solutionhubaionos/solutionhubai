@@ -11,6 +11,13 @@
 import { readFileSync } from "node:fs";
 import { unzipSync } from "fflate";
 import { contrastRatio } from "../src/lib/brand/color";
+import {
+  checkDeckBackgrounds,
+  checkDeckFonts,
+  checkDeckGradients,
+  checkDeckPalette,
+} from "../src/lib/documents/render/palette-check";
+import { checkDeckContrast } from "../src/lib/documents/render/contrast-check";
 
 const args = process.argv.slice(2);
 const file = args.find((arg) => !arg.startsWith("--"));
@@ -60,7 +67,11 @@ for (const [name, data] of Object.entries(parts)) {
     if (pattern.test(text)) hits.push(`${name}: reference name "${reference}"`);
   }
   if (claims.test(text)) hits.push(`${name}: claim id or unresolved token`);
-  if (attachment.test(text)) hits.push(`${name}: attachment/file-name pattern`);
+  // Chart packages embed a workbook named Microsoft_Excel_Worksheet*.xlsx; that
+  // is a legitimate OOXML part, not a leaked attachment, so rels are exempt.
+  if (attachment.test(text) && !name.endsWith(".rels")) {
+    hits.push(`${name}: attachment/file-name pattern`);
+  }
   if (rawHeader.test(text)) hits.push(`${name}: raw Customer/Industry header`);
   if (orphan.test(text)) hits.push(`${name}: orphan currency or percentage symbol`);
   if (versionStem.test(text)) hits.push(`${name}: date-version file stem`);
@@ -88,6 +99,18 @@ if (cover) {
       hits.push(`ppt/slides/slide1.xml: no cover text run reaches 4.5 contrast on #${background}`);
     }
   }
+}
+
+for (const finding of checkDeckPalette(parts)) {
+  hits.push(`${finding.part}: off-palette colour #${finding.colour}`);
+}
+for (const finding of checkDeckGradients(parts)) hits.push(`${finding.part}: ${finding.reason}`);
+for (const finding of checkDeckFonts(parts)) hits.push(`${finding.part}: ${finding.reason}`);
+for (const finding of checkDeckBackgrounds(parts).findings) {
+  hits.push(`${finding.part}: ${finding.reason}`);
+}
+for (const finding of checkDeckContrast(parts)) {
+  hits.push(`${finding.slide}: text #${finding.text} ${finding.reason}`);
 }
 
 if (hits.length > 0) {
