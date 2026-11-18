@@ -34,7 +34,7 @@ export type DeckResult = {
 };
 
 export const DECK_SYSTEM = [
-  "You write a client-ready sales deck for AIonOS as JSON.",
+  "You write a client-ready sales deck for Aionos as JSON.",
   'Return JSON only, no fences: {"slides":[slide...]}.',
   "The plan is a contract. Return exactly one slide per plan entry, in order, with the same title, layout and section tag. Do not add, drop or reorder slides.",
   "Slide shape: {title, section, layout, text, takeaway, bullets:[{text,kind,refs}], table:{headers,rows}, kpis:[{label,value,note}], chart:{type,title,unit,categories,series:[{name,values}],basis}, flow:[{label,detail}], timeline:[{phase,when,items}], notes, refs:[passage numbers]}.",

@@ -34,6 +34,11 @@ const HEDGE_PHRASES: RegExp[] = [
 ];
 
 const PROVENANCE_WORDS = /\b(?:library|passages?|chunks?|evidence)\b/gi;
+/** The brand is written "Aionos"; "AIONOS" only in formal headlines/wordmarks. */
+const BRAND_NAME = /\b(?:AIonOS|AionOS|aionos)\b/g;
+/** Footers and copyright lines baked into source documents. */
+const SOURCE_ARTIFACT =
+  /(?:©\s*\d{2,4}[^.;\n]*|\bcopyright\b[^.;\n]*|\ball rights reserved\b[^.;\n]*|confidential[^.;\n]*?prepared[^.;\n]*)/gi;
 const REF_MARKS = /\[S?\d+(?:\s*[,–-]\s*\d+)*\]/g;
 const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
 
@@ -95,6 +100,7 @@ function stripSentences(text: string, pattern: RegExp): string {
 /** Banned phrases, provenance words, hedges and citation marks, all removed. */
 export function cleanSlideText(text: string): string {
   let value = stripPlaceholders(stripRefs(text)).replace(INSTRUCTION_PREFIX, "");
+  value = value.replace(BRAND_NAME, "Aionos").replace(SOURCE_ARTIFACT, " ");
   for (const pattern of BANNED_PHRASES) value = value.replace(pattern, "");
   for (const pattern of HEDGE_PHRASES) value = stripSentences(value, pattern);
   value = value.replace(PROVENANCE_WORDS, "").replace(/\b(?:the|a|an)\s+(?=\s|$)/gi, "");

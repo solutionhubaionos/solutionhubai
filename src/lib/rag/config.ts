@@ -43,7 +43,7 @@ export const MAX_MATCH_COUNT = 50;
  * switch; production turns it on in Phase 2.
  */
 export const QUERY_INSTRUCT_PREFIX =
-  "Instruct: Given a question from a sales team, retrieve slides and passages from AIonOS case studies, proposals and decks that answer it\nQuery: ";
+  "Instruct: Given a question from a sales team, retrieve slides and passages from Aionos case studies, proposals and decks that answer it\nQuery: ";
 
 /**
  * Chat answer generation. Same gateway and key as embeddings, a text model

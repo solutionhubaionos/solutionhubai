@@ -1973,8 +1973,8 @@ async function renderLegacyDeck(
   const cfg = resolveDeckConfig(config);
   const pres = new PptxGenJS();
   pres.layout = "LAYOUT_WIDE";
-  pres.author = "AIonOS";
-  pres.company = "AIonOS";
+  pres.author = "Aionos";
+  pres.company = "Aionos";
   pres.title = cleanText(model.cover.title);
   pres.subject = cleanText(model.cover.subtitle);
   pres.theme = {

@@ -33,7 +33,7 @@ export type WriterOptions = ProviderOptions & {
 };
 
 export const WRITER_SYSTEM = [
-  "You write one slide of a client-ready sales deck for AIonOS. Return JSON only, no fences.",
+  "You write one slide of a client-ready sales deck for Aionos. Return JSON only, no fences.",
   'Shape: {"content":{"layout":string,...},"notes":string,"sourceNote":string}.',
   "Fill the layout you are given. Do not change its layout id and do not add a second layout.",
   "A number may appear only if it comes from a claim: either use the placeholder {{CL-3}} in the copy, or put the claim id in claimIds beside the text. Never type a figure that is not in the claim registry, and never estimate, extrapolate or round into a new claim.",
@@ -232,7 +232,7 @@ export function fallbackSlideContent(plan: DeckPlanSlide, pack: EvidencePack): D
             ? parties
                 .slice(0, 5)
                 .map((party) => [party.name, roleForParty(party.name, party.chunks)])
-            : [["AIonOS", "Design, delivery and measurement"]],
+            : [["Aionos", "Design, delivery and measurement"]],
       };
     case "chart-with-takeaway": {
       const numeric = claims.filter((claim) => claim.valueMin !== null);
@@ -276,7 +276,7 @@ export function fallbackSlideContent(plan: DeckPlanSlide, pack: EvidencePack): D
           },
           {
             text: "Start the diagnostic with a fixed four-week review.",
-            owner: "AIonOS",
+            owner: "Aionos",
             when: "First month",
           },
         ],

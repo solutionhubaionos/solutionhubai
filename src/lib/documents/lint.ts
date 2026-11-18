@@ -21,6 +21,11 @@ const IMPERATIVE_TITLE =
 const ATTRIBUTION = /As demonstrated at [^.;\n]+? and now proposed for [^.;\n]+?[.;]?/gi;
 const AUDIT_NOTE =
   /\b(?:CL-\d+|passages?|chunks?|library|evidence|sources?|claim ids?)\b|\.(?:pptx?|docx?|pdf|xlsx?)\b/gi;
+/** The brand is written "Aionos"; "AIONOS" only in formal headlines/wordmarks. */
+const BRAND_NAME = /\b(?:AIonOS|AionOS|aionos)\b/g;
+/** Footers and copyright lines baked into source documents. */
+const SOURCE_ARTIFACT =
+  /(?:©\s*\d{2,4}[^.;\n]*|\bcopyright\b[^.;\n]*|\ball rights reserved\b[^.;\n]*|confidential[^.;\n]*?prepared[^.;\n]*)/gi;
 
 export type LintFinding = {
   kind:
@@ -46,6 +51,8 @@ export type LintOptions = {
 
 function tidy(text: string): string {
   return text
+    .replace(BRAND_NAME, "Aionos")
+    .replace(SOURCE_ARTIFACT, " ")
     .replace(/\s+([.,;:!?])/g, "$1")
     .replace(/[ \t]{2,}/g, " ")
     .replace(/^[\s,;:.-]+|[\s,;:.-]+$/g, "")
@@ -65,7 +72,7 @@ export function removeOrphanFigures(text: string, fallback = ""): string {
 
 /** A title must be a claim, not an instruction or a labelled section. */
 export function lintTitle(title: string): string {
-  const withoutPrefix = title.replace(INSTRUCTION_PREFIX, "").trim();
+  const withoutPrefix = title.replace(BRAND_NAME, "Aionos").replace(INSTRUCTION_PREFIX, "").trim();
   const cleaned = removeOrphanFigures(withoutPrefix, "The commercial case needs sizing");
   if (IMPERATIVE_TITLE.test(cleaned)) {
     return cleaned

@@ -773,3 +773,41 @@ describe("deck pipeline", () => {
     expect(result.gate.blocked).toBe(false);
   });
 });
+
+describe("cross-client isolation", () => {
+  test("a deck for a new client never names the source clients", async () => {
+    const REFERENCE_NAMES = ["Zurich", "InterGlobe", "IndiGo", "Adani", "Northwind", "Fly++"];
+    const result = await buildDocument({
+      draft: draftFor({ mode: "pitch", type: "pptx", client: "Ethiopian Airlines", industry: "airlines" }),
+      history: deckHistory("Ethiopian Airlines", "airlines"),
+      client: createMockSupabase(CHUNKS, []),
+      provider: PROVIDER,
+      scope: {
+        industries: ["airlines"],
+        companies: [],
+        targetClients: [
+          {
+            name: "Ethiopian Airlines",
+            websiteUrl: null,
+            industry: "airlines",
+            anonymise: true,
+            includePriorWork: false,
+            notes: "",
+          },
+        ],
+        updatedAt: null,
+      },
+    });
+
+    expect(result.gate.blocked).toBe(false);
+    const pptx = await renderPptx(result.model);
+    const parts = unzipSync(pptx.bytes);
+    const xml = Object.keys(parts)
+      .filter((name) => /\.(?:xml|rels)$/i.test(name))
+      .map((name) => new TextDecoder().decode(parts[name]))
+      .join("\n");
+    for (const name of REFERENCE_NAMES) {
+      expect(xml.includes(name)).toBe(false);
+    }
+  });
+});

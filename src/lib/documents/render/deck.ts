@@ -1361,8 +1361,8 @@ async function renderDeckSpec(
   assertDeckTraceable(spec);
   const pres = new PptxGenJS();
   pres.layout = "LAYOUT_WIDE";
-  pres.author = "AIonOS";
-  pres.company = "AIonOS";
+  pres.author = "Aionos";
+  pres.company = "Aionos";
   pres.title = clean(spec.deckTitle).slice(0, 120);
   pres.subject = clean(spec.storyline).slice(0, 200);
   pres.theme = { headFontFace: cfg.headingFont, bodyFontFace: cfg.bodyFont };

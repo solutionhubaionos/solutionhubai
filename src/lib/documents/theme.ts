@@ -44,7 +44,7 @@ const HOUSE_SERIES = ["#1F5C8B", "#12A5A0", "#F2A93B", "#E4572E", "#5B6B7C"];
 
 export const DOCUMENT_THEME = {
   brand: {
-    name: "AIonOS",
+    name: "Aionos",
     wordmark: "AIONOS",
     /** No logo file is bundled; the wordmark stands in on the cover. */
     logo: null as string | null,

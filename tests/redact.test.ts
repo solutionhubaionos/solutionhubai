@@ -183,6 +183,11 @@ describe("output lint", () => {
     expect(notes).toContain("peer airline A");
   });
 
+  test("rewrites the brand name to the title-cased Aionos", () => {
+    expect(lintTitle("Why AIonOS wins for the client")).toContain("Aionos");
+    expect(lintTitle("Why AionOS wins for the client")).not.toMatch(/AIonOS|AionOS/);
+  });
+
   test("keeps one anonymised proof attribution and removes later copies", () => {
     const spec = specWith(
       "As demonstrated at peer airline A and now proposed for Ethiopian Airlines, the model works.",
