@@ -21,6 +21,8 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -121,10 +123,22 @@ export function DocumentCard({
   async function saveToLibrary() {
     if (!file || !saveSector || !user) return;
     setUploading(true);
+    const customerName = saveCustomer.trim();
     const binary = globalThis.atob(file.base64);
     const bytes = new Uint8Array(binary.length);
     for (let index = 0; index < binary.length; index += 1) {
       bytes[index] = binary.charCodeAt(index);
+    }
+    // Create the client folder in the chosen sector first. A name that already
+    // exists (23505) is simply reused; any other failure is non-fatal, because
+    // the document still lands with its customer_name.
+    if (customerName) {
+      const { error: folderError } = await supabase
+        .from("customers")
+        .insert({ industry: saveSector, name: customerName, created_by: user.id });
+      if (!folderError || folderError.code === "23505") {
+        void qc.invalidateQueries({ queryKey: ["chat-industry-clients"] });
+      }
     }
     const safeName = file.fileName.replace(/[^\w.-]+/g, "_");
     const path = `${user.id}/${saveSector}/${crypto.randomUUID()}-${safeName}`;
@@ -136,7 +150,7 @@ export function DocumentCard({
       : (
           await supabase.from("content_items").insert({
             industry: saveSector,
-            customer_name: saveCustomer.trim() || null,
+            customer_name: customerName || null,
             title: draft.title,
             description: draft.subtitle || null,
             content_type: draft.type === "pptx" ? "pitch_deck" : "proposal",
@@ -158,7 +172,7 @@ export function DocumentCard({
       return;
     }
 
-    const label = saveCustomer.trim() ? `${sectorName} · ${saveCustomer.trim()}` : sectorName;
+    const label = customerName ? `${sectorName} · ${customerName}` : sectorName;
     setSavedIndustry(label);
     qc.invalidateQueries({ queryKey: ["content"] });
     toast.success(`Saved to ${label}`);
@@ -432,10 +446,22 @@ export function DocumentCard({
                     />
                   ))}
                 </div>
+                <div className="space-y-1 pt-1">
+                  <Label htmlFor="save-client" className="text-[11px]">
+                    Client folder
+                  </Label>
+                  <Input
+                    id="save-client"
+                    maxLength={80}
+                    value={saveCustomer}
+                    onChange={(event) => setSaveCustomer(event.target.value)}
+                    placeholder="Type a client to create its folder, e.g. Air India"
+                  />
+                </div>
                 <p className="text-[11px] text-muted-foreground">
-                  {sectorClients.length === 0
-                    ? `No customers are listed under ${sectorName} yet, so this saves as industry-wide content.`
-                    : `Choose a customer to file it under ${sectorName}, or keep it industry-wide.`}
+                  {saveCustomer.trim()
+                    ? `Saves under ${sectorName} · ${saveCustomer.trim()}; if that client folder does not exist yet it is created.`
+                    : `Pick a customer above, type a new one to create its folder, or leave empty to save as industry-wide content.`}
                 </p>
               </div>
             )}
