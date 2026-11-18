@@ -13,7 +13,11 @@ const DEFAULT_BG = "1C2453";
 const LIGHT_FILL = /val="(?:F5F4F1|D2D7E2|EDEDED|BAD6FF|FFAF75|00ECFF)"/i;
 
 function slideBackground(xml: string): string {
-  return xml.match(/<p:bg>[\s\S]*?<a:srgbClr val="([0-9A-Fa-f]{6})"/)?.[1]?.toUpperCase() ?? DEFAULT_BG;
+  const block = xml.match(/<p:bg>[\s\S]*?<\/p:bg>/)?.[0];
+  if (!block) return DEFAULT_BG;
+  // An image background (the cover gradient) has no solid colour: treat it as
+  // the dark default so white text remains legal on it.
+  return block.match(/<a:srgbClr val="([0-9A-Fa-f]{6})"/)?.[1]?.toUpperCase() ?? DEFAULT_BG;
 }
 
 /** The first solid-fill colour inside each text-run properties block. */

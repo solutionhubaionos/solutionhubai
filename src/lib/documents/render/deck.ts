@@ -20,6 +20,7 @@ import { tidyPie, validateChart } from "../deck/chart-validate";
 import { visibleStrings } from "../deck/writer";
 import { contrastRatio, readableTextOn } from "../../brand/color";
 import { dropDanglingOverrides } from "./pptx-package";
+import { coverBackgroundDataUrl, orbDataUrl } from "./gradient";
 
 /**
  * The house palette, plus a mutable copy the brand applies over it. PptxGenJS
@@ -386,7 +387,13 @@ function cover(
   clientLogo: { dataUrl: string; light: boolean; aspect: number } | null = null,
 ): void {
   const slide = pres.addSlide();
-  slide.background = { color: pageBackground() };
+  slide.background = { data: coverBackgroundDataUrl() };
+  // The orb is the brand's one gradient accent on the cover.
+  try {
+    slide.addImage({ data: orbDataUrl(), x: W - 3.0, y: H - 3.0, w: 4.6, h: 4.6 });
+  } catch {
+    // A canvas failure leaves the gradient cover without the orb, never broken.
+  }
   drawClientLogo(slide, clientLogo);
   slide.addShape("rect", {
     x: 0,
@@ -987,6 +994,12 @@ function imageSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number): v
 
 function askSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number): void {
   const slide = chrome(pres, { dark: true, index });
+  // Deep-navy closing: one soft orb accent, bottom-right, partially off-slide.
+  try {
+    slide.addImage({ data: orbDataUrl(), x: W - 2.8, y: H - 2.8, w: 4.4, h: 4.4 });
+  } catch {
+    // Keep the closing slide intact if the orb cannot be drawn.
+  }
   if (slideSpec.content.layout !== "next-steps-ask") return;
   addText(slide, "THE ASK", M, 0.85, 4, 0.3, {
     fontSize: 12,

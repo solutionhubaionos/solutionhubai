@@ -639,18 +639,19 @@ describe("consulting layouts", () => {
       {},
     );
     const parts = unzipSync(rendered.bytes);
-    for (const name of ["ppt/slides/slide1.xml", "ppt/slides/slide2.xml"]) {
-      const xml = new TextDecoder().decode(parts[name]);
-      const background = xml.match(/<p:bg>.*?val="([0-9A-F]{6})"/s)?.[1] ?? "1C2453";
-      const bodyXml = xml.replace(/<p:bg>.*?<\/p:bg>/s, "");
-      const inks = [...bodyXml.matchAll(/<a:solidFill><a:srgbClr val="([0-9A-F]{6})"\/>/g)].map(
-        (match) => match[1]!,
-      );
-      expect(background).toBe("2148FB");
-      // The title ink must not be the same navy as the canvas.
-      expect(inks).not.toContain(background);
-      expect(inks.some((ink) => contrastRatio(`#${ink}`, `#${background}`) >= 4.5)).toBe(true);
-    }
+    // The cover uses the kit's gradient image as its background.
+    const coverXml = new TextDecoder().decode(parts["ppt/slides/slide1.xml"]!);
+    expect(coverXml).toMatch(/blip/i);
+    // The divider is the BLUE surface, and its title is legible on it.
+    const dividerXml = new TextDecoder().decode(parts["ppt/slides/slide2.xml"]!);
+    const background = dividerXml.match(/<p:bg>.*?val="([0-9A-F]{6})"/s)?.[1] ?? "";
+    expect(background).toBe("2148FB");
+    const inks = [
+      ...dividerXml
+        .replace(/<p:bg>.*?<\/p:bg>/s, "")
+        .matchAll(/<a:solidFill><a:srgbClr val="([0-9A-F]{6})"\/>/g),
+    ].map((match) => match[1]!);
+    expect(inks.some((ink) => contrastRatio(`#${ink}`, `#${background}`) >= 4.5)).toBe(true);
   });
 
   test("refuses to render a deck that still carries a placeholder", () => {

@@ -89,8 +89,8 @@ describe("rendered deck contrast", () => {
     );
     const findings = checkDeckContrast(firstSlides);
     expect(findings).toEqual([]);
-    // The cover uses the kit's BLUE surface.
+    // The cover uses the kit's gradient image background.
     const cover = new TextDecoder().decode(parts["ppt/slides/slide1.xml"]!);
-    expect(cover.toUpperCase()).toContain("2148FB");
+    expect(cover).toMatch(/blip/i);
   });
 });
