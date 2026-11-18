@@ -345,8 +345,9 @@ function ChatPage() {
             siteText: result.siteText,
           }),
         );
-      } catch {
+      } catch (error) {
         // No logo/site text is fine; the cover falls back to the client's name.
+        console.warn("[SITE] analyze failed", error);
       }
     },
     [conversationId, persistScope, queryClient, scope],

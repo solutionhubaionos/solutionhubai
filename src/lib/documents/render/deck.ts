@@ -312,31 +312,13 @@ function sourceLine(slide: Slide, value: string): void {
 
 /* ---------------------------------------------------------------- slides --- */
 
-/** The client's own mark on the cover. Never recoloured, inverted or filtered. */
-function drawClientLogo(
-  slide: Slide,
-  logo: { dataUrl: string; light: boolean; aspect: number } | null,
-): void {
+/** The client's own mark on the cover, top-left, sitting straight on the slide. */
+function drawClientLogo(slide: Slide, logo: { dataUrl: string; aspect: number } | null): void {
   if (!logo) return;
-  const height = 0.62;
+  const height = 0.9;
   const width = Math.min(3.4, height * logo.aspect);
-  const x = W - M - width;
-  const y = 0.62;
-  if (!logo.light) {
-    // Client logos are usually built for light backgrounds, so a white panel
-    // keeps them legible on the navy slide. A light-on-dark logo needs none.
-    slide.addShape("roundRect", {
-      x: x - 0.14,
-      y: y - 0.12,
-      w: width + 0.28,
-      h: height + 0.24,
-      fill: { color: WHITE_HEX },
-      line: { color: WHITE_HEX, width: 0 },
-      rectRadius: 0.08,
-    });
-  }
   try {
-    slide.addImage({ data: logo.dataUrl, x, y, w: width, h: height });
+    slide.addImage({ data: logo.dataUrl, x: M, y: 0.62, w: width, h: height });
   } catch {
     // An unsupported image leaves the cover without a logo, never broken.
   }
@@ -348,7 +330,7 @@ function cover(
   meta: { date: string; subtitle: string },
   clientLogo: { dataUrl: string; light: boolean; aspect: number } | null = null,
 ): void {
-  const slide = chrome(pres, { dark: true, index: 1 });
+  const slide = chrome(pres, { dark: false, index: 1 });
   drawClientLogo(slide, clientLogo);
   slide.addShape("rect", {
     x: 0,
@@ -358,7 +340,7 @@ function cover(
     fill: { color: VIEW.accent },
     line: { color: VIEW.accent, width: 0 },
   });
-  slide.addImage({ data: VIEW.logo, x: M, y: 0.62, w: 1.35, h: 1.35 / AIONOS_LOGO.aspect });
+  slide.addImage({ data: VIEW.logo, x: W - M - 0.9, y: 0.62, w: 0.9, h: 0.9 / AIONOS_LOGO.aspect });
   slide.addText(clean(spec.deckTitle), {
     x: M,
     y: 2.05,
@@ -1297,7 +1279,7 @@ async function renderDeckSpec(
   defineMasters(pres);
 
   const surfaces = assignSurfaces(spec.slides.map((slideSpec) => slideSpec.content.layout));
-  setSurface("cover");
+  setSurface("light");
   cover(pres, spec, coverMeta, config.clientLogo ?? null);
   spec.slides.forEach((slideSpec, position) => {
     const index = position + 2;

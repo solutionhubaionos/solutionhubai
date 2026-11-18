@@ -17,7 +17,12 @@ export type AnalyzeTargetSiteResult = {
 
 export const analyzeTargetSite = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data: unknown) => z.object({ url: z.string().trim().url().max(500) }).parse(data))
+  .inputValidator((data: unknown) => {
+    // The app stores websites scheme-less (`normaliseWebsite` strips it for
+    // display), so add one back before the URL check, which requires it.
+    const { url } = z.object({ url: z.string().trim().min(1).max(500) }).parse(data);
+    return { url: /^https?:\/\//i.test(url) ? url : `https://${url}` };
+  })
   .handler(async ({ data }): Promise<AnalyzeTargetSiteResult> => {
     const log = (event: string, meta: Record<string, unknown>) => console.log(`[SITE] ${event}`, meta);
     const [logo, siteText] = await Promise.all([

@@ -145,10 +145,10 @@ describe("brand tokens", () => {
     expect(media.every((name) => /\.png$/i.test(name))).toBe(true);
     const { sequence, findings } = checkDeckBackgrounds(parts);
     expect(findings).toEqual([]);
-    expect(sequence[0]).toBe(palette.deepNavy);
+    expect(sequence[0]).toBe(palette.white);
     expect(sequence.at(-1)).toBe(palette.deepNavy);
     const cover = new TextDecoder().decode(parts["ppt/slides/slide1.xml"]!);
-    expect(cover).toMatch(`val="${palette.deepNavy}"`);
+    expect(cover).toMatch(`val="${palette.white}"`);
   });
 
   test("the deck renderer hard-codes no colour or font", () => {
