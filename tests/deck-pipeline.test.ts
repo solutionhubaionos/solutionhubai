@@ -639,12 +639,12 @@ describe("consulting layouts", () => {
     const parts = unzipSync(rendered.bytes);
     for (const name of ["ppt/slides/slide1.xml", "ppt/slides/slide2.xml"]) {
       const xml = new TextDecoder().decode(parts[name]);
-      const background = xml.match(/<p:bg>.*?val="([0-9A-F]{6})"/s)?.[1] ?? "0B1F3A";
+      const background = xml.match(/<p:bg>.*?val="([0-9A-F]{6})"/s)?.[1] ?? "1C2453";
       const bodyXml = xml.replace(/<p:bg>.*?<\/p:bg>/s, "");
       const inks = [...bodyXml.matchAll(/<a:solidFill><a:srgbClr val="([0-9A-F]{6})"\/>/g)].map(
         (match) => match[1]!,
       );
-      expect(background).toBe("0B1F3A");
+      expect(background).toBe("1C2453");
       // The title ink must not be the same navy as the canvas.
       expect(inks).not.toContain(background);
       expect(inks.some((ink) => contrastRatio(`#${ink}`, `#${background}`) >= 4.5)).toBe(true);

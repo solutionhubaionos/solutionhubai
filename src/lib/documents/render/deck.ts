@@ -33,17 +33,18 @@ let WORDMARK: string = T.config.wordmark;
 const BLACK = "000000";
 const WHITE = "FFFFFF";
 
-/** True while a client brand is painting. */
+/**
+ * Aionos theme: every slide is navy (#1C2453) with white text; the brand
+ * colours appear only in graphics (charts, diagrams, table headers, accent
+ * rules). `BRANDED` is kept as an inert false so the remaining theme branches
+ * compile; the helpers below return the Aionos values directly.
+ */
 let BRANDED = false;
-/** The brand's own colours that stay legible as text on white, in order. */
-let HIGHLIGHTS: string[] = [];
-/** True while drawing a house statement slide (navy) rather than a white one. */
 let BRAND_SURFACE = false;
 
-/** Headings get a highlight on white slides; house statement slides keep ink. */
-function headingColor(index = 0): string {
-  if (!BRANDED) return BRAND_SURFACE ? C.onDark : C.navy;
-  return HIGHLIGHTS[index % Math.max(1, HIGHLIGHTS.length)] ?? BLACK;
+/** All slide text is white; hierarchy comes from size and weight, not colour. */
+function headingColor(_index = 0): string {
+  return C.onDark;
 }
 
 /** A preferred ink, unless it would be unreadable on this slide's canvas. */
@@ -53,53 +54,30 @@ function readableInk(background: string, preferred: string): string {
     : readableTextOn(background).replace("#", "").toUpperCase();
 }
 
-/** Card copy always sits on a white card, so it is black on every slide. */
+/** Card copy sits on a deep-navy card, so it is white. */
 function cardInk(): string {
-  return BRANDED ? BLACK : C.navy;
+  return C.onDark;
 }
 
+/** Secondary card copy: mist. */
 function cardMuted(): string {
-  return BRANDED ? BLACK : C.slate;
+  return C.onDark;
 }
 
-function cardHeading(index = 0): string {
-  if (!BRANDED) return C.navy;
-  return HIGHLIGHTS[index % Math.max(1, HIGHLIGHTS.length)] ?? BLACK;
+function cardHeading(_index = 0): string {
+  return C.onDark;
 }
 
-/**
- * Switches the ink/border tokens for one slide. House decks keep their navy
- * statement slides; under a brand every canvas is white and every line of copy
- * is black — the kit's colours live in headings and chart text instead. Cards
- * stay white on both and are drawn with the `card*` helpers.
- */
+/** Keeps the token object on the Aionos palette for each slide. */
 function useSurface(brandCanvas: boolean): void {
-  if (!BRANDED) {
-    // House dark slides still need the light ink token; the background and the
-    // title used to share house navy, which made every unbranded cover blank.
-    BRAND_SURFACE = brandCanvas;
-    Object.assign(C, HOUSE_COLORS);
-    return;
-  }
-  BRAND_SURFACE = false;
-  Object.assign(C, {
-    navy: BLACK,
-    slate: BLACK,
-    onDark: BLACK,
-    onDarkMuted: BLACK,
-    border: "E2E2E2",
-  });
+  BRAND_SURFACE = brandCanvas;
+  Object.assign(C, HOUSE_COLORS);
 }
 
-/** The current slide canvas: house navy, or always white under a brand. */
+/** Every slide canvas is Aionos navy. */
 function pageBackground(): string {
-  if (!BRANDED) return C.navy;
-  return WHITE;
+  return C.navy;
 }
-
-// Per-client branding was removed; the deck always renders with the house
-// theme. `BRANDED` stays a variable so the still-present theme branches are
-// inert and are deleted wholesale when the renderer theme is rewritten.
 
 const G = T.geometry;
 const S = T.type;
@@ -140,7 +118,7 @@ function addText(
     h,
     fontFace: FONTS.body,
     fontSize: S.body,
-    color: C.navy,
+    color: C.onDark,
     margin: 0,
     valign: "top",
     isTextBox: true,
@@ -192,7 +170,7 @@ type ChromeOptions = {
 function defineMasters(pres: PptxGenJS): void {
   pres.defineSlideMaster({
     title: "content",
-    background: { color: C.white },
+    background: { color: C.navy },
     objects: [
       ...(BRANDED
         ? []
@@ -221,7 +199,7 @@ function defineMasters(pres: PptxGenJS): void {
                   h: 0.22,
                   fontFace: FONTS.body,
                   fontSize: S.caption,
-                  color: C.slate,
+                  color: C.onDark,
                   margin: 0,
                   isTextBox: true,
                 },
@@ -239,7 +217,7 @@ function defineMasters(pres: PptxGenJS): void {
             h: 0.22,
             fontFace: FONTS.body,
             fontSize: S.caption,
-            color: C.slate,
+            color: C.onDark,
             align: "right" as const,
             margin: 0,
           },
@@ -261,8 +239,8 @@ function defineMasters(pres: PptxGenJS): void {
                 y: H - 0.46,
                 w: CONTENT_W,
                 h: 0.01,
-                fill: { color: "24395A" },
-                line: { color: "24395A", width: 0 },
+                fill: { color: "BAD6FF" },
+                line: { color: "BAD6FF", width: 0 },
               },
             },
           ]),
@@ -279,7 +257,7 @@ function defineMasters(pres: PptxGenJS): void {
                   h: 0.22,
                   fontFace: FONTS.body,
                   fontSize: S.caption,
-                  color: C.onDarkMuted,
+                  color: C.onDark,
                   margin: 0,
                   isTextBox: true,
                 },
@@ -297,7 +275,7 @@ function defineMasters(pres: PptxGenJS): void {
             h: 0.22,
             fontFace: FONTS.body,
             fontSize: S.caption,
-            color: C.onDarkMuted,
+            color: C.onDark,
             align: "right" as const,
             margin: 0,
           },
@@ -323,11 +301,11 @@ function chrome(pres: PptxGenJS, options: ChromeOptions): Slide {
     });
     addText(slide, FOOTER, M, H - 0.4, CONTENT_W - 0.7, 0.22, {
       fontSize: S.caption,
-      color: C.slate,
+      color: C.onDark,
     });
     addText(slide, String(options.index), W - M - 0.5, H - 0.4, 0.5, 0.22, {
       fontSize: S.caption,
-      color: C.slate,
+      color: C.onDark,
       align: "right",
     });
   }
@@ -336,7 +314,7 @@ function chrome(pres: PptxGenJS, options: ChromeOptions): Slide {
       fontFace: FONTS.heading,
       fontSize: S.tag,
       bold: true,
-      color: BRANDED ? headingColor(1) : C.teal,
+      color: C.onDark,
       charSpacing: 1.6,
     });
   }
@@ -352,14 +330,14 @@ function tierBadge(slide: Slide, tier: DeckSpecSlide["tier"]): void {
     y: G.tagY - 0.02,
     w: 1.35,
     h: 0.28,
-    fill: { color: BRANDED ? WHITE : tier === "illustrative" ? "FDF4E7" : "FBEDE9" },
+    fill: { color: "F5F4F1" },
     line: { color, width: 0.75 },
     rectRadius: 0.08,
   });
   addText(slide, label, W - M - 1.35, G.tagY + 0.01, 1.35, 0.24, {
     fontSize: 12,
     bold: true,
-    color: BRANDED ? BLACK : tier === "illustrative" ? "8A5A12" : "9B3417",
+    color: C.navy,
     align: "center",
   });
 }
@@ -368,7 +346,7 @@ function sourceLine(slide: Slide, value: string): void {
   if (!value) return;
   addText(slide, short(value, 120), M, G.sourceY, CONTENT_W, 0.22, {
     fontSize: S.caption,
-    color: C.slate,
+    color: C.onDark,
     italic: true,
   });
 }
@@ -426,7 +404,7 @@ function cover(
   addText(slide, WORDMARK, M, 0.66, 6, 0.24, {
     fontSize: 10,
     bold: true,
-    color: BRANDED ? headingColor(1) : C.teal,
+    color: C.onDark,
     charSpacing: 2,
     fontFace: FONTS.heading,
   });
@@ -455,11 +433,11 @@ function cover(
   addText(slide, meta.subtitle, M, 4.55, CONTENT_W - 1.2, 0.9, {
     fontFace: FONTS.heading,
     fontSize: 17,
-    color: readableInk(pageBackground(), BRANDED ? headingColor(1) : C.onDarkMuted),
+    color: C.onDark,
   });
   addText(slide, `${spec.audience} · ${meta.date}`, M, H - 1.1, CONTENT_W, 0.3, {
     fontSize: 12,
-    color: C.onDarkMuted,
+    color: C.onDark,
   });
   slide.addNotes(clean(spec.storyline));
 }
@@ -471,7 +449,7 @@ function divider(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number): void
     fontFace: FONTS.heading,
     fontSize: 15,
     bold: true,
-    color: BRANDED ? headingColor(1) : C.teal,
+    color: C.onDark,
     charSpacing: 2,
   });
   slide.addText(clean(slideSpec.content.label), {
@@ -491,7 +469,7 @@ function divider(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number): void
   if (slideSpec.content.statement) {
     addText(slide, slideSpec.content.statement, M, 4.05, CONTENT_W - 1.2, 1.0, {
       fontSize: 16,
-      color: C.onDarkMuted,
+      color: C.onDark,
     });
   }
   slide.addNotes(slideSpec.notes);
@@ -556,7 +534,7 @@ function kpiSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, spec: DeckSpec, ind
       y: 2.0,
       w: cardW,
       h: 3.45,
-      fill: { color: C.white },
+      fill: { color: C.light },
       line: { color: C.border, width: 0.75 },
       rectRadius: 0.1,
     });
@@ -644,7 +622,7 @@ function hubSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number): voi
       y,
       w: boxW,
       h: boxH,
-      fill: { color: spoke.inferred ? "FDF4E7" : C.light },
+      fill: { color: C.light },
       line: { color: spoke.inferred ? C.amber : C.border, width: 0.75 },
       rectRadius: 0.1,
     });
@@ -665,8 +643,8 @@ function hubSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number): voi
     y: centreY - 0.72,
     w: 3.1,
     h: 1.44,
-    fill: { color: BRANDED ? WHITE : C.navy },
-    line: { color: BRANDED ? C.teal : C.navy, width: BRANDED ? 1.5 : 0 },
+    fill: { color: C.light },
+    line: { color: C.teal, width: 1 },
   });
   addText(slide, slideSpec.content.centre, centreX - 1.32, centreY - 0.45, 2.64, 0.9, {
     fontSize: 14,
@@ -695,8 +673,8 @@ function compareSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number):
         { ...content.right, color: cardHeading(1), bg: WHITE },
       ]
     : [
-        { ...content.left, color: C.slate, bg: C.light },
-        { ...content.right, color: C.blue, bg: "EAF2F8" },
+        { ...content.left, color: C.teal, bg: C.light },
+        { ...content.right, color: C.amber, bg: C.light },
       ];
   sides.forEach((side, position) => {
     const x = M + position * (panelW + gap);
@@ -712,7 +690,7 @@ function compareSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number):
     addText(slide, side.heading, x + 0.22, 2.18, panelW - 0.44, 0.42, {
       fontSize: 16,
       bold: true,
-      color: side.color,
+      color: C.onDark,
       fontFace: FONTS.heading,
     });
     side.points.slice(0, 4).forEach((point, pointIndex) => {
@@ -766,8 +744,8 @@ function tableSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, tag: string, inde
       text: header,
       options: {
         bold: true,
-        color: BRANDED ? cardHeading(0) : C.onDark,
-        fill: { color: BRANDED ? WHITE : C.navy },
+        color: C.onDark,
+        fill: { color: C.blue },
         fontSize: S.tableHeader,
         fontFace: FONTS.heading,
         valign: "middle" as const,
@@ -778,7 +756,7 @@ function tableSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, tag: string, inde
         text: cell,
         options: {
           color: cardInk(),
-          fill: { color: rowIndex % 2 === 0 ? C.white : C.light },
+          fill: { color: rowIndex % 2 === 0 ? C.navy : C.light },
           fontSize: S.table,
           fontFace: FONTS.body,
           valign: "middle" as const,
@@ -816,7 +794,7 @@ function roadmapSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number):
       y: 2.15,
       w: cardW,
       h: 3.6,
-      fill: { color: position === 0 && !BRANDED ? "EAF2F8" : C.light },
+      fill: { color: C.light },
       line: { color: C.border, width: 0.75 },
       rectRadius: 0.1,
     });
@@ -825,11 +803,8 @@ function roadmapSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number):
       y: 2.3,
       w: 0.44,
       h: 0.44,
-      fill: { color: BRANDED ? WHITE : SERIES[position % SERIES.length]! },
-      line: {
-        color: BRANDED ? SERIES[position % SERIES.length]! : C.white,
-        width: BRANDED ? 1.5 : 0,
-      },
+      fill: { color: C.light },
+      line: { color: C.teal, width: 0.75 },
     });
     addText(slide, String(position + 1), x + 0.18, 2.38, 0.44, 0.28, {
       fontSize: 13,
@@ -840,7 +815,7 @@ function roadmapSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number):
     addText(slide, step.label, x + 0.18, 2.92, cardW - 0.36, 0.55, {
       fontSize: 16,
       bold: true,
-      color: BRANDED ? cardHeading(position) : C.navy,
+      color: C.onDark,
       fontFace: FONTS.heading,
     });
     if (step.detail) {
@@ -898,17 +873,17 @@ function chartSlide(
       dataLabelPosition: pie ? "bestFit" : kind === "line" ? "t" : "outEnd",
       dataLabelFontFace: FONTS.chart,
       dataLabelFontSize: 11,
-      dataLabelColor: C.navy,
+      dataLabelColor: pie ? C.navy : C.onDark,
       dataLabelFontBold: true,
       dataLabelFormatCode: "#,##0;-#,##0;;",
       catAxisLabelFontFace: FONTS.chart,
       catAxisLabelFontSize: 10,
       // Chart text takes the kit's highlights on the white plot; data labels
       // stay black because they sit on the coloured series fills.
-      catAxisLabelColor: BRANDED ? headingColor(1) : C.slate,
+      catAxisLabelColor: C.onDark,
       valAxisLabelFontFace: FONTS.chart,
       valAxisLabelFontSize: 10,
-      valAxisLabelColor: BRANDED ? headingColor(1) : C.slate,
+      valAxisLabelColor: C.onDark,
       valGridLine: { style: "solid", color: C.border, size: 0.75 },
       catGridLine: { style: "none" },
       valAxisLineShow: false,
@@ -934,7 +909,7 @@ function chartSlide(
   });
   addText(slide, slideSpec.content.takeaway, M + 0.2, 5.72, CONTENT_W - 0.3, 0.62, {
     fontSize: 14,
-    color: C.navy,
+    color: C.onDark,
     fontFace: FONTS.heading,
     valign: "middle",
   });
@@ -1021,7 +996,7 @@ function askSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number): voi
   addText(slide, "THE ASK", M, 0.85, 4, 0.3, {
     fontSize: 12,
     bold: true,
-    color: BRANDED ? headingColor(1) : C.teal,
+    color: C.onDark,
     charSpacing: 2.4,
     fontFace: FONTS.heading,
   });
@@ -1064,7 +1039,7 @@ function askSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number): voi
     if (meta) {
       addText(slide, meta, M + 9.0, y, 3.1, 0.42, {
         fontSize: 12,
-        color: C.onDarkMuted,
+        color: C.onDark,
         align: "right",
       });
     }
@@ -1125,30 +1100,13 @@ function maturitySlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number)
       y: trackY - 0.17,
       w: 0.4,
       h: 0.4,
-      fill: {
-        color: BRANDED ? WHITE : isTarget ? C.teal : reached ? C.blue : C.white,
-      },
-      line: {
-        color: BRANDED
-          ? reached
-            ? SERIES[position % SERIES.length]!
-            : C.border
-          : reached
-            ? C.teal
-            : C.border,
-        width: BRANDED ? 1.5 : 1,
-      },
+      fill: { color: isTarget ? C.teal : C.light },
+      line: { color: isTarget ? C.teal : reached ? C.blue : C.border, width: 1 },
     });
     addText(slide, String(position + 1), centre - 0.2, trackY - 0.09, 0.4, 0.24, {
       fontSize: 12,
       bold: true,
-      color: BRANDED
-        ? reached
-          ? cardHeading(position)
-          : cardMuted()
-        : reached
-          ? C.onDark
-          : C.slate,
+      color: isTarget ? C.navy : C.onDark,
       align: "center",
     });
 
@@ -1157,7 +1115,7 @@ function maturitySlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number)
       y: 3.22,
       w: stepW,
       h: 2.45,
-      fill: { color: isTarget && !BRANDED ? "EAF2F8" : C.light },
+      fill: { color: C.light },
       line: { color: isTarget ? C.blue : C.border, width: isTarget ? 1.25 : 0.5 },
       rectRadius: 0.1,
     });
@@ -1172,7 +1130,7 @@ function maturitySlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number)
     addText(slide, stage.label, x + 0.16, 3.42, stepW - 0.32, 0.6, {
       fontSize: 14,
       bold: true,
-      color: BRANDED ? cardHeading(position) : C.navy,
+      color: C.onDark,
       fontFace: FONTS.heading,
       valign: "top",
     });
@@ -1185,26 +1143,20 @@ function maturitySlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number)
 
     const marker = isTarget ? "TARGET" : isCurrent ? "TODAY" : "";
     if (marker) {
-      const markerInk = BRANDED
-        ? isTarget
-          ? cardHeading(0)
-          : cardHeading(1)
-        : isTarget
-          ? C.teal
-          : C.navy;
+      const markerInk = isTarget ? C.navy : C.onDark;
       slide.addShape("roundRect", {
         x: centre - 0.52,
         y: 5.86,
         w: 1.04,
         h: 0.28,
-        fill: { color: BRANDED ? WHITE : isTarget ? C.teal : C.navy },
+        fill: { color: isTarget ? C.teal : C.light },
         line: { color: markerInk, width: BRANDED ? 1 : 0 },
         rectRadius: 0.08,
       });
       addText(slide, marker, centre - 0.52, 5.89, 1.04, 0.22, {
         fontSize: 12,
         bold: true,
-        color: BRANDED ? markerInk : C.onDark,
+        color: markerInk,
         align: "center",
         charSpacing: 1.2,
       });
@@ -1233,7 +1185,7 @@ function horizonSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number):
       y: 1.98,
       w: colW,
       h: 4.32,
-      fill: { color: C.white },
+      fill: { color: C.light },
       line: { color: C.border, width: 0.75 },
       rectRadius: 0.1,
     });
@@ -1242,7 +1194,7 @@ function horizonSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number):
       y: 1.98,
       w: colW,
       h: 0.72,
-      fill: { color: BRANDED ? WHITE : SERIES[position % SERIES.length]! },
+      fill: { color: SERIES[position % SERIES.length]! },
       line: { color: C.border, width: 0 },
     });
     if (BRANDED) {
@@ -1258,13 +1210,13 @@ function horizonSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number):
     addText(slide, `${position + 1}`, x + 0.16, 2.12, 0.3, 0.4, {
       fontSize: 20,
       bold: true,
-      color: BRANDED ? cardHeading(position) : C.onDark,
+      color: C.navy,
       fontFace: FONTS.heading,
     });
     addText(slide, horizon.label, x + 0.5, 2.18, colW - 0.66, 0.4, {
       fontSize: 16,
       bold: true,
-      color: BRANDED ? cardHeading(position) : C.onDark,
+      color: C.navy,
       fontFace: FONTS.heading,
       valign: "middle",
     });
@@ -1314,17 +1266,14 @@ function layeredSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number):
       y,
       w: labelW,
       h: bandH,
-      fill: { color: BRANDED ? WHITE : SERIES[position % SERIES.length]! },
-      line: {
-        color: SERIES[position % SERIES.length]!,
-        width: BRANDED ? 1.5 : 0,
-      },
+      fill: { color: C.light },
+      line: { color: C.teal, width: 1 },
       rectRadius: 0.08,
     });
     addText(slide, layer.label, M + 0.18, y + 0.08, labelW - 0.36, bandH - 0.16, {
       fontSize: 14,
       bold: true,
-      color: BRANDED ? cardHeading(position) : C.onDark,
+      color: C.onDark,
       fontFace: FONTS.heading,
       valign: "middle",
     });
@@ -1333,7 +1282,7 @@ function layeredSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number):
       y,
       w: CONTENT_W - labelW - 0.12,
       h: bandH,
-      fill: { color: position % 2 === 0 ? C.light : C.white },
+      fill: { color: position % 2 === 0 ? C.light : C.navy },
       line: { color: C.border, width: 0.5 },
       rectRadius: 0.08,
     });

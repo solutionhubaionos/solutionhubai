@@ -9,38 +9,40 @@
  */
 
 const HOUSE_COLORS = {
-  ink: "#0B1F3A",
-  accent: "#1F5C8B",
-  accentDark: "#163F60",
-  accentSoft: "#E8F0F6",
-  muted: "#5B6B7C",
-  border: "#D7DEE6",
-  surface: "#F5F8FA",
+  /** Navy ink on the white PDF/DOCX page. */
+  ink: "#1C2453",
+  /** Electric blue accent. */
+  accent: "#2148FB",
+  accentDark: "#030C44",
+  accentSoft: "#BAD6FF",
+  muted: "#4B5573",
+  border: "#D2D7E2",
+  surface: "#F5F4F1",
   white: "#FFFFFF",
-  success: "#12A5A0",
+  success: "#0E7C66",
   warning: "#B45309",
   danger: "#B42318",
-  /** Chart series order and highlight accents, shared with the deck. */
-  teal: "#12A5A0",
-  amber: "#F2A93B",
-  coral: "#E4572E",
+  /** Chart series for the light document page (readable on white). */
+  teal: "#0E7C66",
+  amber: "#B45309",
+  coral: "#7A1022",
   slate: "#5B6B7C",
-  navy: "#0B1F3A",
+  navy: "#1C2453",
 };
 
 const HOUSE_FONTS = {
-  heading: "Calibri",
-  body: "Calibri",
+  heading: "Aptos",
+  body: "Aptos",
   /** Serif headlines over sans copy; both ship with Office and Google Slides. */
   deckHeading: "Georgia",
-  deckBody: "Calibri",
+  deckBody: "Aptos",
   /** Standard 14 fonts, always available to the PDF writer. */
   pdfHeading: "Helvetica-Bold",
   pdfBody: "Helvetica",
   pdfOblique: "Helvetica-Oblique",
 };
 
-const HOUSE_SERIES = ["#1F5C8B", "#12A5A0", "#F2A93B", "#E4572E", "#5B6B7C"];
+const HOUSE_SERIES = ["#2148FB", "#0E7C66", "#B45309", "#7A1022", "#5B6B7C"];
 
 export const DOCUMENT_THEME = {
   brand: {

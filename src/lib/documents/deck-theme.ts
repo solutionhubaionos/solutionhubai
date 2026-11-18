@@ -13,26 +13,38 @@
  */
 export const DECK_THEME = {
   colors: {
-    navy: "0B1F3A",
-    blue: "1F5C8B",
-    teal: "12A5A0",
-    amber: "F2A93B",
-    coral: "E4572E",
-    slate: "5B6B7C",
-    light: "F5F8FA",
+    /** Aionos navy: the background of every slide. */
+    navy: "1C2453",
+    /** Electric blue: table headers, primary diagram nodes, bright accents. */
+    blue: "2148FB",
+    /** Electric cyan: chart series, diagram borders, thin accent rules. */
+    teal: "00ECFF",
+    /** Warm clay: chart series, highlights. */
+    amber: "FFAF75",
+    coral: "FFAF75",
+    /** Soft blue: muted copy, connectors, dividers, gridlines. */
+    slate: "BAD6FF",
+    /** Deep navy: card and table-body fills on the navy slide. */
+    light: "030C44",
     white: "FFFFFF",
-    border: "D7DEE6",
-    /** Illuminating ink on the dark cover/divider/closing slides. */
+    /** Soft blue dividers. */
+    border: "BAD6FF",
+    /** All slide text is white. */
     onDark: "FFFFFF",
-    onDarkMuted: "C3D0DC",
+    /** Mist, for secondary copy. */
+    onDarkMuted: "D2D7E2",
   },
-  /** Series order for every chart; the first series is always the blue. */
-  chartSeries: ["1F5C8B", "12A5A0", "F2A93B", "E4572E", "5B6B7C"],
+  /**
+   * Series order for every chart: electric cyan, warm clay, soft blue, electric
+   * blue, mist, pearl. Electric blue sits at only ~2.4:1 on navy, so the
+   * renderer gives that series a thin soft-blue outline.
+   */
+  chartSeries: ["00ECFF", "FFAF75", "BAD6FF", "2148FB", "D2D7E2", "F5F4F1"],
   fonts: {
-    heading: "Calibri",
-    body: "Calibri",
-    /** Chart text uses the theme font so a viewer without Calibri still aligns. */
-    chart: "+mn-lt",
+    heading: "Century Gothic",
+    body: "Aptos",
+    /** Chart text uses the body font so a viewer aligns with the slides. */
+    chart: "Aptos",
   },
   type: {
     title: 28,
