@@ -25,6 +25,13 @@ import {
   type ConversationScope,
 } from "../src/lib/chat/conversationScope";
 import { EMPTY_CONTEXT } from "../src/lib/chat/scope";
+import {
+  clientsDone,
+  isPickingScope,
+  sectorsDone,
+  urlDone,
+  urlQuestion,
+} from "../src/lib/chat/intake";
 import { readConversationScope } from "../src/lib/chat/scope.functions";
 import { searchLibraryChunksForEntities } from "../src/lib/rag/search";
 import { applyScopeToBrief, fallbackBrief } from "../src/lib/documents/brief";
@@ -388,5 +395,32 @@ describe("changing the pitched client", () => {
     const existing = [client("IndiGo"), client("Air India")];
     const result = reorderTargetClients(existing, [client("Air India")]);
     expect(result.map((entry) => entry.name)).toEqual(["Air India", "IndiGo"]);
+  });
+});
+
+describe("intake state machine", () => {
+  test("a client name leads to the website step", () => {
+    const next = clientsDone("Air India", []);
+    expect(next).toEqual({ stage: "url", name: "Air India", queue: [] });
+    expect(isPickingScope(next)).toBe(true);
+    expect(urlQuestion("Air India")).toContain("Air India's website");
+  });
+
+  test("skipping the client or website advances the sector queue", () => {
+    expect(clientsDone(null, ["airports"])).toEqual({
+      stage: "clients",
+      current: "airports",
+      queue: [],
+    });
+    expect(urlDone(["airports"])).toEqual({ stage: "clients", current: "airports", queue: [] });
+    expect(urlDone([])).toEqual({ stage: "complete" });
+  });
+
+  test("sectors seed the first client prompt", () => {
+    expect(sectorsDone(["airlines", "airports"])).toEqual({
+      stage: "clients",
+      current: "airlines",
+      queue: ["airports"],
+    });
   });
 });

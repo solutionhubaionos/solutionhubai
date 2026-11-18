@@ -132,9 +132,14 @@ export function SelectionCard({
   };
 
   // Preserve the menu's order rather than the click order; typed names follow.
+  // A half-typed value counts too, so Done never silently drops what was typed.
+  const typedValue = typed.trim().replace(/\s+/g, " ");
   const values = [
     ...options.filter((option) => chosen.has(option.value)).map((option) => option.value),
     ...custom,
+    ...(typedValue && !custom.some((entry) => entry.toLowerCase() === typedValue.toLowerCase())
+      ? [typedValue]
+      : []),
   ];
   const count = values.length;
 

@@ -19,6 +19,8 @@ import {
   isPickingScope,
   optionsDone,
   sectorsDone,
+  urlDone,
+  urlQuestion,
   type IntakeState,
 } from "@/lib/chat/intake";
 import {
@@ -37,6 +39,7 @@ import {
   scopePillLabels,
   reorderTargetClients,
   withPrimaryTargetInfo,
+  withPrimaryTargetName,
   withPrimaryTargetWebsite,
   type ConversationScope,
   type TargetClient,
@@ -84,6 +87,14 @@ const FULL_WIDTH = 280;
 const HISTORY_TURNS = 6;
 /** Exports read the whole conversation, not just the recent chat turns. */
 const DOCUMENT_HISTORY_TURNS = 40;
+
+/** The opening tools, phrased as the user's own sentence once Done is clicked. */
+const CAPABILITY_PHRASES = [
+  { id: "research", phrase: "research on client data" },
+  { id: "deck", phrase: "create a pitch deck" },
+  { id: "proposal", phrase: "create a proposal doc" },
+  { id: "onepager", phrase: "create a PDF doc" },
+];
 
 type ChatThread = {
   /** Also the persisted conversation id, so its scope can be loaded later. */
@@ -335,6 +346,21 @@ function ChatPage() {
       return task;
     },
     [syncTargetWebsite],
+  );
+
+  /** Edits the pitched client from the composer row and re-points the target. */
+  const setTargetName = useCallback(
+    (name: string) => {
+      if (!conversationId) return;
+      const current =
+        queryClient.getQueryData<ConversationScope>(["conversation-scope", conversationId]) ?? scope;
+      const next = withPrimaryTargetName(current, name);
+      if (next === current) return;
+      void persistScope(next);
+      const primary = next.targetClients[0];
+      if (primary?.websiteUrl) void queueTargetWebsite(primary.websiteUrl);
+    },
+    [conversationId, persistScope, queryClient, queueTargetWebsite, scope],
   );
 
   const navigate = Route.useNavigate();
@@ -635,9 +661,16 @@ function ChatPage() {
 
   /** Opening card Done: tools are informational only, so just ask for sectors. */
   const finishOptions = useCallback(
-    (_selected: string[]) => {
+    (selected: string[]) => {
       const thread = activeThread;
       if (!thread || thread.intake.stage !== "options") return;
+
+      const phrases = CAPABILITY_PHRASES.filter((entry) => selected.includes(entry.id)).map(
+        (entry) => entry.phrase,
+      );
+      const summary = phrases.length
+        ? `I want to ${phrases.join(", ")}.`
+        : "I want to explore the library.";
 
       setThreads((previous) =>
         previous.map((item): ChatThread =>
@@ -647,6 +680,7 @@ function ChatPage() {
                 intake: optionsDone(),
                 messages: [
                   ...item.messages,
+                  { id: crypto.randomUUID(), role: "user", content: summary },
                   { id: crypto.randomUUID(), role: "assistant", content: SECTOR_QUESTION },
                 ],
               }
@@ -681,6 +715,14 @@ function ChatPage() {
       const next = sectorsDone(selected);
       const firstName =
         next.stage === "clients" ? (industryNameBySlug[next.current] ?? next.current) : "";
+      const pickedNames = selected.map((slug) => industryNameBySlug[slug] ?? slug);
+      const userMessage: ChatMessageView = {
+        id: crypto.randomUUID(),
+        role: "user",
+        content: pickedNames.length
+          ? `Sectors: ${pickedNames.join(", ")}.`
+          : "I'll search the whole library.",
+      };
       const followUp: ChatMessageView[] =
         next.stage === "clients"
           ? [{ id: crypto.randomUUID(), role: "assistant", content: clientQuestion(firstName) }]
@@ -689,7 +731,11 @@ function ChatPage() {
       setThreads((previous) =>
         previous.map((item): ChatThread =>
           item.id === thread.id
-            ? { ...item, intake: next, messages: [...item.messages, ...followUp] }
+            ? {
+                ...item,
+                intake: next,
+                messages: [...item.messages, userMessage, ...followUp],
+              }
             : item,
         ),
       );
@@ -736,18 +782,32 @@ function ChatPage() {
         if (website) void queueTargetWebsite(website);
       }
 
-      const next = clientsDone(thread.intake.queue);
+      const primaryName = selected[0] ?? null;
+      const next = clientsDone(primaryName, thread.intake.queue);
       const nextName =
         next.stage === "clients" ? (industryNameBySlug[next.current] ?? next.current) : "";
+      const userMessage: ChatMessageView = {
+        id: crypto.randomUUID(),
+        role: "user",
+        content: selected.length
+          ? `We're pitching ${selected.join(", ")}.`
+          : "No specific client yet.",
+      };
       const followUp: ChatMessageView[] =
         next.stage === "clients"
           ? [{ id: crypto.randomUUID(), role: "assistant", content: clientQuestion(nextName) }]
-          : completeIntake();
+          : next.stage === "url"
+            ? [{ id: crypto.randomUUID(), role: "assistant", content: urlQuestion(next.name) }]
+            : completeIntake();
 
       setThreads((previous) =>
         previous.map((item): ChatThread =>
           item.id === thread.id
-            ? { ...item, intake: next, messages: [...item.messages, ...followUp] }
+            ? {
+                ...item,
+                intake: next,
+                messages: [...item.messages, userMessage, ...followUp],
+              }
             : item,
         ),
       );
@@ -761,6 +821,44 @@ function ChatPage() {
       queueTargetWebsite,
       scope,
     ],
+  );
+
+  /** URL Done: store the website on the target (pulls logo + a short read). */
+  const finishUrl = useCallback(
+    (values: string[]) => {
+      const thread = activeThread;
+      if (!thread || thread.intake.stage !== "url") return;
+      const website = normaliseWebsite(values[0] ?? "");
+      if (website) {
+        setContextValue("website", website);
+        void queueTargetWebsite(website);
+      }
+      const next = urlDone(thread.intake.queue);
+      const nextName =
+        next.stage === "clients" ? (industryNameBySlug[next.current] ?? next.current) : "";
+      const userMessage: ChatMessageView = {
+        id: crypto.randomUUID(),
+        role: "user",
+        content: website ? `Their website is ${website}.` : "No website for them yet.",
+      };
+      const followUp: ChatMessageView[] =
+        next.stage === "clients"
+          ? [{ id: crypto.randomUUID(), role: "assistant", content: clientQuestion(nextName) }]
+          : completeIntake();
+
+      setThreads((previous) =>
+        previous.map((item): ChatThread =>
+          item.id === thread.id
+            ? {
+                ...item,
+                intake: next,
+                messages: [...item.messages, userMessage, ...followUp],
+              }
+            : item,
+        ),
+      );
+    },
+    [activeThread, completeIntake, industryNameBySlug, queueTargetWebsite, setContextValue],
   );
 
   const industryOptions = useMemo(
@@ -817,6 +915,21 @@ function ChatPage() {
           freeTextAction="Use as new client"
           onDone={finishClients}
           onSkip={() => finishClients([])}
+        />
+      );
+    }
+    if (intake.stage === "url") {
+      return (
+        <SelectionCard
+          key={`intake-url-${intake.name}`}
+          title={`${intake.name}'s website`}
+          options={[]}
+          freeTextLabel="Client website"
+          freeTextPlaceholder="acme.com"
+          freeTextAction="Set website"
+          skipLabel="Skip website"
+          onDone={finishUrl}
+          onSkip={() => finishUrl([])}
         />
       );
     }
@@ -1185,6 +1298,8 @@ function ChatPage() {
                   clients={allClients}
                   industries={industries}
                   summary={summary}
+                  targetClient={scope.targetClients[0]?.name ?? ""}
+                  onTargetClient={setTargetName}
                 />
               }
             />

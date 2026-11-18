@@ -14,6 +14,7 @@ export type IntakeState =
   | { stage: "options" }
   | { stage: "sectors" }
   | { stage: "clients"; current: string; queue: string[] }
+  | { stage: "url"; name: string; queue: string[] }
   | { stage: "complete" };
 
 export const INITIAL_INTAKE: IntakeState = { stage: "options" };
@@ -52,9 +53,18 @@ export function clientQuestion(industryName: string): string {
   return `Who are you pitching in ${industryName}? Pick an existing company, or type the new client's name — a prospect that isn't in the library is the normal case.`;
 }
 
+export function urlQuestion(name: string): string {
+  return `What is ${name}'s website? Paste the URL and I'll pull their logo and a short read on the company to ground the deck.`;
+}
+
 /** True while the transcript is waiting on a picker rather than typing. */
 export function isPickingScope(state: IntakeState): boolean {
-  return state.stage === "options" || state.stage === "sectors" || state.stage === "clients";
+  return (
+    state.stage === "options" ||
+    state.stage === "sectors" ||
+    state.stage === "clients" ||
+    state.stage === "url"
+  );
 }
 
 /** After the opening card the scope questions always follow, even on Skip. */
@@ -71,8 +81,22 @@ export function sectorsDone(selected: readonly string[]): IntakeState {
   return current ? { stage: "clients", current, queue } : { stage: "complete" };
 }
 
-/** Advances to the next selected sector, or completes the intake. */
-export function clientsDone(queue: readonly string[]): IntakeState {
+/** The next sector's client prompt, or the end of the intake. */
+function nextSector(queue: readonly string[]): IntakeState {
   const [current, ...rest] = queue;
   return current ? { stage: "clients", current, queue: rest } : { stage: "complete" };
+}
+
+/**
+ * After the client name is chosen, ask for that client's website. A skip (no
+ * name) moves straight on, so the URL step is never forced.
+ */
+export function clientsDone(name: string | null, queue: readonly string[]): IntakeState {
+  const value = (name ?? "").trim();
+  return value ? { stage: "url", name: value, queue: [...queue] } : nextSector(queue);
+}
+
+/** Advances past the URL step to the next sector's clients, or completes. */
+export function urlDone(queue: readonly string[]): IntakeState {
+  return nextSector(queue);
 }

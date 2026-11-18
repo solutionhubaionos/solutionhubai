@@ -41,6 +41,8 @@ export function ContextToolbar({
   clients,
   industries,
   summary,
+  targetClient = "",
+  onTargetClient,
 }: {
   value: ChatContext;
   onChange: <K extends keyof ChatContext>(key: K, next: ChatContext[K]) => void;
@@ -52,6 +54,9 @@ export function ContextToolbar({
   industries: { slug: string; name: string }[];
   /** Human-readable list of what is set, read out with the row. */
   summary: string[];
+  /** The client being pitched, editable mid-conversation. */
+  targetClient?: string;
+  onTargetClient?: (name: string) => void;
 }) {
   const [openKey, setOpenKey] = useState<ListKey | null>(null);
   // The open pill's element drives the portalled popover's placement.
@@ -199,6 +204,8 @@ export function ContextToolbar({
             />
           </Popover>
         </Pill>
+
+        <PitchClientInput value={targetClient} onCommit={(next) => onTargetClient?.(next)} />
 
         <WebsiteInput
           value={value.website}
@@ -499,6 +506,46 @@ function SelectList({
           );
         })}
       </ul>
+    </div>
+  );
+}
+
+/**
+ * The pitched client's name, editable in the same row. Updating it mid
+ * conversation re-points the target (and re-reads the site when a URL is set).
+ */
+function PitchClientInput({
+  value,
+  onCommit,
+}: {
+  value: string;
+  onCommit?: (next: string) => void;
+}) {
+  const set = value.length > 0;
+  return (
+    <div
+      className={`flex h-8 min-w-[150px] max-w-[220px] shrink grow basis-[180px] items-center gap-1.5 rounded-full border px-2.5 transition-colors duration-150 ${
+        set ? "border-primary/25 bg-primary/5" : "border-border bg-card"
+      }`}
+    >
+      <UserRound
+        size={13}
+        className={`shrink-0 ${set ? "text-primary" : "text-muted-foreground"}`}
+      />
+      <input
+        defaultValue={value}
+        key={value}
+        onBlur={(event) => onCommit?.(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter") return;
+          event.preventDefault();
+          event.stopPropagation();
+          onCommit?.(event.currentTarget.value);
+        }}
+        placeholder="Client you're pitching"
+        aria-label="Client you are pitching"
+        className="min-w-0 flex-1 bg-transparent text-xs text-foreground focus:outline-none placeholder:text-muted-foreground"
+      />
     </div>
   );
 }

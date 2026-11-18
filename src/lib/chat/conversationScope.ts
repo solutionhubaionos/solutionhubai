@@ -184,6 +184,35 @@ export function reorderTargetClients(
   ].slice(0, 6);
 }
 
+/**
+ * Sets the primary target's name from the composer input. Creates a target when
+ * none exists yet, filing it under the first selected sector.
+ */
+export function withPrimaryTargetName(scope: ConversationScope, name: string): ConversationScope {
+  const trimmed = name.trim().slice(0, 120);
+  const [primary, ...rest] = scope.targetClients;
+  if (primary) {
+    if (!trimmed || trimmed === primary.name) return scope;
+    return { ...scope, targetClients: [{ ...primary, name: trimmed }, ...rest] };
+  }
+  if (!trimmed) return scope;
+  return {
+    ...scope,
+    targetClients: [
+      {
+        name: trimmed,
+        websiteUrl: null,
+        logo: null,
+        siteText: null,
+        industry: scope.industries[0] ?? null,
+        anonymise: true,
+        includePriorWork: false,
+        notes: "",
+      },
+    ],
+  };
+}
+
 export function normalizeTargetClients(value: unknown): TargetClient[] {
   if (!Array.isArray(value)) return [];
   const seen = new Set<string>();
