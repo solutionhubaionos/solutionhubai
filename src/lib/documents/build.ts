@@ -214,7 +214,12 @@ export async function buildDocument(input: BuildDocumentInput): Promise<Document
   });
   const targetName = targetNameFor(input.scope, brief, input.draft);
   const clientLogo = input.scope?.targetClients[0]?.logo ?? null;
-  log("export target", { target: targetName, logo: Boolean(clientLogo) });
+  brief.targetContext = input.scope?.targetClients[0]?.siteText ?? null;
+  log("export target", {
+    target: targetName,
+    logo: Boolean(clientLogo),
+    targetContext: Boolean(brief.targetContext),
+  });
 
   // The confirmed outline is the plan. Nothing regenerates, reorders or pads it
   // at build time; titles, order and layouts were fixed on the confirm screen.

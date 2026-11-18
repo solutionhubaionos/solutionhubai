@@ -186,3 +186,55 @@ export async function extractClientLogo(
   log("client logo: none", { url: base.href });
   return null;
 }
+
+function stripHtml(html: string): string {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&#0?39;|&rsquo;|&apos;/gi, "'")
+    .replace(/&quot;/gi, '"')
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * The client's own words about itself, from its homepage, for grounding the
+ * deck on the target rather than on model memory. Best effort and capped; a
+ * failure returns null and the deck simply has no extra target context.
+ */
+export async function fetchSiteText(
+  websiteUrl: string,
+  log: (event: string, meta: Record<string, unknown>) => void = () => undefined,
+): Promise<string | null> {
+  let base: URL;
+  try {
+    base = await assertPublicDns(new URL(websiteUrl));
+  } catch {
+    return null;
+  }
+  const page = await guardedFetch(base);
+  if (!page || !/text\/html|application\/xhtml/i.test(page.contentType)) return null;
+  const html = new TextDecoder().decode(page.bytes);
+  const title = stripHtml(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "");
+  const description = stripHtml(
+    html.match(
+      /<meta[^>]+name=["']description["'][^>]*content=["']([^"']+)["']/i,
+    )?.[1] ??
+      html.match(
+        /<meta[^>]+content=["']([^"']+)["'][^>]*name=["']description["']/i,
+      )?.[1] ??
+      "",
+  );
+  const body = stripHtml(html.replace(/<(?:nav|header|footer)[\s\S]*?<\/(?:nav|header|footer)>/gi, " "));
+  const text = [title, description, body].filter(Boolean).join(". ").slice(0, 1600).trim();
+  if (!text) {
+    log("client site: no text", { url: base.href });
+    return null;
+  }
+  log("client site: text", { url: base.href, chars: text.length });
+  return text;
+}

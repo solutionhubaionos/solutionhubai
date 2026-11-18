@@ -47,6 +47,7 @@ function briefForPlanner(brief: ExportBrief, draft: DocumentDraft): string {
       client: brief.client,
       industry: brief.industry,
       audience: brief.audience,
+      whatWeKnowAboutTheClient: brief.targetContext ?? null,
       problem: brief.problem,
       goals: brief.goals,
       constraints: brief.constraints,

@@ -35,13 +35,14 @@ import {
   mergeScopeWithContext,
   normalizeScope,
   scopePillLabels,
-  withPrimaryTargetLogo,
+  reorderTargetClients,
+  withPrimaryTargetInfo,
   withPrimaryTargetWebsite,
   type ConversationScope,
   type TargetClient,
 } from "@/lib/chat/conversationScope";
 import { loadConversationScope, saveConversationScope } from "@/lib/chat/scope.functions";
-import { extractTargetLogo } from "@/lib/documents/logo.functions";
+import { analyzeTargetSite } from "@/lib/documents/logo.functions";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { ChatTopBar } from "@/components/chat/ChatTopBar";
 import { Composer } from "@/components/chat/Composer";
@@ -301,17 +302,22 @@ function ChatPage() {
       }
       if (read().targetClients[0]?.logo) return;
       try {
-        const result = await extractTargetLogo({ data: { url: website } });
+        const result = await analyzeTargetSite({ data: { url: website } });
         if (!result.ok) return;
         await persistScope(
-          withPrimaryTargetLogo(read(), {
-            dataUrl: result.logo.dataUrl,
-            light: result.logo.light,
-            aspect: result.logo.width / result.logo.height,
+          withPrimaryTargetInfo(read(), {
+            logo: result.logo
+              ? {
+                  dataUrl: result.logo.dataUrl,
+                  light: result.logo.light,
+                  aspect: result.logo.width / result.logo.height,
+                }
+              : null,
+            siteText: result.siteText,
           }),
         );
       } catch {
-        // No logo is fine; the cover falls back to the client's name.
+        // No logo/site text is fine; the cover falls back to the client's name.
       }
     },
     [conversationId, persistScope, queryClient, scope],
@@ -705,24 +711,26 @@ function ChatPage() {
       if (selected.length > 0) {
         const existing = scope.targetClients;
         // A URL typed before the client was chosen is already in the composer
-        // context; it belongs on the target so the deck can pick up its kit.
+        // context; it belongs on the target so the deck can pick up its logo.
         const website = normaliseWebsite(context.website);
-        const additions: TargetClient[] = selected
-          .filter(
-            (name) => !existing.some((client) => client.name.toLowerCase() === name.toLowerCase()),
-          )
-          .map((name) => ({
-            name,
-            websiteUrl: website || null,
-            logo: null,
-            industry: currentIndustry,
-            anonymise: true,
-            includePriorWork: false,
-            notes: "",
-          }));
+        const selectedClients: TargetClient[] = selected.map(
+          (name) =>
+            existing.find((client) => client.name.toLowerCase() === name.toLowerCase()) ?? {
+              name,
+              websiteUrl: website || null,
+              logo: null,
+              siteText: null,
+              industry: currentIndustry,
+              anonymise: true,
+              includePriorWork: false,
+              notes: "",
+            },
+        );
         persistScope({
           ...scope,
-          targetClients: [...existing, ...additions],
+          // The newest pick becomes the primary target (index 0); generation and
+          // the website/logo steps always read index 0.
+          targetClients: reorderTargetClients(existing, selectedClients),
           updatedAt: new Date().toISOString(),
         });
         if (website) void queueTargetWebsite(website);

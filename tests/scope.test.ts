@@ -21,6 +21,7 @@ import {
   scopePillLabels,
   scopePromptLine,
   scopeRetrievalScopes,
+  reorderTargetClients,
   type ConversationScope,
 } from "../src/lib/chat/conversationScope";
 import { EMPTY_CONTEXT } from "../src/lib/chat/scope";
@@ -361,5 +362,31 @@ describe("detectExportIntent", () => {
 
   test("a document starts on the explicit request without an outline card", () => {
     expect(SHOW_EXPORT_CONFIRM).toBe(false);
+  });
+});
+
+describe("changing the pitched client", () => {
+  const client = (name: string) => ({
+    name,
+    websiteUrl: null,
+    logo: null,
+    industry: "airlines",
+    anonymise: true,
+    includePriorWork: false,
+    notes: "",
+  });
+
+  test("a newly picked client becomes the primary target", () => {
+    const existing = [client("IndiGo")];
+    const selected = [client("Air India")];
+    const result = reorderTargetClients(existing, selected);
+    expect(result[0]?.name).toBe("Air India");
+    expect(result.map((entry) => entry.name)).toEqual(["Air India", "IndiGo"]);
+  });
+
+  test("re-picking an existing client promotes it without duplicating", () => {
+    const existing = [client("IndiGo"), client("Air India")];
+    const result = reorderTargetClients(existing, [client("Air India")]);
+    expect(result.map((entry) => entry.name)).toEqual(["Air India", "IndiGo"]);
   });
 });

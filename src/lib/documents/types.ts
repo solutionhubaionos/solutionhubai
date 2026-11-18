@@ -269,6 +269,8 @@ export type ExportBrief = {
   /** Evidence customers are described generically in client-facing copy. */
   anonymise?: boolean;
   client: string | null;
+  /** The target client's own words about itself, from its website. */
+  targetContext?: string | null;
   industry: string | null;
   sector: string | null;
   audience: string | null;

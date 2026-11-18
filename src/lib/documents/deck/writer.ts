@@ -110,6 +110,9 @@ export function writerUserPrompt(
     evidenceForSlide(plan, pack),
     "",
     `Client: ${brief.client ?? draft.client ?? "not stated"}; industry: ${brief.industry ?? draft.industry ?? "not stated"}; audience: ${brief.audience ?? draft.audience ?? "executive"}.`,
+    brief.targetContext
+      ? `What we know about the client (their own website wording; the only facts you may state about them): ${brief.targetContext}`
+      : "",
     pack.targetClient
       ? `Target client (write every sentence for this client): ${pack.targetClient}`
       : "Target client: not named.",

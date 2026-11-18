@@ -41,6 +41,8 @@ export type TargetClient = {
   websiteUrl: string | null;
   /** The client's detected logo, extracted from its website. Never recoloured. */
   logo: TargetLogo | null;
+  /** The client's own words about itself from its homepage, for grounding. */
+  siteText: string | null;
   industry: string | null;
   /** External decks say "a leading European airport operator" by default. */
   anonymise: boolean;
@@ -121,6 +123,7 @@ export function normalizeTargetClient(value: unknown): TargetClient | null {
     name: name.slice(0, 120),
     websiteUrl: text("websiteUrl", 500),
     logo,
+    siteText: text("siteText", 2000),
     industry: text("industry", 80),
     anonymise: record["anonymise"] !== false,
     includePriorWork: record["includePriorWork"] === true,
@@ -144,17 +147,41 @@ export function withPrimaryTargetWebsite(
   };
 }
 
-/** Stores the detected logo on the primary target. */
-export function withPrimaryTargetLogo(
+/** Stores the detected logo and homepage text on the primary target. */
+export function withPrimaryTargetInfo(
   scope: ConversationScope,
-  logo: TargetLogo | null,
+  info: { logo?: TargetLogo | null; siteText?: string | null },
 ): ConversationScope {
   const [primary, ...rest] = scope.targetClients;
   if (!primary) return scope;
   return {
     ...scope,
-    targetClients: [{ ...primary, logo }, ...rest],
+    targetClients: [
+      {
+        ...primary,
+        ...(info.logo !== undefined ? { logo: info.logo } : {}),
+        ...(info.siteText !== undefined ? { siteText: info.siteText } : {}),
+      },
+      ...rest,
+    ],
   };
+}
+
+/**
+ * Puts the just-selected clients first, so the newest pick is the primary
+ * target. Previously chosen clients that were not re-selected stay behind as
+ * co-pitch parties. This is the fix for "a new client was ignored": generation
+ * always reads index 0, and the new pick now lands there.
+ */
+export function reorderTargetClients(
+  existing: readonly TargetClient[],
+  selected: readonly TargetClient[],
+): TargetClient[] {
+  const selectedKeys = new Set(selected.map((client) => client.name.toLowerCase()));
+  return [
+    ...selected,
+    ...existing.filter((client) => !selectedKeys.has(client.name.toLowerCase())),
+  ].slice(0, 6);
 }
 
 export function normalizeTargetClients(value: unknown): TargetClient[] {

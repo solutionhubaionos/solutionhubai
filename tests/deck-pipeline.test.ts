@@ -276,6 +276,7 @@ describe("claims and party validation", () => {
       keyEntities: ["DFW Airport"],
       keyTopics: ["data maturity"],
       client: "DFW Airport",
+      targetContext: "DFW Airport is the second-busiest airport in the United States.",
       industry: "airports",
       sector: null,
       audience: "CIO",
@@ -310,6 +311,7 @@ describe("claims and party validation", () => {
       pack,
     );
     expect(writer).toContain("Target client (write every sentence for this client): DFW Airport");
+    expect(writer).toContain("second-busiest airport in the United States");
     expect(writer).toContain("Never print a library customer's real name");
     expect(writer).toContain("reference:");
     expect(WRITER_SYSTEM).toContain("Aggressive localisation is mandatory");
