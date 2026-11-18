@@ -27,6 +27,7 @@ import { inferSectionKind } from "../outline";
 import type { ClaimRegistry, DeckChart, DeckSlideContent, DeckSpec, DeckSpecSlide } from "./types";
 import type { Block, ChartSpec, ListItem, TableBlock } from "../types";
 import { lintDeckSpec, type LintFinding } from "../lint";
+import { tidyPie, validateChart } from "./chart-validate";
 import { neutralDescriptor } from "../redact";
 
 export type DeckBuildInput = {
@@ -71,13 +72,27 @@ function chartSpec(chart: DeckChart, claims: ClaimRegistry): ChartSpec | null {
     .filter((entry) => entry.values.length > 0);
   const categories = chart.series[0]?.points.map((point) => point.label) ?? [];
   if (series.length === 0 || categories.length === 0) return null;
-  const type = chart.kind === "doughnut" ? "doughnut" : chart.kind === "line" ? "line" : "bar";
+  const type: ChartSpec["type"] =
+    chart.kind === "doughnut" ? "doughnut" : chart.kind === "line" ? "line" : "bar";
+  let finalCategories = categories;
+  let finalSeries = series;
+  if (chart.kind === "doughnut") {
+    const tidied = tidyPie(categories, series[0]!.values);
+    finalCategories = tidied.categories;
+    finalSeries = [{ name: series[0]!.name, values: tidied.values }];
+  }
+  const verdict = validateChart({
+    kind: chart.kind,
+    categories: finalCategories,
+    series: finalSeries,
+  });
+  if (!verdict.ok) return null;
   return {
     type,
     title: chart.title,
     ...(chart.unit ? { unit: chart.unit } : {}),
-    categories,
-    series,
+    categories: finalCategories,
+    series: finalSeries,
     basis: "sourced",
   };
 }

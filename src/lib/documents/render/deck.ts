@@ -9,6 +9,7 @@ import type { DeckChart, DeckSlideContent, DeckSpec, DeckSpecSlide } from "../de
 import { DECK_THEME as T, resolveDeckConfig, type DeckConfig } from "../deck-theme";
 import { claimValue, untracedNumbers } from "../deck/claims";
 import { hasPlaceholders } from "../deck/text-guards";
+import { tidyPie, validateChart } from "../deck/chart-validate";
 import { visibleStrings } from "../deck/writer";
 import { contrastRatio, readableTextOn } from "../../brand/color";
 import { dropDanglingOverrides } from "./pptx-package";
@@ -945,7 +946,15 @@ function chartData(
         .filter((value): value is number => value !== null),
     }))
     .filter((entry) => entry.values.length === categories.length);
-  return series.length > 0 ? { categories, series } : null;
+  if (series.length === 0) return null;
+  // A pie is drawn from one series and must sum to a readable whole.
+  if (chart.kind === "doughnut") {
+    const tidied = tidyPie(categories, series[0]!.values);
+    const pie = { categories: tidied.categories, series: [{ name: series[0]!.name, values: tidied.values }] };
+    return validateChart({ kind: "doughnut", ...pie }).ok ? pie : null;
+  }
+  const result = { categories, series };
+  return validateChart({ kind: chart.kind, ...result }).ok ? result : null;
 }
 
 function imageSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number): void {
