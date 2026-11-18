@@ -118,7 +118,7 @@ export function ChatSidebar({
             type="button"
             onClick={onNavigate}
             aria-label="Close navigation"
-            className={`${FOCUS} ml-auto grid h-8 w-8 shrink-0 place-items-center rounded-[10px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground`}
+            className={`${FOCUS} ml-auto grid h-8 w-8 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground`}
           >
             <X size={16} />
           </button>
@@ -128,20 +128,25 @@ export function ChatSidebar({
       <Divider />
 
       <nav aria-label="New chat" className="shrink-0 px-3">
-        <Row
-          expanded={expanded}
-          icon={
-            <span className="grid h-6 w-6 place-items-center rounded-md bg-primary text-primary-foreground">
-              <Plus size={14} strokeWidth={2.6} />
-            </span>
-          }
-          label="New chat"
-          textCls="font-semibold text-primary"
+        <button
+          type="button"
           onClick={() => {
             onNewChat();
             onNavigate?.();
           }}
-        />
+          aria-label="New chat"
+          title="New chat"
+          className={`${rowCls} h-10 w-full border border-border bg-card ${rowHoverCls}`}
+        >
+          <span className={rowIconCls}>
+            <span className="grid h-6 w-6 place-items-center rounded-md bg-primary text-primary-foreground">
+              <Plus size={14} strokeWidth={2.6} />
+            </span>
+          </span>
+          <span className={labelColCls(expanded)}>
+            <span className={`${rowLabelCls} font-semibold text-foreground`}>New chat</span>
+          </span>
+        </button>
       </nav>
 
       <Divider />
@@ -151,29 +156,34 @@ export function ChatSidebar({
         className="flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto px-3"
       >
         {expanded && (
-          <ul className="flex flex-col gap-0.5">
-            {chats.length === 0 && (
-              <li className="px-2 py-2 text-xs text-muted-foreground">No conversations yet.</li>
-            )}
-            {chats.map((chat) => {
-              const active = chat.id === activeChatId;
-              return (
-                <li key={chat.id}>
-                  <Row
-                    expanded={expanded}
-                    active={active}
-                    icon={<ChatDot active={active} />}
-                    label={chat.title}
-                    textCls={active ? "font-medium text-foreground" : "text-muted-foreground"}
-                    onClick={() => {
-                      onSelectChat(chat.id);
-                      onNavigate?.();
-                    }}
-                  />
-                </li>
-              );
-            })}
-          </ul>
+          <>
+            <p className="px-2 pb-1 pt-2 font-display text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Chats
+            </p>
+            <ul className="flex flex-col gap-0.5">
+              {chats.length === 0 && (
+                <li className="px-2 py-2 text-xs text-muted-foreground">No conversations yet.</li>
+              )}
+              {chats.map((chat) => {
+                const active = chat.id === activeChatId;
+                return (
+                  <li key={chat.id}>
+                    <Row
+                      expanded={expanded}
+                      active={active}
+                      icon={<ChatDot active={active} />}
+                      label={chat.title}
+                      textCls={active ? "font-medium text-foreground" : "text-muted-foreground"}
+                      onClick={() => {
+                        onSelectChat(chat.id);
+                        onNavigate?.();
+                      }}
+                    />
+                  </li>
+                );
+              })}
+            </ul>
+          </>
         )}
       </nav>
 

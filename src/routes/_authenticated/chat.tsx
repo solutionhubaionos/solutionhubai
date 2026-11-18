@@ -2,9 +2,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { UploadCloud } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { UploadDialog } from "@/components/UploadDialog";
 import { useIndustries } from "@/lib/industries";
 import { useIndustryClients } from "@/lib/chat/clients";
 import { askLibrary, type AskLibraryResult } from "@/lib/chat/chat.functions";
@@ -55,7 +52,7 @@ import { ContextToolbar } from "@/components/chat/ContextToolbar";
 import { Conversation } from "@/components/chat/Conversation";
 import { SelectionCard } from "@/components/chat/SelectionCard";
 import { ScopeBar } from "@/components/chat/ScopeBar";
-import { ExportHint } from "@/components/chat/ExportHint";
+import { FOCUS, columnCls } from "@/components/chat/theme";
 import type { ChatMessageView } from "@/components/chat/types";
 import { generateDocument, planDocument } from "@/lib/documents/documents.functions";
 import { SHOW_EXPORT_CONFIRM, buildDraft, detectExportIntent } from "@/lib/documents/intent";
@@ -143,8 +140,6 @@ function isKeyboardFocus(element: Element) {
 function ChatPage() {
   const { industries } = useIndustries();
   const { clientsByIndustry } = useIndustryClients();
-  const { user } = Route.useRouteContext();
-  const userId = user.id;
 
   const [context, setContext] = useState<ChatContext>(EMPTY_CONTEXT);
   const [threads, setThreads] = useState<ChatThread[]>(() => [greetingThread()]);
@@ -1127,38 +1122,6 @@ function ChatPage() {
     [startDocument],
   );
 
-  const downloadTranscript = useCallback(() => {
-    if (!activeThread || activeThread.messages.length === 0) return;
-    const body = activeThread.messages
-      .map((message) => `${message.role === "user" ? "You" : "AI Search"}: ${message.content}`)
-      .join("\n\n");
-    const url = URL.createObjectURL(new Blob([body], { type: "text/plain;charset=utf-8" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${activeThread.title.replace(/[^\w -]+/g, "").trim() || "ai-search-chat"}.txt`;
-    link.click();
-    URL.revokeObjectURL(url);
-  }, [activeThread]);
-
-  // One slim hint above the composer, remembered per user once dismissed.
-  const hintKey = `export-hint-dismissed:${userId}`;
-  const [hintDismissed, setHintDismissed] = useState(false);
-  useEffect(() => {
-    try {
-      setHintDismissed(window.localStorage.getItem(hintKey) === "1");
-    } catch {
-      setHintDismissed(false);
-    }
-  }, [hintKey]);
-  const dismissHint = useCallback(() => {
-    setHintDismissed(true);
-    try {
-      window.localStorage.setItem(hintKey, "1");
-    } catch {
-      // Private mode: the hint returns next visit, which is harmless.
-    }
-  }, [hintKey]);
-
   const expanded = hovered || focused || overlayOpen || tapped;
 
   const sidebar = (options: {
@@ -1184,6 +1147,12 @@ function ChatPage() {
 
   return (
     <div className="relative flex h-dvh overflow-hidden bg-background">
+      <a
+        href="#chat-main"
+        className={`${FOCUS} sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-50 focus:rounded-lg focus:border focus:border-border focus:bg-card focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-foreground`}
+      >
+        Skip to conversation
+      </a>
       {/* Desktop offset: a constant rail width. Expansion is an overlay, so the
           content never moves while the sidebar animates. */}
       <div aria-hidden className="hidden shrink-0 lg:block" style={{ width: RAIL_WIDTH }} />
@@ -1224,7 +1193,7 @@ function ChatPage() {
             role="dialog"
             aria-modal="true"
             aria-label="Navigation"
-            className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col border-r border-border bg-sidebar"
+            className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col overscroll-contain border-r border-border bg-sidebar"
           >
             {sidebar({
               expanded: true,
@@ -1236,23 +1205,12 @@ function ChatPage() {
       )}
 
       {/* ---------- main column ---------- */}
-      <main className="relative z-10 flex min-w-0 flex-1 flex-col bg-background">
-        <ChatTopBar
-          scrolled={scrolled}
-          onOpenNav={() => setDrawerOpen(true)}
-          onDownload={downloadTranscript}
-          canDownload={messages.length > 0}
-          uploadTrigger={
-            <UploadDialog
-              trigger={
-                <Button className="h-9 px-3.5" aria-label="Upload content" title="Upload content">
-                  <UploadCloud />
-                  <span className="hidden sm:inline">Upload</span>
-                </Button>
-              }
-            />
-          }
-        />
+      <main
+        id="chat-main"
+        tabIndex={-1}
+        className="relative z-10 flex min-w-0 flex-1 flex-col bg-background outline-none"
+      >
+        <ChatTopBar scrolled={scrolled} onOpenNav={() => setDrawerOpen(true)} />
 
         {/* What this conversation is scoped to, editable at any time. */}
         <ScopeBar
@@ -1284,14 +1242,10 @@ function ChatPage() {
         />
 
         <div
-          className="flex-1 overflow-y-auto"
+          className="flex-1 overflow-y-auto overscroll-contain"
           onScroll={(event) => setScrolled(event.currentTarget.scrollTop > 4)}
         >
-          <div
-            className={`mx-auto flex min-h-full w-full flex-col gap-3 px-4 py-4 sm:px-6 ${
-              messages.length === 0 ? "max-w-3xl" : "max-w-4xl"
-            }`}
-          >
+          <div className={`${columnCls} flex min-h-full flex-col gap-3 py-4`}>
             <div className="flex min-h-0 flex-1 flex-col">
               <Conversation
                 messages={messages}
@@ -1328,9 +1282,7 @@ function ChatPage() {
 
         {/* Pinned composer — the context row lives inside the card. */}
         <div className="relative z-20 shrink-0 border-t border-border bg-background">
-          <div className="mx-auto w-full max-w-5xl px-4 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:px-6">
-            {!hintDismissed && <ExportHint onPrefill={useExample} onDismiss={dismissHint} />}
-
+          <div className={`${columnCls} pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))]`}>
             <Composer
               value={input}
               onChange={setInput}

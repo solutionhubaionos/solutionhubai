@@ -42,13 +42,13 @@ import {
   type DocumentDraftState,
   type DocumentMode,
 } from "@/lib/documents/types";
-import { FOCUS } from "./theme";
+import { FOCUS, eyebrowCls } from "./theme";
 
 const ICONS = { pdf: File, docx: FileText, pptx: Presentation } as const;
 
 function Chip({ children }: { children: string }) {
   return (
-    <span className="rounded-full border border-border bg-card px-2 py-0.5 text-[11px] text-muted-foreground">
+    <span className="rounded-full border border-border bg-card px-2 py-0.5 text-xs text-muted-foreground">
       {children}
     </span>
   );
@@ -190,15 +190,13 @@ export function DocumentCard({
           <Icon size={16} />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            {heading}
-          </p>
+          <p className={eyebrowCls}>{heading}</p>
           <h3 className="truncate font-display text-sm font-semibold text-foreground">
             {draft.title}
           </h3>
           <p className="truncate text-xs text-muted-foreground">{draft.subtitle}</p>
         </div>
-        <span className="shrink-0 rounded-full border border-border bg-card px-2 py-0.5 text-[11px] font-medium text-foreground">
+        <span className="shrink-0 rounded-full border border-border bg-card px-2 py-0.5 text-xs font-medium text-foreground">
           {format.label}
         </span>
       </div>
@@ -213,9 +211,7 @@ export function DocumentCard({
 
       {status === "proposed" && (
         <div className="px-4 pt-3">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Format
-          </p>
+          <p className={eyebrowCls}>Format</p>
           <div
             role="radiogroup"
             aria-label="Document mode"
@@ -237,7 +233,7 @@ export function DocumentCard({
                   }`}
                 >
                   <span className="block text-xs font-semibold text-foreground">{mode.label}</span>
-                  <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">
+                  <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">
                     {mode.hint}
                   </span>
                 </button>
@@ -247,12 +243,14 @@ export function DocumentCard({
         </div>
       )}
 
-      <div className="px-4 py-3">
-        <p className="text-[11px] leading-snug text-muted-foreground">
-          The structure is built from this conversation and the library. Nothing is generated until
-          you confirm.
-        </p>
-      </div>
+      {status === "proposed" && (
+        <div className="px-4 py-3">
+          <p className="text-xs leading-snug text-muted-foreground">
+            The structure is built from this conversation and the library. Nothing is generated
+            until you confirm.
+          </p>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-2 border-t border-border px-4 py-3">
         {status === "proposed" && (
@@ -263,7 +261,7 @@ export function DocumentCard({
             <Button size="sm" variant="ghost" onClick={onCancel}>
               <X /> Cancel
             </Button>
-            <span className="text-[11px] text-muted-foreground">
+            <span className="text-xs text-muted-foreground">
               Every claim is checked against the cited passages.
             </span>
           </>
@@ -301,10 +299,10 @@ export function DocumentCard({
                 disabled={!user}
                 title="Save this document to the library"
               >
-                <Upload /> Upload
+                <Upload /> Save to library
               </Button>
             )}
-            <span className="text-[11px] text-muted-foreground">
+            <span className="text-xs text-muted-foreground">
               {file.fileName} · {formatBytes(file.bytes)} · {file.pages}{" "}
               {draft.type === "pptx" ? "slides" : "pages"}
               {typeof state.sourceCount === "number"
@@ -344,11 +342,12 @@ export function DocumentCard({
       </div>
 
       {status === "ready" && openItems.length > 0 && (
-        <div className="border-t border-border bg-amber-50/60 px-4 py-3">
-          <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-amber-700">
-            <AlertTriangle size={12} /> Open items to confirm before sending
+        <div className="border-t border-border bg-accent/10 px-4 py-3">
+          <p className={`flex items-center gap-1.5 ${eyebrowCls}`}>
+            <AlertTriangle size={12} className="shrink-0 text-accent-foreground" /> Open items to
+            confirm before sending
           </p>
-          <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-[11px] leading-snug text-amber-900">
+          <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-xs leading-snug text-foreground">
             {openItems.slice(0, 8).map((item) => (
               <li key={item}>{item}</li>
             ))}
@@ -357,7 +356,7 @@ export function DocumentCard({
       )}
 
       {status === "ready" && warnings.length > 0 && (
-        <details className="border-t border-border px-4 py-2.5 text-[11px] text-muted-foreground">
+        <details className="border-t border-border px-4 py-2.5 text-xs text-muted-foreground">
           <summary className="cursor-pointer font-medium">
             Generation notes ({warnings.length})
           </summary>
@@ -389,9 +388,7 @@ export function DocumentCard({
 
             {saveStep === "sector" ? (
               <div className="space-y-2">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  1 · Sector
-                </p>
+                <p className={eyebrowCls}>1 · Sector</p>
                 {industries.length === 0 ? (
                   <p className="text-xs text-muted-foreground">No sectors are available yet.</p>
                 ) : (
@@ -420,13 +417,11 @@ export function DocumentCard({
             ) : (
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                    2 · Industry in {sectorName}
-                  </p>
+                  <p className={eyebrowCls}>2 · Industry in {sectorName}</p>
                   <button
                     type="button"
                     onClick={() => setSaveStep("sector")}
-                    className={`${FOCUS} rounded-md px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground underline underline-offset-4 transition-colors hover:text-foreground`}
+                    className={`${FOCUS} rounded-md px-1.5 py-0.5 text-xs font-medium text-muted-foreground underline underline-offset-4 transition-colors hover:text-foreground`}
                   >
                     Change sector
                   </button>
@@ -447,7 +442,7 @@ export function DocumentCard({
                   ))}
                 </div>
                 <div className="space-y-1 pt-1">
-                  <Label htmlFor="save-client" className="text-[11px]">
+                  <Label htmlFor="save-client" className="text-xs">
                     Client folder
                   </Label>
                   <Input
@@ -455,10 +450,12 @@ export function DocumentCard({
                     maxLength={80}
                     value={saveCustomer}
                     onChange={(event) => setSaveCustomer(event.target.value)}
+                    autoComplete="off"
+                    name="save-client"
                     placeholder="Type a client to create its folder, e.g. Air India"
                   />
                 </div>
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-xs text-muted-foreground">
                   {saveCustomer.trim()
                     ? `Saves under ${sectorName} · ${saveCustomer.trim()}; if that client folder does not exist yet it is created.`
                     : `Pick a customer above, type a new one to create its folder, or leave empty to save as industry-wide content.`}
@@ -484,7 +481,7 @@ export function DocumentCard({
       )}
 
       {status === "ready" && state.trace && (
-        <details className="border-t border-border px-4 py-2.5 text-[11px] text-muted-foreground">
+        <details className="border-t border-border px-4 py-2.5 text-xs text-muted-foreground">
           <summary className="cursor-pointer font-medium">
             Source audit — {state.trace.sections.length} sections, {state.trace.usedChunkIds.length}{" "}
             passages
@@ -507,7 +504,7 @@ export function DocumentCard({
                     {section.chunkIds.length} passage{section.chunkIds.length === 1 ? "" : "s"}
                     {section.weak ? " · marked for completion" : ""}
                   </p>
-                  <p className="mt-0.5 font-mono text-[10px] leading-snug break-words">
+                  <p className="mt-0.5 font-mono text-[11px] leading-snug break-words">
                     query: {section.query}
                   </p>
                 </li>

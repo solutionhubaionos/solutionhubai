@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Pencil, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { FOCUS, chipCls } from "./theme";
+import { FOCUS, chipCls, columnCls, eyebrowCls } from "./theme";
 import { ChipGroup } from "./SelectionCard";
 
 /**
@@ -44,8 +44,8 @@ export function ScopeBar({
 
   if (editing) {
     return (
-      <div className="mx-auto w-full max-w-4xl px-4 pt-2 sm:px-6">
-        <div className="space-y-2 rounded-xl border border-border bg-card/60 px-3 py-2">
+      <div className={`${columnCls} pt-2`}>
+        <div className="space-y-2 rounded-xl border border-border bg-card px-3 py-2">
           <ChipGroup
             label="Sectors"
             options={industryOptions}
@@ -79,7 +79,7 @@ export function ScopeBar({
             <button
               type="button"
               onClick={() => setEditing(false)}
-              className={`${FOCUS} rounded-md px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground underline underline-offset-4 transition-colors hover:text-foreground`}
+              className={`${FOCUS} rounded-md px-1.5 py-0.5 text-xs font-medium text-muted-foreground underline underline-offset-4 transition-colors hover:text-foreground`}
             >
               Cancel
             </button>
@@ -92,10 +92,8 @@ export function ScopeBar({
   if (labels.length === 0) return null;
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-wrap items-center gap-1.5 px-4 pt-2 sm:px-6">
-      <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-        Scope
-      </span>
+    <div className={`${columnCls} flex flex-wrap items-center gap-1.5 pt-2`}>
+      <span className={eyebrowCls}>Scope</span>
       {labels.map((label) => (
         <span key={label} className={`${chipCls} pointer-events-none`}>
           {label}
@@ -113,7 +111,7 @@ export function ScopeBar({
         type="button"
         onClick={() => onSave({ industries: [], companies: [] })}
         aria-label="Clear the selected scope"
-        className={`${FOCUS} grid h-6 w-6 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground`}
+        className={`${FOCUS} grid h-7 w-7 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground`}
       >
         <X size={12} />
       </button>

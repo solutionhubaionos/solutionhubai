@@ -6,7 +6,7 @@ import { FilePreviewDialog } from "@/components/FilePreviewDialog";
 import type { ContentItem } from "@/lib/content";
 import type { ChatSource } from "@/lib/chat/answer";
 import type { ExampleCard } from "@/lib/chat/scope";
-import { FOCUS, chipCls } from "./theme";
+import { FOCUS, chipCls, eyebrowCls } from "./theme";
 import { DocumentCard } from "./DocumentCard";
 import { MarkdownAnswer } from "./MarkdownAnswer";
 import type { ChatMessageView } from "./types";
@@ -60,7 +60,7 @@ export function Conversation({
             <h2 className="truncate font-display text-sm font-semibold text-foreground">
               {opening}
             </h2>
-            <span className="shrink-0 rounded-full bg-secondary px-2 py-0.5 text-[11px] text-muted-foreground">
+            <span className="shrink-0 rounded-full bg-secondary px-2 py-0.5 text-xs text-muted-foreground">
               {messages.length} {messages.length === 1 ? "message" : "messages"}
             </span>
           </div>
@@ -121,9 +121,9 @@ function EmptyState({
         <Sparkles size={26} />
       </span>
 
-      <h1 className="text-balance font-display text-2xl font-bold text-foreground sm:text-3xl">
+      <h2 className="text-balance font-display text-2xl font-bold text-foreground sm:text-3xl">
         How can I help today?
-      </h1>
+      </h2>
       <p className="mt-2 max-w-md text-sm text-muted-foreground">
         Answers come from the files in your library, with the source passage cited under every
         reply.
@@ -148,9 +148,7 @@ function ExampleGrid({
 }) {
   return (
     <div className="w-full text-left">
-      <p className="mb-2.5 text-center text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-        Try an example
-      </p>
+      <p className={`mb-2.5 text-center ${eyebrowCls}`}>Try an example</p>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-2.5 lg:grid-cols-4">
         {exampleCards.map((card) => {
           const { icon: Icon, label } = CARD_KINDS[card.kind];
@@ -158,7 +156,7 @@ function ExampleGrid({
             <button
               key={card.prompt}
               onClick={() => onExampleSelect(card.prompt)}
-              className={`${FOCUS} flex min-h-[76px] flex-col justify-between rounded-2xl border border-border bg-secondary/50 p-2.5 text-left transition-all duration-150 hover:-translate-y-px hover:bg-secondary`}
+              className={`${FOCUS} flex min-h-[76px] flex-col justify-between rounded-2xl border border-border bg-secondary/50 p-2.5 text-left transition-[transform,background-color] duration-150 hover:-translate-y-px hover:bg-secondary`}
             >
               <span className="line-clamp-3 text-xs font-medium text-foreground">{card.label}</span>
               <span className="mt-2 flex items-center gap-1.5">
@@ -168,7 +166,7 @@ function ExampleGrid({
                 >
                   <Icon size={13} />
                 </span>
-                <span className="text-[11px] text-muted-foreground">{label}</span>
+                <span className="text-xs text-muted-foreground">{label}</span>
               </span>
             </button>
           );
@@ -254,9 +252,7 @@ function Bubble({
 function SourceList({ sources, anchorPrefix }: { sources: ChatSource[]; anchorPrefix: string }) {
   return (
     <div className="space-y-2">
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-        Sources
-      </p>
+      <p className={eyebrowCls}>Sources</p>
       <ul className="flex flex-wrap gap-1.5">
         {sources.map((source) => (
           <li
@@ -302,7 +298,7 @@ function SourceChip({ source }: { source: ChatSource }) {
     </>
   );
   const className =
-    "inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-[11px] text-foreground";
+    "inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-xs text-foreground";
 
   if (!item) {
     return <span className={className}>{label}</span>;

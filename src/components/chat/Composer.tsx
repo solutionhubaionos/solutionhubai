@@ -93,11 +93,11 @@ export function Composer({
             <button
               type="button"
               disabled={disabled}
-              aria-label="Create with AI"
-              title="Create with AI"
-              className={`${FOCUS} grid h-8 w-8 place-items-center rounded-lg border border-border bg-card text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50`}
+              title="Create a document from this conversation"
+              className={`${FOCUS} inline-flex h-9 items-center gap-1.5 rounded-xl border border-border bg-card px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50`}
             >
-              <Plus size={16} />
+              <Plus size={16} aria-hidden />
+              Create
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-56">
@@ -112,7 +112,7 @@ export function Composer({
         </DropdownMenu>
 
         <div className="flex items-center gap-3">
-          <span className="hidden text-[11px] text-muted-foreground sm:inline">
+          <span className="hidden text-xs text-muted-foreground sm:inline">
             {busy ? "Working… press stop to cancel" : "Enter to send · Shift+Enter for a new line"}
           </span>
           {busy && onStop ? (

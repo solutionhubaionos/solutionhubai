@@ -462,6 +462,8 @@ function SelectList({
             }}
             aria-label={searchPlaceholder}
             placeholder={searchPlaceholder}
+            name="context-search"
+            autoComplete="off"
             className={`${FOCUS} w-full rounded-xl border border-border bg-card py-2 pl-8 pr-2.5 text-xs text-foreground placeholder:text-muted-foreground focus:border-primary`}
           />
         </div>
@@ -493,7 +495,7 @@ function SelectList({
             >
               <span
                 aria-hidden
-                className={`grid h-4 w-4 shrink-0 place-items-center rounded-[5px] border transition-colors duration-100 ${
+                className={`grid h-4 w-4 shrink-0 place-items-center rounded-md border transition-colors duration-100 ${
                   isSelected
                     ? "border-primary bg-primary text-primary-foreground"
                     : "border-border bg-card text-transparent"
@@ -524,7 +526,7 @@ function PitchClientInput({
   const set = value.length > 0;
   return (
     <div
-      className={`flex h-8 min-w-[150px] max-w-[220px] shrink grow basis-[180px] items-center gap-1.5 rounded-full border px-2.5 transition-colors duration-150 ${
+      className={`flex h-8 min-w-[150px] max-w-[220px] shrink grow basis-[180px] items-center gap-1.5 rounded-full border px-2.5 transition-colors duration-150 focus-within:border-primary focus-within:ring-2 focus-within:ring-ring/30 ${
         set ? "border-primary/25 bg-primary/5" : "border-border bg-card"
       }`}
     >
@@ -544,6 +546,9 @@ function PitchClientInput({
         }}
         placeholder="Client you're pitching"
         aria-label="Client you are pitching"
+        name="pitch-client"
+        autoComplete="off"
+        spellCheck={false}
         className="min-w-0 flex-1 bg-transparent text-xs text-foreground focus:outline-none placeholder:text-muted-foreground"
       />
     </div>
@@ -579,7 +584,7 @@ function WebsiteInput({
         title={invalid ? "Check this address — for example acme.com" : undefined}
         className={`flex h-8 min-w-[180px] shrink grow basis-[220px] items-center gap-1.5 rounded-full border px-2.5 transition-colors duration-150 ${
           invalid
-            ? "border-destructive/50 bg-card focus-within:border-destructive focus-within:ring-4 focus-within:ring-destructive/10"
+            ? "border-destructive/60 bg-card focus-within:border-destructive focus-within:ring-2 focus-within:ring-destructive/30"
             : set
               ? "border-primary/25 bg-primary/5"
               : "border-border bg-card"
@@ -603,6 +608,7 @@ function WebsiteInput({
           placeholder="Paste the client's website"
           autoComplete="url"
           inputMode="url"
+          name="client-website"
           aria-label="Client website"
           aria-invalid={invalid || undefined}
           aria-describedby={invalid ? "ctx-website-hint" : undefined}
@@ -616,7 +622,7 @@ function WebsiteInput({
               onCommit?.("");
             }}
             aria-label="Clear website"
-            className={`${FOCUS} -mr-1 grid h-5 w-5 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground`}
+            className={`${FOCUS} -mr-1 grid h-6 w-6 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground`}
           >
             <X size={12} />
           </button>
