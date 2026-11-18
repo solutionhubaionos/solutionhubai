@@ -27,6 +27,7 @@ import { inferSectionKind } from "../outline";
 import type { ClaimRegistry, DeckChart, DeckSlideContent, DeckSpec, DeckSpecSlide } from "./types";
 import type { Block, ChartSpec, ListItem, TableBlock } from "../types";
 import { lintDeckSpec, type LintFinding } from "../lint";
+import { throwIfAborted } from "../cancel";
 import { tidyPie, validateChart } from "./chart-validate";
 import { neutralDescriptor } from "../redact";
 
@@ -325,6 +326,8 @@ export function slideSourceNote(claimIds: readonly string[], claims: ClaimRegist
 
 export async function buildDeck(input: DeckBuildInput): Promise<DeckBuildOutput> {
   const log = input.log ?? (() => undefined);
+  const signal = input.provider.signal;
+  if (signal) throwIfAborted(signal);
   const facts = input.facts ?? {};
   // Public facts join the same registry as library claims, so the writer may
   // reference them and the renderer's traceability guard still applies.
@@ -340,10 +343,12 @@ export async function buildDeck(input: DeckBuildInput): Promise<DeckBuildOutput>
     ...input.provider,
     log,
   });
+  if (signal) throwIfAborted(signal);
   const writing = await writeDeck(planning.plan.slides, input.brief, input.draft, pack, {
     ...input.provider,
     log,
   });
+  if (signal) throwIfAborted(signal);
   const criticism = await critiqueDeck(writing.slides, input.brief, input.draft, pack, {
     ...input.provider,
     log,

@@ -108,6 +108,7 @@ export type RewriteOptions = {
   model?: string;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
+  signal?: AbortSignal;
   log?: (event: string, meta: Record<string, unknown>) => void;
 };
 
@@ -142,6 +143,7 @@ export async function rewriteQuery(
         model: options.model ?? ANSWER_MODEL,
         timeoutMs: options.timeoutMs ?? QUERY_REWRITE_TIMEOUT_MS,
         ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
+        ...(options.signal ? { signal: options.signal } : {}),
         attempts: 2,
         ...(options.log ? { log: options.log } : {}),
       },

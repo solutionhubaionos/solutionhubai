@@ -39,6 +39,7 @@ import {
   type ConversationScope,
 } from "./conversationScope";
 import { readConversationScope } from "./scope.functions";
+import { beginCancelable, endCancelable, throwIfAborted } from "../documents/cancel";
 
 export type AskLibraryResult =
   | {
@@ -81,6 +82,8 @@ export const askLibrary = createServerFn({ method: "POST" })
         question: z.string().trim().min(2).max(2000),
         /** The stored conversation whose scope this turn runs inside. */
         conversationId: z.string().uuid().optional(),
+        /** Client-generated id so the Stop button can abort this turn. */
+        requestId: z.string().uuid().optional(),
         /** Industry slug -> display name, for the scope line and the pill. */
         industryNames: z.record(z.string()).optional(),
         context: contextSchema.optional(),
@@ -97,7 +100,9 @@ export const askLibrary = createServerFn({ method: "POST" })
       .parse(data),
   )
   .handler(async ({ data, context }): Promise<AskLibraryResult> => {
-    const requestId = crypto.randomUUID();
+    const requestId = data.requestId ?? crypto.randomUUID();
+    const cancelController = beginCancelable(requestId);
+    const signal = cancelController.signal;
     const apiKey = process.env["TOKENFACTORY_API_KEY"];
     const baseUrl = process.env["TOKENFACTORY_API_BASE"];
     if (!apiKey || !baseUrl) {
@@ -105,6 +110,7 @@ export const askLibrary = createServerFn({ method: "POST" })
       return { ok: false, error: "AI Search is not configured yet." };
     }
 
+    try {
     // The stored scope is the source of truth; the client's live context is only
     // merged in for conversations that predate persistence.
     const scope: ConversationScope = data.conversationId
@@ -154,6 +160,7 @@ export const askLibrary = createServerFn({ method: "POST" })
       const rewrite = await rewriteQuery(data.question, data.history ?? [], {
         apiKey,
         baseUrl,
+        signal,
         ...(scopeLine ? { scopeLine } : {}),
         log: (event, meta) => console.log(`[CHAT] ${event}`, { requestId, ...meta }),
       });
@@ -251,7 +258,7 @@ export const askLibrary = createServerFn({ method: "POST" })
 
       const built = buildContext(chunks);
       const messages = buildMessages(data.question, built, data.history ?? [], scopeLine);
-      const raw = await generateAnswer(messages, { apiKey, baseUrl, requestId });
+      const raw = await generateAnswer(messages, { apiKey, baseUrl, requestId, signal });
       const final = finalizeAnswer(raw.answer, built);
 
       // The scope note is server-owned: it is appended after citation cleanup so
@@ -284,5 +291,8 @@ export const askLibrary = createServerFn({ method: "POST" })
     } catch (error) {
       console.error("[CHAT] turn failed", error instanceof Error ? error.message : error);
       return { ok: false, error: "AI Search could not answer that. Please try again." };
+    }
+    } finally {
+      endCancelable(requestId, cancelController);
     }
   });

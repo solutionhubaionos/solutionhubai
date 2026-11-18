@@ -126,9 +126,9 @@ async function requestCompletion(
 ): Promise<RawCompletion> {
   const doFetch = options.fetchImpl ?? fetch;
   const baseUrl = options.baseUrl.replace(/\/+$/, "");
-  const signal =
-    options.signal ??
-    AbortSignal.timeout(options.timeoutMs ?? budget.timeoutMs ?? llmCallTimeoutMs());
+  const timeout = AbortSignal.timeout(options.timeoutMs ?? budget.timeoutMs ?? llmCallTimeoutMs());
+  // A caller signal (Stop) and the per-call timeout both abort the fetch.
+  const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
   const started = Date.now();
 
   const response = await doFetch(`${baseUrl}/chat/completions`, {

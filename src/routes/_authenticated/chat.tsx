@@ -46,6 +46,7 @@ import {
 } from "@/lib/chat/conversationScope";
 import { loadConversationScope, saveConversationScope } from "@/lib/chat/scope.functions";
 import { analyzeTargetSite } from "@/lib/documents/logo.functions";
+import { stopRequest } from "@/lib/documents/cancel.functions";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { ChatTopBar } from "@/components/chat/ChatTopBar";
 import { Composer } from "@/components/chat/Composer";
@@ -381,6 +382,23 @@ function ChatPage() {
     [conversationId, persistScope, queryClient, queueTargetWebsite, scope],
   );
 
+  /** In-flight server requests, so Stop can cancel them at the source. */
+  const activeRequestsRef = useRef<Map<string, AbortController>>(new Map());
+  const trackRequest = useCallback((id: string, controller: AbortController) => {
+    activeRequestsRef.current.set(id, controller);
+  }, []);
+  const untrackRequest = useCallback((id: string) => {
+    activeRequestsRef.current.delete(id);
+  }, []);
+  /** Stops every running request server-side and cancels its client fetch. */
+  const cancelActiveRequests = useCallback(() => {
+    for (const [id, controller] of activeRequestsRef.current) {
+      void stopRequest({ data: { requestId: id } });
+      controller.abort();
+    }
+    activeRequestsRef.current.clear();
+  }, []);
+
   const navigate = Route.useNavigate();
   const search = Route.useSearch();
 
@@ -445,14 +463,23 @@ function ChatPage() {
       // A website just entered in the toolbar may still be saving; wait for the
       // target row to carry it before the server reads the scope.
       await websiteSyncRef.current;
-      return generateDocument({
-        data: {
-          draft: payload.draft,
-          history: payload.history,
-          ...(conversationId ? { conversationId } : {}),
-          industryNames: industryNameBySlug,
-        },
-      });
+      const requestId = crypto.randomUUID();
+      const controller = new AbortController();
+      trackRequest(requestId, controller);
+      try {
+        return await generateDocument({
+          data: {
+            draft: payload.draft,
+            history: payload.history,
+            requestId,
+            ...(conversationId ? { conversationId } : {}),
+            industryNames: industryNameBySlug,
+          },
+          signal: controller.signal,
+        });
+      } finally {
+        untrackRequest(requestId);
+      }
     },
     onSuccess: (result, payload) => {
       if (!result.ok) {
@@ -469,6 +496,8 @@ function ChatPage() {
       });
     },
     onError: (error, payload) => {
+      // A Stop aborts the fetch; that is not a failure to report.
+      if (error instanceof Error && error.name === "AbortError") return;
       const detail = error instanceof Error ? error.message.trim() : "";
       updateDocument(payload.messageId, {
         status: "error",
@@ -485,7 +514,7 @@ function ChatPage() {
    * when the mode changes); Generate always uses whatever is on the card.
    */
   const documentPlanning = useMutation({
-    mutationFn: (payload: {
+    mutationFn: async (payload: {
       messageId: string;
       draft: DocumentDraft;
       mode: DocumentDraft["mode"];
@@ -494,18 +523,28 @@ function ChatPage() {
         content: string;
         sources?: { title: string; contentId?: string | null; chunkId?: string | null }[];
       }[];
-    }) =>
-      planDocument({
-        data: {
-          prompt: payload.draft.prompt,
-          type: payload.draft.type,
-          mode: payload.mode,
-          context,
-          industryNames: industryNameBySlug,
-          ...(conversationId ? { conversationId } : {}),
-          history: payload.history,
-        },
-      }),
+    }) => {
+      const requestId = crypto.randomUUID();
+      const controller = new AbortController();
+      trackRequest(requestId, controller);
+      try {
+        return await planDocument({
+          data: {
+            prompt: payload.draft.prompt,
+            type: payload.draft.type,
+            mode: payload.mode,
+            context,
+            industryNames: industryNameBySlug,
+            requestId,
+            ...(conversationId ? { conversationId } : {}),
+            history: payload.history,
+          },
+          signal: controller.signal,
+        });
+      } finally {
+        untrackRequest(requestId);
+      }
+    },
     onSuccess: (result, payload) => {
       if (!result.ok) return;
       updateDocument(payload.messageId, {
@@ -960,20 +999,30 @@ function ChatPage() {
   })();
 
   const ask = useMutation({
-    mutationFn: (payload: {
+    mutationFn: async (payload: {
       threadId: string;
       question: string;
       history: { role: "user" | "assistant"; content: string }[];
-    }) =>
-      askLibrary({
-        data: {
-          question: payload.question,
-          context,
-          industryNames: industryNameBySlug,
-          ...(conversationId ? { conversationId } : {}),
-          history: payload.history,
-        },
-      }),
+    }) => {
+      const requestId = crypto.randomUUID();
+      const controller = new AbortController();
+      trackRequest(requestId, controller);
+      try {
+        return await askLibrary({
+          data: {
+            question: payload.question,
+            context,
+            industryNames: industryNameBySlug,
+            requestId,
+            ...(conversationId ? { conversationId } : {}),
+            history: payload.history,
+          },
+          signal: controller.signal,
+        });
+      } finally {
+        untrackRequest(requestId);
+      }
+    },
     onSuccess: (result: AskLibraryResult, payload) => {
       if (!result.ok) {
         appendMessage(payload.threadId, {
@@ -1302,6 +1351,9 @@ function ChatPage() {
                 messages.some((message) => message.document?.status === "generating")
               }
               onStop={() => {
+                // Cancel server-side first (abort the in-flight model calls),
+                // then reset the client mutations.
+                cancelActiveRequests();
                 ask.reset();
                 documentGeneration.reset();
                 documentPlanning.reset();

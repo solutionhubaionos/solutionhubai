@@ -11,6 +11,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { buildDocument } from "./build";
+import { beginCancelable, endCancelable, throwIfAborted } from "./cancel";
 import { buildExportBrief } from "./brief";
 import { EMPTY_SCOPE } from "../chat/conversationScope";
 import { readConversationScope } from "../chat/scope.functions";
@@ -164,14 +165,20 @@ export const planDocument = createServerFn({ method: "POST" })
         industryNames: z.record(z.string()).optional(),
         /** The conversation whose stored scope this export covers. */
         conversationId: z.string().uuid().optional(),
+        /** Client-generated id so the Stop button can abort this plan. */
+        requestId: z.string().uuid().optional(),
         history: historySchema,
       })
       .parse(data),
   )
   .handler(async ({ data, context: requestContext }): Promise<PlanDocumentResult> => {
+    const requestId = data.requestId ?? crypto.randomUUID();
+    const cancelController = beginCancelable(requestId);
+    const signal = cancelController.signal;
     const apiKey = process.env["TOKENFACTORY_API_KEY"];
     const baseUrl = process.env["TOKENFACTORY_API_BASE"];
     if (!apiKey || !baseUrl) {
+      endCancelable(requestId, cancelController);
       return { ok: false, error: "Document planning needs the AI provider configured." };
     }
 
@@ -205,6 +212,7 @@ export const planDocument = createServerFn({ method: "POST" })
       const brief = await buildExportBrief(draft, data.history ?? [], {
         apiKey,
         baseUrl,
+        signal,
         client: requestContext.supabase,
         scope,
         ...(data.industryNames ? { industryNames: data.industryNames } : {}),
@@ -213,6 +221,7 @@ export const planDocument = createServerFn({ method: "POST" })
       const planned = await planOutline(brief, draft, {
         apiKey,
         baseUrl,
+        signal,
         log: (event, meta) => console.log(`[DOC] plan ${event}`, meta),
       });
 
@@ -239,6 +248,8 @@ export const planDocument = createServerFn({ method: "POST" })
         error instanceof Error ? (error.stack ?? error.message) : String(error),
       );
       return { ok: false, error: "Could not plan that document. Please try again." };
+    } finally {
+      endCancelable(requestId, cancelController);
     }
   });
 
@@ -250,6 +261,8 @@ export const generateDocument = createServerFn({ method: "POST" })
         draft: draftSchema,
         history: historySchema,
         conversationId: z.string().uuid().optional(),
+        /** Client-generated id so the Stop button can abort this build. */
+        requestId: z.string().uuid().optional(),
         industryNames: z.record(z.string()).optional(),
       })
       .parse(data),
@@ -257,10 +270,13 @@ export const generateDocument = createServerFn({ method: "POST" })
   .handler(async ({ data, context }): Promise<GenerateDocumentResult> => {
     const { draft } = data;
     const history = data.history ?? [];
+    const requestId = data.requestId ?? crypto.randomUUID();
+    const cancelController = beginCancelable(requestId);
     const apiKey = process.env["TOKENFACTORY_API_KEY"];
     const baseUrl = process.env["TOKENFACTORY_API_BASE"];
     if (!apiKey || !baseUrl) {
       console.error("[DOC] Provider credentials are not configured");
+      endCancelable(requestId, cancelController);
       return { ok: false, error: "Document generation needs the AI provider configured." };
     }
 
@@ -272,7 +288,7 @@ export const generateDocument = createServerFn({ method: "POST" })
         draft,
         history,
         client: context.supabase,
-        provider: { apiKey, baseUrl },
+        provider: { apiKey, baseUrl, signal: cancelController.signal },
         scope,
         ...(data.industryNames ? { industryNames: data.industryNames } : {}),
         log: (event, meta) => console.log(`[DOC] ${event}`, meta),
@@ -348,5 +364,7 @@ export const generateDocument = createServerFn({ method: "POST" })
       );
       const failure = error instanceof Error ? error.name : "UnknownError";
       return { ok: false, error: `Could not build that document (${failure}). Please try again.` };
+    } finally {
+      endCancelable(requestId, cancelController);
     }
   });

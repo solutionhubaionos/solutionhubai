@@ -34,7 +34,7 @@ import { normalizeDeck, fallbackSlide, thinSlides } from "./slides";
 import { mustIncludeItems, plansFromOutline, type SectionPlan } from "./outline";
 import { sectionSourceIds } from "./generate";
 import { sourceRecords, validateModel } from "./validate";
-import { failureReasonOf } from "./provider";
+import { failureReasonOf, type ProviderOptions } from "./provider";
 import { coverDate } from "./theme";
 import type {
   Block,
@@ -52,7 +52,7 @@ export type BuildDocumentInput = {
   draft: DocumentDraft;
   history: readonly ExportHistoryMessage[];
   client: SupabaseClient<Database>;
-  provider: { apiKey: string; baseUrl: string; fetchImpl?: typeof fetch };
+  provider: ProviderOptions;
   /** The conversation's stored scope; every company and sector in it ships. */
   scope?: ConversationScope;
   /** Industry slug -> display name for the scope's sectors. */
