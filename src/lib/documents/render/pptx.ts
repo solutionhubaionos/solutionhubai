@@ -1227,6 +1227,31 @@ function coverSlide(pres: PptxGenJS, model: DocumentModel, cfg: ResolvedDeckConf
   const title = cleanText(model.cover.title);
   const subtitle = cleanText(model.cover.subtitle);
 
+  // The client's own mark, never recoloured; a white panel unless it is light.
+  const logo = model.clientLogo;
+  if (logo) {
+    const height = 0.62;
+    const width = Math.min(3.4, height * logo.aspect);
+    const x = G.width - G.margin - width;
+    const y = 0.62;
+    if (!logo.light) {
+      slide.addShape("roundRect", {
+        x: x - 0.14,
+        y: y - 0.12,
+        w: width + 0.28,
+        h: height + 0.24,
+        fill: { color: "FFFFFF" },
+        line: { color: "FFFFFF", width: 0 },
+        rectRadius: 0.08,
+      });
+    }
+    try {
+      slide.addImage({ data: logo.dataUrl, x, y, w: width, h: height });
+    } catch {
+      // An unsupported image leaves the cover without a logo, never broken.
+    }
+  }
+
   slide.addText(title, {
     x: G.margin,
     y: 2.15,
@@ -1961,7 +1986,11 @@ export async function renderPptx(
   // older models and the review fixtures.
   if (model.deck) {
     const { renderDeck } = await import("./deck");
-    return renderDeck(model.deck, { date: model.cover.date, subtitle: model.cover.subtitle }, config);
+    return renderDeck(
+      model.deck,
+      { date: model.cover.date, subtitle: model.cover.subtitle },
+      { ...config, ...(model.clientLogo ? { clientLogo: model.clientLogo } : {}) },
+    );
   }
   return renderLegacyDeck(model, config);
 }

@@ -213,7 +213,8 @@ export async function buildDocument(input: BuildDocumentInput): Promise<Document
     log,
   });
   const targetName = targetNameFor(input.scope, brief, input.draft);
-  log("export target", { target: targetName });
+  const clientLogo = input.scope?.targetClients[0]?.logo ?? null;
+  log("export target", { target: targetName, logo: Boolean(clientLogo) });
 
   // The confirmed outline is the plan. Nothing regenerates, reorders or pads it
   // at build time; titles, order and layouts were fixed on the confirm screen.
@@ -525,6 +526,7 @@ export async function buildDocument(input: BuildDocumentInput): Promise<Document
       openItems,
       warnings,
       deck: built.spec,
+      clientLogo,
     };
 
     const final = validateModel(model, chunksById);
@@ -803,6 +805,7 @@ export async function buildDocument(input: BuildDocumentInput): Promise<Document
     sources,
     openItems: dedupedOpenItems,
     warnings: [...new Set([...warnings])],
+    clientLogo,
   };
 
   const final = validateModel(model, chunksById);

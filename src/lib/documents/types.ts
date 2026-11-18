@@ -249,6 +249,8 @@ export type DocumentModel = {
   warnings: string[];
   /** Present when the planner/writer pipeline built the deck. */
   deck?: DeckSpec;
+  /** The target client's logo, detected from its website; drawn on the cover. */
+  clientLogo?: { dataUrl: string; light: boolean; aspect: number } | null;
 };
 
 export type ExportBrief = {

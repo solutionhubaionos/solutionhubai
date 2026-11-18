@@ -375,14 +375,46 @@ function sourceLine(slide: Slide, value: string): void {
 
 /* ---------------------------------------------------------------- slides --- */
 
+/** The client's own mark on the cover. Never recoloured, inverted or filtered. */
+function drawClientLogo(
+  slide: Slide,
+  logo: { dataUrl: string; light: boolean; aspect: number } | null,
+): void {
+  if (!logo) return;
+  const height = 0.62;
+  const width = Math.min(3.4, height * logo.aspect);
+  const x = W - M - width;
+  const y = 0.62;
+  if (!logo.light) {
+    // Client logos are usually built for light backgrounds, so a white panel
+    // keeps them legible on the navy slide. A light-on-dark logo needs none.
+    slide.addShape("roundRect", {
+      x: x - 0.14,
+      y: y - 0.12,
+      w: width + 0.28,
+      h: height + 0.24,
+      fill: { color: WHITE },
+      line: { color: WHITE, width: 0 },
+      rectRadius: 0.08,
+    });
+  }
+  try {
+    slide.addImage({ data: logo.dataUrl, x, y, w: width, h: height });
+  } catch {
+    // An unsupported image leaves the cover without a logo, never broken.
+  }
+}
+
 function cover(
   pres: PptxGenJS,
   spec: DeckSpec,
   meta: { date: string; subtitle: string },
+  clientLogo: { dataUrl: string; light: boolean; aspect: number } | null = null,
 ): void {
   useSurface(!BRANDED);
   const slide = pres.addSlide();
   slide.background = { color: pageBackground() };
+  drawClientLogo(slide, clientLogo);
   slide.addShape("rect", {
     x: 0,
     y: 0,
@@ -1377,7 +1409,7 @@ async function renderDeckSpec(
   pres.theme = { headFontFace: cfg.headingFont, bodyFontFace: cfg.bodyFont };
   defineMasters(pres);
 
-  cover(pres, spec, coverMeta);
+  cover(pres, spec, coverMeta, config.clientLogo ?? null);
   spec.slides.forEach((slideSpec, position) => {
     const index = position + 2;
     switch (slideSpec.content.layout) {

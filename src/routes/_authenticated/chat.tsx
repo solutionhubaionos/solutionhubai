@@ -35,11 +35,13 @@ import {
   mergeScopeWithContext,
   normalizeScope,
   scopePillLabels,
+  withPrimaryTargetLogo,
   withPrimaryTargetWebsite,
   type ConversationScope,
   type TargetClient,
 } from "@/lib/chat/conversationScope";
 import { loadConversationScope, saveConversationScope } from "@/lib/chat/scope.functions";
+import { extractTargetLogo } from "@/lib/documents/logo.functions";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { ChatTopBar } from "@/components/chat/ChatTopBar";
 import { Composer } from "@/components/chat/Composer";
@@ -284,18 +286,33 @@ function ChatPage() {
 
   /**
    * The website field above the composer stores the target's URL on the primary
-   * target, so a later export can ground the deck on it and detect its logo.
+   * target and detects its logo, which the deck puts on the first slide.
    */
   const syncTargetWebsite = useCallback(
     async (raw: string) => {
       const website = normaliseWebsite(raw);
       if (!website || !conversationId) return;
-      const current =
-        queryClient.getQueryData<ConversationScope>(["conversation-scope", conversationId]) ??
-        scope;
+      const read = () =>
+        queryClient.getQueryData<ConversationScope>(["conversation-scope", conversationId]) ?? scope;
+      const current = read();
       if (!current.targetClients[0]) return;
-      if (current.targetClients[0].websiteUrl === website) return;
-      await persistScope(withPrimaryTargetWebsite(current, website));
+      if (current.targetClients[0].websiteUrl !== website) {
+        await persistScope(withPrimaryTargetWebsite(current, website));
+      }
+      if (read().targetClients[0]?.logo) return;
+      try {
+        const result = await extractTargetLogo({ data: { url: website } });
+        if (!result.ok) return;
+        await persistScope(
+          withPrimaryTargetLogo(read(), {
+            dataUrl: result.logo.dataUrl,
+            light: result.logo.light,
+            aspect: result.logo.width / result.logo.height,
+          }),
+        );
+      } catch {
+        // No logo is fine; the cover falls back to the client's name.
+      }
     },
     [conversationId, persistScope, queryClient, scope],
   );
@@ -697,6 +714,7 @@ function ChatPage() {
           .map((name) => ({
             name,
             websiteUrl: website || null,
+            logo: null,
             industry: currentIndustry,
             anonymise: true,
             includePriorWork: false,

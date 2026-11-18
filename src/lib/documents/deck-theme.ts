@@ -95,6 +95,8 @@ export type DeckConfig = {
   wordmark?: string;
   fonts?: { heading?: string; body?: string };
   locale?: string;
+  /** The target client's logo, detected from its website; drawn on the cover. */
+  clientLogo?: { dataUrl: string; light: boolean; aspect: number } | null;
 };
 
 /** The renderer's effective configuration: theme defaults plus per-export overrides. */

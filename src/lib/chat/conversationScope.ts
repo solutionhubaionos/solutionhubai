@@ -28,9 +28,19 @@ export type ScopeCompany = {
  * retrieval filter. It shapes how the deck looks and gives retrieval a topical
  * hint (industry, and what the client does from the scraped page).
  */
+export type TargetLogo = {
+  dataUrl: string;
+  /** Logo opaque pixels are mostly light, so it sits on navy without a panel. */
+  light: boolean;
+  /** width / height, so a renderer keeps its proportions. */
+  aspect: number;
+};
+
 export type TargetClient = {
   name: string;
   websiteUrl: string | null;
+  /** The client's detected logo, extracted from its website. Never recoloured. */
+  logo: TargetLogo | null;
   industry: string | null;
   /** External decks say "a leading European airport operator" by default. */
   anonymise: boolean;
@@ -93,9 +103,24 @@ export function normalizeTargetClient(value: unknown): TargetClient | null {
   if (!name) return null;
   const text = (key: string, limit: number) =>
     typeof record[key] === "string" ? (record[key] as string).trim().slice(0, limit) : null;
+  const rawLogo = record["logo"];
+  const logo =
+    rawLogo && typeof rawLogo === "object"
+      ? (() => {
+          const entry = rawLogo as Record<string, unknown>;
+          const dataUrl = typeof entry["dataUrl"] === "string" ? entry["dataUrl"] : "";
+          if (!dataUrl.startsWith("data:image/")) return null;
+          return {
+            dataUrl,
+            light: entry["light"] === true,
+            aspect: typeof entry["aspect"] === "number" && entry["aspect"] > 0 ? entry["aspect"] : 3,
+          };
+        })()
+      : null;
   return {
     name: name.slice(0, 120),
     websiteUrl: text("websiteUrl", 500),
+    logo,
     industry: text("industry", 80),
     anonymise: record["anonymise"] !== false,
     includePriorWork: record["includePriorWork"] === true,
@@ -116,6 +141,19 @@ export function withPrimaryTargetWebsite(
   return {
     ...scope,
     targetClients: [{ ...primary, websiteUrl }, ...rest],
+  };
+}
+
+/** Stores the detected logo on the primary target. */
+export function withPrimaryTargetLogo(
+  scope: ConversationScope,
+  logo: TargetLogo | null,
+): ConversationScope {
+  const [primary, ...rest] = scope.targetClients;
+  if (!primary) return scope;
+  return {
+    ...scope,
+    targetClients: [{ ...primary, logo }, ...rest],
   };
 }
 
