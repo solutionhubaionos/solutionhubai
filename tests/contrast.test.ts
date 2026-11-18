@@ -21,7 +21,7 @@ describe("Aionos contrast table", () => {
   test("white on a light fill and graphics colours as text are forbidden", () => {
     expect(checkTextPair("FFFFFF", "00ECFF").ok).toBe(false);
     expect(checkTextPair("2148FB", "1C2453").ok).toBe(false);
-    expect(checkTextPair("BAD6FF", null).ok).toBe(false);
+    expect(checkTextPair("BAD6FF", "FFFFFF").ok).toBe(false);
   });
 
   test("the palette matches the Aionos guide", () => {
@@ -89,8 +89,8 @@ describe("rendered deck contrast", () => {
     );
     const findings = checkDeckContrast(firstSlides);
     expect(findings).toEqual([]);
-    // The cover is navy.
+    // The cover uses the kit's BLUE surface.
     const cover = new TextDecoder().decode(parts["ppt/slides/slide1.xml"]!);
-    expect(cover.toUpperCase()).toContain("1C2453");
+    expect(cover.toUpperCase()).toContain("2148FB");
   });
 });

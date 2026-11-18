@@ -28,6 +28,7 @@ const DARK_BACKDROPS = new Set<string>([
 
 /** Light fills that may carry navy text. */
 const LIGHT_BACKDROPS = new Set<string>([
+  PALETTE.white,
   PALETTE.pearl,
   PALETTE.mist,
   PALETTE.lightGrey,
@@ -38,10 +39,8 @@ const LIGHT_BACKDROPS = new Set<string>([
 
 /** Graphics-only colours: a text run in one of these is always a defect. */
 const GRAPHICS_ONLY = new Set<string>([
-  PALETTE.electricBlue,
   PALETTE.cyan,
   PALETTE.clay,
-  PALETTE.softBlue,
   PALETTE.pearl,
   PALETTE.mist,
   PALETTE.lightGrey,
@@ -60,6 +59,20 @@ export type ContrastVerdict = { ok: true } | { ok: false; reason: string };
  */
 export function checkTextPair(text: string, background: string | null): ContrastVerdict {
   const ink = hex(text);
+  // Electric blue is the label colour on light slides; on a dark ground it fails.
+  if (ink === PALETTE.electricBlue) {
+    if (background && !LIGHT_BACKDROPS.has(hex(background))) {
+      return { ok: false, reason: `electric blue text on dark background ${hex(background)}` };
+    }
+    return { ok: true };
+  }
+  // Soft blue is the section-label colour on navy slides, never on a light ground.
+  if (ink === PALETTE.softBlue) {
+    if (background && !DARK_BACKDROPS.has(hex(background))) {
+      return { ok: false, reason: `soft blue text on light background ${hex(background)}` };
+    }
+    return { ok: true };
+  }
   if (GRAPHICS_ONLY.has(ink)) {
     return { ok: false, reason: `${ink} is a graphics colour and cannot be text` };
   }

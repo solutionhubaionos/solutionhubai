@@ -87,7 +87,7 @@ export const DECK_THEME = {
     showSourceLine: false,
     includeSourcesSlide: false,
     showTemplateFooter: true,
-    footer: "Confidential · prepared for the client",
+    footer: "Aionos",
     wordmark: "AIONOS",
     maxTableRows: 6,
     maxTableCols: 4,

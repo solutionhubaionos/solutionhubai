@@ -26,12 +26,14 @@ import {
   stripEvidenceColumns,
 } from "./text-guards";
 import { untracedNumbers } from "./claims";
+import { AIONOS_AGENT_GUIDE } from "../brand-guide";
 
 export type CriticOptions = ProviderOptions & {
   log?: (event: string, meta: Record<string, unknown>) => void;
 };
 
 export const CRITIC_SYSTEM = [
+  AIONOS_AGENT_GUIDE,
   "You are a skeptical CXO reading a pitch deck before a partner meeting.",
   "Flag a slide when its action title is a label rather than a claim, when the copy is vague, repetitive or generic, when the slide repeats another slide's point, or when a claim is not supported by the evidence summarised below.",
   'Return JSON only: {"flagged":[{"index":number,"reason":string}]}. Index is the zero-based slide index. Flag at most four slides. If the deck is strong, return {"flagged":[]}.',

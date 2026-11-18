@@ -14,12 +14,14 @@ import { withMaxTokens, llmBudget } from "../llm-budget";
 import { catalogueForPrompt, DeckPlanSchema } from "./catalog";
 import type { DeckPlan, DeckPlanSlide, PlannerLayoutId } from "./types";
 import { evidenceForPlanner, type EvidencePack } from "./evidence";
+import { AIONOS_AGENT_GUIDE } from "../brand-guide";
 
 export type PlannerOptions = ProviderOptions & {
   log?: (event: string, meta: Record<string, unknown>) => void;
 };
 
 export const PLANNER_SYSTEM = [
+  AIONOS_AGENT_GUIDE,
   "You are a senior pre-sales strategist planning a client-ready pitch deck for Aionos.",
   'Return JSON only, no fences: {"deckTitle":string,"audience":string,"storyline":string,"slides":[{layout,actionTitle,purpose,evidenceRefs,tier}]}.',
   "The deck has one argument, told in six to ten slides: Situation, Insight, Propose, Proof, Plan, Ask.",

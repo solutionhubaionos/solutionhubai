@@ -646,7 +646,7 @@ describe("consulting layouts", () => {
       const inks = [...bodyXml.matchAll(/<a:solidFill><a:srgbClr val="([0-9A-F]{6})"\/>/g)].map(
         (match) => match[1]!,
       );
-      expect(background).toBe("1C2453");
+      expect(background).toBe("2148FB");
       // The title ink must not be the same navy as the canvas.
       expect(inks).not.toContain(background);
       expect(inks.some((ink) => contrastRatio(`#${ink}`, `#${background}`) >= 4.5)).toBe(true);

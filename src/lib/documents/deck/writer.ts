@@ -26,6 +26,7 @@ import {
   stripUnresolvedTokens,
 } from "./text-guards";
 import { untracedNumbers } from "./claims";
+import { AIONOS_AGENT_GUIDE } from "../brand-guide";
 import { roleForParty } from "./entities";
 
 export type WriterOptions = ProviderOptions & {
@@ -33,6 +34,7 @@ export type WriterOptions = ProviderOptions & {
 };
 
 export const WRITER_SYSTEM = [
+  AIONOS_AGENT_GUIDE,
   "You write one slide of a client-ready sales deck for Aionos. Return JSON only, no fences.",
   'Shape: {"content":{"layout":string,...},"notes":string,"sourceNote":string}.',
   "Fill the layout you are given. Do not change its layout id and do not add a second layout.",
