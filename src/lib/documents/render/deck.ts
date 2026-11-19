@@ -12,7 +12,7 @@ import {
   CHART_SERIES_LIGHT,
   CHART_SERIES_NAVY,
   SURFACE_BACKGROUND,
-  assignSurfaces,
+  surfaceForPage,
   type Surface,
 } from "../brand-guide";
 import { palette } from "../tokens";
@@ -79,6 +79,8 @@ type SurfaceView = {
   /** The Aionos wordmark variant that reads on this surface. */
   logo: string;
   series: string[];
+  /** True for the gradient page: draw the baked image behind the content. */
+  gradient: boolean;
 };
 
 /**
@@ -106,15 +108,15 @@ function surfaceView(surface: Surface): SurfaceView {
       onAccent: WHITE_HEX,
       logo: AIONOS_LOGO.navy,
       series: CHART_SERIES_LIGHT,
+      gradient: false,
     };
   }
-  // navy/blue content slides, the deep-navy cover and closing all follow the
-  // light-box rule: boxes are pearl with deep navy text.
+  // The gradient page: boxes are pearl with deep navy text; page text is white.
   return {
     background,
     ink: WHITE_HEX,
     inkMuted: SOFT_HEX,
-    label: surface === "cover" ? WHITE_HEX : SOFT_HEX,
+    label: SOFT_HEX,
     heading: WHITE_HEX,
     card: PEARL_HEX,
     cardBorder: PEARL_HEX,
@@ -127,6 +129,7 @@ function surfaceView(surface: Surface): SurfaceView {
     onAccent: DEEP_HEX,
     logo: AIONOS_LOGO.white,
     series: CHART_SERIES_NAVY,
+    gradient: true,
   };
 }
 
@@ -270,9 +273,9 @@ type ChromeOptions = {
 function chrome(pres: PptxGenJS, options: ChromeOptions): Slide {
   const slide = pres.addSlide();
   slide.background = { color: VIEW.background };
-  const logo = options.dark ? AIONOS_LOGO.white : AIONOS_LOGO.navy;
+  if (VIEW.gradient) slide.addImage({ data: IMG.gradient, x: 0, y: 0, w: W, h: H });
   slide.addImage({
-    data: logo,
+    data: VIEW.logo,
     x: W - M - 1.7,
     y: 0.33,
     w: 1.7,
@@ -979,7 +982,7 @@ function imageSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number): v
     });
     addText(slide, slideSpec.content.caption, M, 5.62, CONTENT_W, 0.8, {
       fontSize: 16,
-      color: cardMuted(),
+      color: VIEW.ink,
       fontFace: FONTS.heading,
       align: "center",
       valign: "top",
@@ -1356,24 +1359,10 @@ function agendaPages(entries: readonly string[]): string[][] {
   return pages;
 }
 
-/** A pearl contents page: numbered headings under the word "Contents". */
+/** A numbered contents page, on whichever surface the alternation gives it. */
 function agendaSlide(pres: PptxGenJS, entries: readonly string[], index: number): void {
-  const slide = pres.addSlide();
-  slide.background = { color: AIONOS_TOKENS.pearl };
-  slide.addImage({
-    data: AIONOS_LOGO.navy,
-    x: W - M - 1.7,
-    y: 0.33,
-    w: 1.7,
-    h: 0.44,
-    sizing: { type: "contain", w: 1.7, h: 0.44 },
-  });
-  addText(slide, EYEBROW || "Contents", M, 0.42, 8.8, 0.28, {
-    fontFace: FONTS.body,
-    fontSize: 11,
-    color: BLUE_HEX,
-    charSpacing: 1.3,
-  });
+  setSurface(surfaceForPage(index));
+  const slide = chrome(pres, { tag: "Contents", index });
   slide.addText("Contents", {
     x: M,
     y: 0.85,
@@ -1382,7 +1371,7 @@ function agendaSlide(pres: PptxGenJS, entries: readonly string[], index: number)
     fontFace: FONTS.heading,
     fontSize: 34,
     bold: true,
-    color: DEEP_HEX,
+    color: VIEW.heading,
     margin: 0,
     isTextBox: true,
   });
@@ -1390,14 +1379,9 @@ function agendaSlide(pres: PptxGenJS, entries: readonly string[], index: number)
     addText(slide, entry, M, 1.9 + position * 0.9, CONTENT_W, 0.8, {
       fontFace: FONTS.heading,
       fontSize: 20,
-      color: DEEP_HEX,
+      color: VIEW.ink,
       valign: "top",
     });
-  });
-  addText(slide, String(index), W - M - 0.6, 6.94, 0.6, 0.2, {
-    fontSize: 11,
-    color: NAVY_HEX,
-    align: "right",
   });
 }
 
@@ -1419,8 +1403,8 @@ async function renderDeckSpec(
   EYEBROW = clean(coverMeta.industry || "");
   setSurface("light");
 
-  // Page 1 is the co-brand lockup, which carries no number; the gradient title
-  // is page 2, then the contents, then one numbered page per slide.
+  // Page 1 is the client lockup (white); page 2 is the gradient title; then the
+  // deck alternates white / gradient by page position.
   let pageNumber = 1;
   clientLockupPage(pres, config.clientLogo ?? null);
   pageNumber += 1;
@@ -1436,12 +1420,11 @@ async function renderDeckSpec(
     }
   }
 
-  const surfaces = assignSurfaces(spec.slides.map((slideSpec) => slideSpec.content.layout));
   spec.slides.forEach((slideSpec, position) => {
     pageNumber += 1;
     const index = pageNumber;
     SLIDE_NUMBER = sectionNumber(position);
-    setSurface(surfaces[position] ?? "light");
+    setSurface(surfaceForPage(pageNumber));
     switch (slideSpec.content.layout) {
       case "section-divider":
         divider(pres, slideSpec, index);

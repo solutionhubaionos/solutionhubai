@@ -1,6 +1,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { FileText, MessageSquare, Plus, Presentation, Sparkles } from "lucide-react";
+import { FileText, MessageSquare, Plus, Presentation } from "lucide-react";
+import { AgentMark } from "@/components/AgentMark";
 import { supabase } from "@/integrations/supabase/client";
 import { FilePreviewDialog } from "@/components/FilePreviewDialog";
 import type { ContentItem } from "@/lib/content";
@@ -117,9 +118,7 @@ function EmptyState({
 }) {
   return (
     <section className="flex min-h-0 flex-1 flex-col items-center justify-center px-1 py-4 text-center">
-      <span className="mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-primary text-primary-foreground shadow-card sm:mb-5 sm:h-16 sm:w-16">
-        <Sparkles size={26} />
-      </span>
+      <AgentMark className="mb-4 h-14 w-14 sm:mb-5 sm:h-16 sm:w-16" />
 
       <h2 className="text-balance font-display text-2xl font-bold text-foreground sm:text-3xl">
         How can I help today?
@@ -201,12 +200,7 @@ function Bubble({
 
   return (
     <div className="flex gap-3">
-      <span
-        aria-hidden
-        className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary/10 text-primary"
-      >
-        <Sparkles size={15} />
-      </span>
+      <AgentMark className="mt-0.5 h-8 w-8" />
       <div className="min-w-0 max-w-[85%] space-y-3">
         {message.content.trim().length > 0 && (
           <div
@@ -328,12 +322,7 @@ function SourceChip({ source }: { source: ChatSource }) {
 function ThinkingRow() {
   return (
     <div className="flex gap-3" role="status" aria-live="polite">
-      <span
-        aria-hidden
-        className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary/10 text-primary"
-      >
-        <Sparkles size={15} />
-      </span>
+      <AgentMark className="mt-0.5 h-8 w-8" />
       <div className="inline-flex items-center gap-1.5 rounded-2xl rounded-bl-md border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
         <span>Thinking</span>
         <span className="flex items-center" aria-hidden>

@@ -60,8 +60,8 @@
     "flat": ["2148FB", "1C2453", "FFAF75", "BAD6FF"]
   },
   "surfaces": {
-    "$comment": "White is the only slide background. The gradient title's fallback canvas is deep_navy, but blue is never a solid background anywhere else — the baked gradient image is the only blue surface, and never an <a:gradFill>.",
-    "cover": "deepNavy",
+    "$comment": "Odd pages are white, even pages wear the baked gradient (deep_navy fallback) — never an <a:gradFill>, and never a solid dark blue without the image.",
+    "gradient": "deepNavy",
     "light": "white",
     "white": "white"
   },
