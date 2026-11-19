@@ -52,14 +52,9 @@ function Index() {
         <div className="relative mx-auto max-w-7xl px-6">
           <header className="flex items-center justify-between py-6">
             <Logo inverted />
-            <div className="flex items-center gap-2">
-              <Button asChild variant="glass">
-                <Link to="/chat">Chat</Link>
-              </Button>
-              <Button asChild variant="glass">
-                <Link to="/auth">Sign in</Link>
-              </Button>
-            </div>
+            <Button asChild variant="glass">
+              <Link to="/auth">Sign in</Link>
+            </Button>
           </header>
           <div className="max-w-2xl pb-28 pt-20 md:pt-32">
             <p className="text-sm font-semibold uppercase tracking-[0.2em] text-accent">

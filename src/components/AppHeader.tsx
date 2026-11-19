@@ -1,6 +1,6 @@
 import { Link, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { LogOut, Menu, ChevronDown } from "lucide-react";
+import { LogOut, Menu, ChevronDown, MessageSquare } from "lucide-react";
 import { Logo } from "./Logo";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
@@ -35,7 +35,13 @@ export function AppHeader() {
       <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
         <Logo to="/library" />
         <div className="flex items-center gap-3">
-          <nav aria-label="Main navigation">
+          <nav aria-label="Main navigation" className="flex items-center gap-2">
+            <Button asChild variant="outline">
+              <Link to="/chat">
+                <MessageSquare />
+                <span className="hidden sm:inline">Chat</span>
+              </Link>
+            </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" aria-label="Open navigation menu">
@@ -47,9 +53,6 @@ export function AppHeader() {
               <DropdownMenuContent align="end" className="w-64 max-w-[90vw]">
                 <DropdownMenuItem asChild>
                   <Link to="/library">Library</Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link to="/chat">AI Search</Link>
                 </DropdownMenuItem>
                 {role === "admin" && (
                   <DropdownMenuItem asChild>
