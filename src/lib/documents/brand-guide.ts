@@ -21,12 +21,12 @@ export const AIONOS_TOKENS = {
   white: palette.white,
 } as const;
 
-/** The only backgrounds a slide wears: the light page and the gradient title. */
-export type Surface = "cover" | "light";
+/** A slide is either the light page or the gradient page; they alternate. */
+export type Surface = "light" | "gradient";
 
 /** The token key that names each surface's background. */
 export const SURFACE_BACKGROUND: Record<Surface, PaletteName> = {
-  cover: TOKENS.surfaces.cover as PaletteName,
+  gradient: TOKENS.surfaces.gradient as PaletteName,
   light: TOKENS.surfaces.light as PaletteName,
 };
 
@@ -51,9 +51,9 @@ export const CHART_SERIES_LIGHT = [...TOKENS.chartSeries.light];
 export const CHART_SERIES_NAVY = [...TOKENS.chartSeries.navy];
 
 /**
- * Every content page is white. Dark blue is never a solid background; the only
- * blue surface is the baked gradient title, drawn directly by the renderer.
+ * The deck alternates: odd pages white, even pages the baked gradient. The
+ * renderer derives each page's surface from its 1-based position.
  */
-export function assignSurfaces(layouts: readonly string[]): Surface[] {
-  return layouts.map(() => "light");
+export function surfaceForPage(pageNumber: number): Surface {
+  return pageNumber % 2 === 0 ? "gradient" : "light";
 }

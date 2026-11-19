@@ -625,7 +625,7 @@ describe("consulting layouts", () => {
     expect(joined).toContain("Operational data is fragmented");
   });
 
-  test("keeps the gradient title dark and every content page white", async () => {
+  test("keeps the gradient title dark and the third page white", async () => {
     const spec = specWith([
       slide(
         {

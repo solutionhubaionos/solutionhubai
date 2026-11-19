@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronUp, LayoutDashboard, LogOut, Plus, Sparkles, X } from "lucide-react";
+import { ChevronUp, LayoutDashboard, LogOut, Plus, X } from "lucide-react";
+import { AgentMark } from "@/components/AgentMark";
 import { supabase } from "@/integrations/supabase/client";
 import {
   FOCUS,
@@ -103,9 +104,7 @@ export function ChatSidebar({
       {/* brand header (the drawer adds a close button) */}
       <div className="flex h-16 shrink-0 items-center px-3">
         <span className={rowIconCls}>
-          <span className="grid h-6 w-6 place-items-center rounded-lg bg-primary text-primary-foreground">
-            <Sparkles size={15} />
-          </span>
+          <AgentMark className="h-6 w-6" />
         </span>
         <span className={labelColCls(expanded)}>
           <span className={`${rowLabelCls} font-display text-sm font-semibold text-foreground`}>

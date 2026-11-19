@@ -11,7 +11,7 @@ import {
   paletteIsComplete,
 } from "../src/lib/documents/render/palette-check";
 import { SAFE_PAIRS, TOKENS, palette, validateTokens } from "../src/lib/documents/tokens";
-import { assignSurfaces, SURFACE_BACKGROUND } from "../src/lib/documents/brand-guide";
+import { surfaceForPage, SURFACE_BACKGROUND } from "../src/lib/documents/brand-guide";
 import type { DeckSpec } from "../src/lib/documents/deck/types";
 
 function spec(): DeckSpec {
@@ -110,23 +110,16 @@ describe("brand tokens", () => {
     expect(TOKENS.fonts.deckHeading).toBe("Century Gothic");
     expect(TOKENS.fonts.deckBody).toBe("Aptos");
     expect(TOKENS.fonts.deckChart).toBe("+mn-lt");
-    expect(SURFACE_BACKGROUND.cover).toBe("deepNavy");
+    expect(SURFACE_BACKGROUND.gradient).toBe("deepNavy");
     expect(SURFACE_BACKGROUND.light).toBe("white");
   });
 
-  test("every content page is the light surface", () => {
-    const layouts = [
-      "section-divider",
-      "context-bullets",
-      "kpi-cards",
-      "context-bullets",
-      "chart-with-takeaway",
-      "partner-hub",
-      "next-steps-ask",
-    ];
-    const surfaces = assignSurfaces(layouts);
-    // Dark blue is never a content background; the gradient title is separate.
-    expect(surfaces.every((surface) => surface === "light")).toBe(true);
+  test("pages alternate white and gradient by position", () => {
+    // Page 1 white, page 2 gradient, page 3 white, page 4 gradient, …
+    expect(surfaceForPage(1)).toBe("light");
+    expect(surfaceForPage(2)).toBe("gradient");
+    expect(surfaceForPage(3)).toBe("light");
+    expect(surfaceForPage(4)).toBe("gradient");
   });
 
   test("a rendered deck uses only brand colours and the bundled imagery", async () => {
@@ -141,9 +134,9 @@ describe("brand tokens", () => {
     expect(media.every((name) => /\.(?:png|jpe?g)$/i.test(name))).toBe(true);
     const { sequence, findings } = checkDeckBackgrounds(parts);
     expect(findings).toEqual([]);
+    // Page 1 is the white lockup; page 2 is the gradient title.
     expect(sequence[0]).toBe(palette.white);
-    // The only dark canvas is the gradient title; the last page is white.
-    expect(sequence.at(-1)).toBe(palette.white);
+    expect(sequence[1]).toBe(palette.deepNavy);
     const cover = new TextDecoder().decode(parts["ppt/slides/slide1.xml"]!);
     expect(cover).toMatch(`val="${palette.white}"`);
   });
