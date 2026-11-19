@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { unzipSync } from "fflate";
-import { logoCandidates } from "../src/lib/documents/client-logo";
+import { logoCandidates } from "../src/lib/logo/candidates";
 import { renderDeck } from "../src/lib/documents/render/deck";
 import type { DeckSpec } from "../src/lib/documents/deck/types";
 
@@ -44,6 +44,22 @@ describe("client logo detection", () => {
       </body>`;
     const candidates = logoCandidates(html, new URL("https://example.com/"));
     expect(candidates[0]?.url).toBe("https://images.example.com/brandlogo/emtlogo_new8.svg");
+  });
+
+  test("reads a JSON-LD logo and a lazy image, and skips country flags", () => {
+    const html = `
+      <head>
+        <script type="application/ld+json">{"@type":"Organization","logo":{"url":"/brand/mark.png"}}</script>
+      </head>
+      <body>
+        <img data-src="/assets/site-logo.svg" alt="Home" />
+        <img src="/sites-logo/egypt.svg" class="logo" alt="Egypt" />
+      </body>`;
+    const candidates = logoCandidates(html, new URL("https://example.com/"));
+    const urls = candidates.map((entry) => entry.url);
+    expect(urls).toContain("https://example.com/brand/mark.png");
+    expect(urls).toContain("https://example.com/assets/site-logo.svg");
+    expect(urls.some((url) => url.includes("egypt"))).toBe(false);
   });
 });
 
@@ -91,5 +107,16 @@ describe("client logo on the cover", () => {
       subtitle: "Pitch",
     });
     expect(rendered.pages).toBeGreaterThanOrEqual(2);
+  });
+
+  test("backs a mostly-light logo with a navy panel on the lockup page", async () => {
+    const rendered = await renderDeck(
+      specWithLogo(),
+      { date: "18 November 2026", subtitle: "Pitch" },
+      { clientLogo: { dataUrl: PNG, light: true, aspect: 3 } },
+    );
+    const parts = unzipSync(rendered.bytes);
+    const lockup = new TextDecoder().decode(parts["ppt/slides/slide1.xml"]!);
+    expect(lockup).toMatch('val="1C2453"');
   });
 });

@@ -17,12 +17,25 @@ import {
 } from "../brand-guide";
 import { palette } from "../tokens";
 import { AIONOS_LOGO } from "../assets/aionos-logo";
+import { DECK_THEME_IMAGES } from "../assets/aionos-theme";
 import { claimValue, untracedNumbers } from "../deck/claims";
 import { hasPlaceholders } from "../deck/text-guards";
 import { tidyPie, validateChart } from "../deck/chart-validate";
 import { visibleStrings } from "../deck/writer";
 import { contrastRatio } from "../../brand/color";
-import { dropDanglingOverrides } from "./pptx-package";
+import { normalizeDeckPackage } from "./pptx-package";
+
+const IMG = DECK_THEME_IMAGES;
+
+/** Cover facts gathered by the build stage and rendered onto the cover pages. */
+export type DeckCoverMeta = {
+  date: string;
+  subtitle: string;
+  /** The target sector/industry, used as the eyebrow on content slides. */
+  industry?: string | null;
+  /** The pitched client, used for the co-brand lockup. */
+  customer?: string | null;
+};
 
 /**
  * The brand theme, read once from `aionos.tokens.json` (via DECK_THEME). C, FONTS
@@ -118,6 +131,10 @@ function surfaceView(surface: Surface): SurfaceView {
 }
 
 let VIEW: SurfaceView = surfaceView("navy");
+/** The target industry shown as the eyebrow on every content page. */
+let EYEBROW = "";
+/** The "01" prefix carried by the current slide's heading. */
+let SLIDE_NUMBER = "";
 
 /** Selects the surface for the next slide (kit rhythm; set once per slide). */
 function setSurface(surface: Surface): void {
@@ -165,12 +182,33 @@ function clean(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
+/** "01", "02", ... the number every slide heading carries in the kit. */
+function sectionNumber(index: number): string {
+  return String(index + 1).padStart(2, "0");
+}
+
 function short(text: string, max: number): string {
   const value = clean(text);
   if (value.length <= max) return value;
   const cut = value.slice(0, max);
   const space = cut.lastIndexOf(" ");
   return `${cut.slice(0, space > max * 0.6 ? space : max).trimEnd()}…`;
+}
+
+/** Splits prose into slide-sized chunks, breaking on a word where possible. */
+function splitSlideText(text: string, maxChars = 490): string[] {
+  const chunks: string[] = [];
+  let rest = clean(text);
+  while (rest) {
+    let end = Math.min(rest.length, maxChars);
+    if (end < rest.length) {
+      const space = rest.lastIndexOf(" ", end);
+      if (space > end / 2) end = space;
+    }
+    chunks.push(rest.slice(0, end));
+    rest = rest.slice(end).trim();
+  }
+  return chunks;
 }
 
 function addText(
@@ -197,86 +235,64 @@ function addText(
   });
 }
 
-function addRichTitle(slide: Slide, value: string, y = G.titleY): void {
-  slide.addText(clean(value), {
+function addRichTitle(slide: Slide, value: string): void {
+  const clean_ = clean(value);
+  const text = SLIDE_NUMBER ? `${SLIDE_NUMBER}  ${clean_}` : clean_;
+  slide.addText(text, {
     x: M,
-    y,
+    y: G.titleY,
     w: CONTENT_W,
     h: G.titleH,
     fontFace: FONTS.heading,
-    fontSize: S.title,
+    fontSize: text.length > 100 ? 27 : 34,
     bold: true,
     color: headingColor(0),
     margin: 0,
-    valign: "middle",
+    valign: "top",
     isTextBox: true,
     fit: "shrink",
   });
 }
 
-function addRule(slide: Slide, y = G.ruleY): void {
-  slide.addShape("rect", {
-    x: M,
-    y,
-    w: CONTENT_W,
-    h: 0.02,
-    fill: { color: VIEW.cardBorder },
-    line: { color: VIEW.cardBorder, width: 0 },
-  });
-}
-
 type ChromeOptions = {
+  /** The eyebrow: the target industry when the deck knows one, else a layout tag. */
   tag?: string;
   dark?: boolean;
   index: number;
-  footer?: boolean;
 };
 
 /**
- * Two masters keep the layouts count real and the footer consistent. A branded
- * deck cannot bake one footer colour into a master because its pages alternate
- * white and colour, so the footer and page number are drawn per slide in
- * `chrome` with the current surface's ink.
+ * Every page is drawn directly: the reference kit has no alternating surface,
+ * so a slide master would only carry one background and one footer colour. The
+ * eyebrow and the wordmark sit top-left and top-right; the page number sits
+ * bottom-right.
  */
-function defineMasters(pres: PptxGenJS): void {
-  // Backgrounds and footers are drawn per slide in `chrome`, because the kit
-  // alternates LIGHT / NAVY / BLUE and a baked master could only carry one.
-  pres.defineSlideMaster({ title: "content" });
-  pres.defineSlideMaster({ title: "dark" });
-}
-
 function chrome(pres: PptxGenJS, options: ChromeOptions): Slide {
-  const slide = pres.addSlide({ masterName: options.dark ? "dark" : "content" });
+  const slide = pres.addSlide();
   slide.background = { color: VIEW.background };
-  slide.addShape("rect", {
-    x: M,
-    y: H - 0.46,
-    w: CONTENT_W,
-    h: 0.01,
-    fill: { color: VIEW.cardBorder },
-    line: { color: VIEW.cardBorder, width: 0 },
-  });
+  const logo = options.dark ? AIONOS_LOGO.white : AIONOS_LOGO.navy;
   slide.addImage({
-    data: VIEW.logo,
-    x: M,
-    y: H - 0.5,
-    w: 0.9,
-    h: 0.9 / AIONOS_LOGO.aspect,
+    data: logo,
+    x: W - M - 1.7,
+    y: 0.33,
+    w: 1.7,
+    h: 0.44,
+    sizing: { type: "contain", w: 1.7, h: 0.44 },
   });
-  addText(slide, String(options.index), W - M - 0.5, H - 0.4, 0.5, 0.22, {
-    fontSize: S.caption,
+  const eyebrow = EYEBROW || options.tag || "";
+  if (eyebrow) {
+    addText(slide, eyebrow, M, 0.42, 8.8, 0.28, {
+      fontFace: FONTS.body,
+      fontSize: 11,
+      color: VIEW.label,
+      charSpacing: 1.3,
+    });
+  }
+  addText(slide, String(options.index), W - M - 0.6, 6.94, 0.6, 0.2, {
+    fontSize: 11,
     color: VIEW.inkMuted,
     align: "right",
   });
-  if (options.tag && !options.dark) {
-    addText(slide, options.tag.toUpperCase(), M, G.tagY, 7, 0.24, {
-      fontFace: FONTS.heading,
-      fontSize: S.tag,
-      bold: true,
-      color: VIEW.label,
-      charSpacing: 1.6,
-    });
-  }
   return slide;
 }
 
@@ -285,16 +301,16 @@ function tierBadge(slide: Slide, tier: DeckSpecSlide["tier"]): void {
   const label = tier === "illustrative" ? "ILLUSTRATIVE" : "PROPOSED";
   const color = tier === "illustrative" ? C.amber : C.coral;
   slide.addShape("roundRect", {
-    x: W - M - 1.35,
-    y: G.tagY - 0.02,
-    w: 1.35,
+    x: M,
+    y: H - 0.62,
+    w: 1.5,
     h: 0.28,
     fill: { color: AIONOS_TOKENS.pearl },
     line: { color, width: 0.75 },
     rectRadius: 0.08,
   });
-  addText(slide, label, W - M - 1.35, G.tagY + 0.01, 1.35, 0.24, {
-    fontSize: 12,
+  addText(slide, label, M, H - 0.59, 1.5, 0.24, {
+    fontSize: 11,
     bold: true,
     color: C.navy,
     align: "center",
@@ -312,73 +328,132 @@ function sourceLine(slide: Slide, value: string): void {
 
 /* ---------------------------------------------------------------- slides --- */
 
-/** The client's own mark on the cover, top-left, sitting straight on the slide. */
-function drawClientLogo(slide: Slide, logo: { dataUrl: string; aspect: number } | null): void {
-  if (!logo) return;
-  const height = 0.9;
-  const width = Math.min(3.4, height * logo.aspect);
-  try {
-    slide.addImage({ data: logo.dataUrl, x: M, y: 0.62, w: width, h: height });
-  } catch {
-    // An unsupported image leaves the cover without a logo, never broken.
-  }
-}
-
-function cover(
-  pres: PptxGenJS,
-  spec: DeckSpec,
-  meta: { date: string; subtitle: string },
-  clientLogo: { dataUrl: string; light: boolean; aspect: number } | null = null,
-): void {
-  const slide = chrome(pres, { dark: false, index: 1 });
-  drawClientLogo(slide, clientLogo);
-  slide.addShape("rect", {
-    x: 0,
-    y: 0,
-    w: 0.16,
-    h: H,
-    fill: { color: VIEW.accent },
-    line: { color: VIEW.accent, width: 0 },
-  });
-  slide.addImage({ data: VIEW.logo, x: W - M - 0.9, y: 0.62, w: 0.9, h: 0.9 / AIONOS_LOGO.aspect });
-  slide.addText(clean(spec.deckTitle), {
-    x: M,
-    y: 2.05,
-    w: CONTENT_W - 0.6,
-    h: 2.0,
+/** The gradient title canvas: the kit's opening page, drawn full-bleed. */
+function cover(pres: PptxGenJS, spec: DeckSpec, meta: DeckCoverMeta, pageNumber: number): void {
+  const slide = pres.addSlide();
+  slide.background = { color: DEEP_HEX };
+  slide.addImage({ data: IMG.gradient, x: 0, y: 0, w: W, h: H });
+  const title = clean(spec.deckTitle);
+  slide.addText(title, {
+    x: 0.7,
+    y: 0.85,
+    w: 7.1,
+    h: 1.65,
     fontFace: FONTS.heading,
-    fontSize: 38,
+    fontSize: title.length > 90 ? 34 : 40,
     bold: true,
-    color: readableInk(pageBackground(), headingColor(0)),
+    color: C.white,
     margin: 0,
     valign: "middle",
     isTextBox: true,
     fit: "shrink",
   });
-  slide.addShape("rect", {
-    x: M,
-    y: 4.3,
-    w: 1.4,
-    h: 0.05,
-    fill: { color: C.coral },
-    line: { color: C.coral, width: 0 },
-  });
-  addText(slide, meta.subtitle, M, 4.55, CONTENT_W - 1.2, 0.9, {
-    fontFace: FONTS.heading,
+  const summary = splitSlideText(spec.storyline, 280);
+  slide.addText(summary[0] ?? "", {
+    x: 0.7,
+    y: 2.85,
+    w: 7.0,
+    h: 1.4,
+    fontFace: FONTS.body,
     fontSize: 17,
-    color: VIEW.ink,
+    color: C.white,
+    margin: 0,
+    valign: "top",
+    isTextBox: true,
+    fit: "shrink",
   });
-  addText(slide, `${spec.audience} · ${meta.date}`, M, H - 1.1, CONTENT_W, 0.3, {
-    fontSize: 12,
-    color: VIEW.ink,
+  if (IMG.teamPhoto) {
+    slide.addImage({
+      data: IMG.teamPhoto,
+      x: 8.35,
+      y: 0.75,
+      w: 4.3,
+      h: 5.35,
+      sizing: { type: "contain", w: 4.3, h: 5.35 },
+    });
+  }
+  const subtitle = clean([meta.subtitle, spec.audience].filter(Boolean).join("  ·  "));
+  if (subtitle) {
+    slide.addText(subtitle, {
+      x: 0.7,
+      y: 4.55,
+      w: 7.0,
+      h: 0.6,
+      fontFace: FONTS.body,
+      fontSize: 13,
+      color: C.teal,
+      margin: 0,
+      valign: "top",
+      isTextBox: true,
+      fit: "shrink",
+    });
+  }
+  if (meta.date) {
+    slide.addText(clean(meta.date), {
+      x: 0.7,
+      y: 6.45,
+      w: 11.8,
+      h: 0.25,
+      fontFace: FONTS.body,
+      fontSize: 11,
+      color: C.white,
+      margin: 0,
+      isTextBox: true,
+    });
+  }
+  slide.addText(String(pageNumber), {
+    x: W - M - 0.6,
+    y: 6.94,
+    w: 0.6,
+    h: 0.2,
+    fontFace: FONTS.body,
+    fontSize: 11,
+    color: C.white,
+    margin: 0,
+    align: "right",
+    isTextBox: true,
   });
   slide.addNotes(clean(spec.storyline));
+}
+
+/** The white client-lockup page: the target's own mark, and nothing else. */
+function clientLockupPage(
+  pres: PptxGenJS,
+  clientLogo: { dataUrl: string; light: boolean; aspect: number } | null,
+): void {
+  const slide = pres.addSlide();
+  slide.background = { color: C.white };
+  if (!clientLogo) return;
+  const width = 3.15;
+  const x = (W - width) / 2;
+  // A mostly-light mark (many sites ship a white navbar logo) disappears on
+  // the white page, so it sits on a navy panel.
+  if (clientLogo.light) {
+    const panelWidth = 3.51;
+    slide.addShape("roundRect", {
+      x: (W - panelWidth) / 2,
+      y: 3.23,
+      w: panelWidth,
+      h: 0.9,
+      fill: { color: NAVY_HEX },
+      line: { color: NAVY_HEX, width: 0 },
+      rectRadius: 0.06,
+    });
+  }
+  slide.addImage({
+    data: clientLogo.dataUrl,
+    x,
+    y: 3.37,
+    w: width,
+    h: 0.62,
+    sizing: { type: "contain", w: width, h: 0.62 },
+  });
 }
 
 function divider(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number): void {
   const slide = chrome(pres, { dark: true, index });
   if (slideSpec.content.layout !== "section-divider") return;
-  addText(slide, String(index).padStart(2, "0"), M, 1.5, 2, 0.5, {
+  addText(slide, SLIDE_NUMBER, M, 1.5, 2, 0.5, {
     fontFace: FONTS.heading,
     fontSize: 15,
     bold: true,
@@ -411,7 +486,6 @@ function divider(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number): void
 function bulletsSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number): void {
   const slide = chrome(pres, { tag: "Context", index });
   addRichTitle(slide, slideSpec.actionTitle);
-  addRule(slide);
   if (slideSpec.content.layout !== "context-bullets") return;
   tierBadge(slide, slideSpec.tier);
   const bullets = slideSpec.content.bullets.slice(0, 4);
@@ -454,7 +528,6 @@ function bulletsSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number):
 function kpiSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, spec: DeckSpec, index: number): void {
   const slide = chrome(pres, { tag: "Evidence", index });
   addRichTitle(slide, slideSpec.actionTitle);
-  addRule(slide);
   if (slideSpec.content.layout !== "kpi-cards") return;
   tierBadge(slide, slideSpec.tier);
   const cards = slideSpec.content.cards.slice(0, 4);
@@ -521,7 +594,6 @@ function kpiSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, spec: DeckSpec, ind
 function hubSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number): void {
   const slide = chrome(pres, { tag: "Partners", index });
   addRichTitle(slide, slideSpec.actionTitle);
-  addRule(slide);
   if (slideSpec.content.layout !== "partner-hub") return;
   if (slideSpec.tier !== "sourced") tierBadge(slide, slideSpec.tier);
   const centreX = W / 2;
@@ -594,7 +666,6 @@ function hubSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number): voi
 function compareSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number): void {
   const slide = chrome(pres, { tag: "The change", index });
   addRichTitle(slide, slideSpec.actionTitle);
-  addRule(slide);
   const content = slideSpec.content;
   if (content.layout !== "two-column-compare" && content.layout !== "before-after") return;
   tierBadge(slide, slideSpec.tier);
@@ -644,7 +715,6 @@ function compareSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number):
 function tableSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, tag: string, index: number): void {
   const slide = chrome(pres, { tag, index });
   addRichTitle(slide, slideSpec.actionTitle);
-  addRule(slide);
   const content = slideSpec.content;
   if (
     content.layout !== "table-compact" &&
@@ -709,7 +779,6 @@ function tableSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, tag: string, inde
 function roadmapSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number): void {
   const slide = chrome(pres, { tag: "Delivery", index });
   addRichTitle(slide, slideSpec.actionTitle);
-  addRule(slide);
   if (slideSpec.content.layout !== "process-roadmap") return;
   tierBadge(slide, slideSpec.tier);
   const steps = slideSpec.content.steps.slice(0, 5);
@@ -765,7 +834,6 @@ function chartSlide(
 ): void {
   const slide = chrome(pres, { tag: "Evidence", index });
   addRichTitle(slide, slideSpec.actionTitle);
-  addRule(slide);
   if (slideSpec.content.layout !== "chart-with-takeaway") return;
   if (slideSpec.tier !== "sourced") tierBadge(slide, slideSpec.tier);
   const chart = slideSpec.content.chart;
@@ -897,25 +965,44 @@ function chartData(
 function imageSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number): void {
   const slide = chrome(pres, { tag: "In focus", index });
   addRichTitle(slide, slideSpec.actionTitle);
-  addRule(slide);
   if (slideSpec.content.layout !== "image-with-caption") return;
   tierBadge(slide, slideSpec.tier);
-  slide.addShape("roundRect", {
-    x: M,
-    y: 2.0,
-    w: CONTENT_W,
-    h: 3.7,
-    fill: { color: VIEW.card },
-    line: { color: VIEW.cardBorder, width: 0.75 },
-    rectRadius: 0.1,
-  });
-  addText(slide, slideSpec.content.caption, M + 0.6, 2.75, CONTENT_W - 1.2, 2.2, {
-    fontSize: 22,
-    color: cardInk(),
-    fontFace: FONTS.heading,
-    align: "center",
-    valign: "middle",
-  });
+  const photo = IMG.closingPhotos[index % IMG.closingPhotos.length];
+  if (photo) {
+    slide.addImage({
+      data: photo,
+      x: M,
+      y: 2.0,
+      w: CONTENT_W,
+      h: 3.5,
+      sizing: { type: "cover", w: CONTENT_W, h: 3.5 },
+    });
+    addText(slide, slideSpec.content.caption, M, 5.62, CONTENT_W, 0.8, {
+      fontSize: 16,
+      color: cardMuted(),
+      fontFace: FONTS.heading,
+      align: "center",
+      valign: "top",
+      fit: "shrink",
+    });
+  } else {
+    slide.addShape("roundRect", {
+      x: M,
+      y: 2.0,
+      w: CONTENT_W,
+      h: 3.7,
+      fill: { color: VIEW.card },
+      line: { color: VIEW.cardBorder, width: 0.75 },
+      rectRadius: 0.1,
+    });
+    addText(slide, slideSpec.content.caption, M + 0.6, 2.75, CONTENT_W - 1.2, 2.2, {
+      fontSize: 22,
+      color: cardInk(),
+      fontFace: FONTS.heading,
+      align: "center",
+      valign: "middle",
+    });
+  }
   sourceLine(slide, slideSpec.content.sourceNote || slideSpec.sourceNote || "");
   slide.addNotes(slideSpec.notes);
 }
@@ -987,7 +1074,6 @@ function askSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number): voi
 function maturitySlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number): void {
   const slide = chrome(pres, { tag: "Journey", index });
   addRichTitle(slide, slideSpec.actionTitle);
-  addRule(slide);
   if (slideSpec.content.layout !== "maturity-progression") return;
   if (slideSpec.tier !== "sourced") tierBadge(slide, slideSpec.tier);
 
@@ -1100,7 +1186,6 @@ function maturitySlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number)
 function horizonSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number): void {
   const slide = chrome(pres, { tag: "Horizons", index });
   addRichTitle(slide, slideSpec.actionTitle);
-  addRule(slide);
   if (slideSpec.content.layout !== "three-horizon") return;
   tierBadge(slide, slideSpec.tier);
 
@@ -1169,7 +1254,6 @@ function horizonSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number):
 function layeredSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number): void {
   const slide = chrome(pres, { tag: "Architecture", index });
   addRichTitle(slide, slideSpec.actionTitle);
-  addRule(slide);
   if (slideSpec.content.layout !== "layered-architecture") return;
   tierBadge(slide, slideSpec.tier);
 
@@ -1256,15 +1340,70 @@ export function assertDeckTraceable(spec: DeckSpec): void {
 
 export async function renderDeck(
   spec: DeckSpec,
-  coverMeta: { date: string; subtitle: string },
+  coverMeta: DeckCoverMeta,
   config: DeckConfig = {},
 ): Promise<{ bytes: Uint8Array; pages: number }> {
   return renderDeckSpec(spec, coverMeta, config);
 }
 
+/** Up to five numbered entries per agenda page keeps even long headings readable. */
+function agendaPages(entries: readonly string[]): string[][] {
+  const perPage = Math.ceil(entries.length / Math.ceil(entries.length / 5));
+  const pages: string[][] = [];
+  for (let index = 0; index < entries.length; index += perPage) {
+    pages.push(entries.slice(index, index + perPage));
+  }
+  return pages;
+}
+
+/** A pearl contents page: numbered headings under the word "Contents". */
+function agendaSlide(pres: PptxGenJS, entries: readonly string[], index: number): void {
+  const slide = pres.addSlide();
+  slide.background = { color: AIONOS_TOKENS.pearl };
+  slide.addImage({
+    data: AIONOS_LOGO.navy,
+    x: W - M - 1.7,
+    y: 0.33,
+    w: 1.7,
+    h: 0.44,
+    sizing: { type: "contain", w: 1.7, h: 0.44 },
+  });
+  addText(slide, EYEBROW || "Contents", M, 0.42, 8.8, 0.28, {
+    fontFace: FONTS.body,
+    fontSize: 11,
+    color: BLUE_HEX,
+    charSpacing: 1.3,
+  });
+  slide.addText("Contents", {
+    x: M,
+    y: 0.85,
+    w: CONTENT_W,
+    h: 0.9,
+    fontFace: FONTS.heading,
+    fontSize: 34,
+    bold: true,
+    color: DEEP_HEX,
+    margin: 0,
+    isTextBox: true,
+  });
+  entries.forEach((entry, position) => {
+    addText(slide, entry, M, 1.9 + position * 0.9, CONTENT_W, 0.8, {
+      fontFace: FONTS.heading,
+      fontSize: 20,
+      color: DEEP_HEX,
+      valign: "top",
+    });
+  });
+  addText(slide, String(index), W - M - 0.6, 6.94, 0.6, 0.2, {
+    fontSize: 11,
+    color: NAVY_HEX,
+    align: "right",
+  });
+}
+
 async function renderDeckSpec(
   spec: DeckSpec,
-  coverMeta: { date: string; subtitle: string },
+  coverMeta: DeckCoverMeta,
   config: DeckConfig,
 ): Promise<{ bytes: Uint8Array; pages: number }> {
   const cfg = resolveDeckConfig(config);
@@ -1276,14 +1415,35 @@ async function renderDeckSpec(
   pres.title = clean(spec.deckTitle).slice(0, 120);
   pres.subject = clean(spec.storyline).slice(0, 200);
   pres.theme = { headFontFace: cfg.headingFont, bodyFontFace: cfg.bodyFont };
-  defineMasters(pres);
+
+  EYEBROW = clean(coverMeta.industry || "");
+  setSurface("light");
+
+  // Page 1 is the co-brand lockup, which carries no number; the gradient title
+  // is page 2, then the contents, then one numbered page per slide.
+  let pageNumber = 1;
+  clientLockupPage(pres, config.clientLogo ?? null);
+  pageNumber += 1;
+  cover(pres, spec, coverMeta, pageNumber);
+
+  if (spec.slides.length >= 3) {
+    const entries = spec.slides.map(
+      (slideSpec, position) => `${sectionNumber(position)}  ${slideSpec.actionTitle}`,
+    );
+    for (const entriesPage of agendaPages(entries)) {
+      pageNumber += 1;
+      agendaSlide(pres, entriesPage, pageNumber);
+    }
+  }
 
   const surfaces = assignSurfaces(spec.slides.map((slideSpec) => slideSpec.content.layout));
-  setSurface("light");
-  cover(pres, spec, coverMeta, config.clientLogo ?? null);
   spec.slides.forEach((slideSpec, position) => {
-    const index = position + 2;
-    setSurface(surfaces[position] ?? "navy");
+    pageNumber += 1;
+    const index = pageNumber;
+    SLIDE_NUMBER = sectionNumber(position);
+    setSurface(
+      slideSpec.content.layout === "section-divider" ? "navy" : (surfaces[position] ?? "light"),
+    );
     switch (slideSpec.content.layout) {
       case "section-divider":
         divider(pres, slideSpec, index);
@@ -1336,5 +1496,11 @@ async function renderDeckSpec(
 
   const pages = (pres as unknown as { slides: unknown[] }).slides.length;
   const output = (await pres.write({ outputType: "nodebuffer" })) as Buffer;
-  return { bytes: dropDanglingOverrides(new Uint8Array(output)), pages };
+  return {
+    bytes: normalizeDeckPackage(new Uint8Array(output), {
+      primary: BLUE_HEX,
+      accent: AIONOS_TOKENS.warm_clay,
+    }),
+    pages,
+  };
 }

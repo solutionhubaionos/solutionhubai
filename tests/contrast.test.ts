@@ -105,8 +105,9 @@ describe("rendered deck contrast", () => {
     );
     const findings = checkDeckContrast(firstSlides);
     expect(findings).toEqual([]);
-    // The cover uses a solid brand canvas, never a gradient image or blob.
-    const cover = new TextDecoder().decode(parts["ppt/slides/slide1.xml"]!);
+    // The gradient title is a baked brand image on a deep-navy canvas, never an
+    // <a:gradFill>. Page 1 is the white co-brand lockup, page 2 the title.
+    const cover = new TextDecoder().decode(parts["ppt/slides/slide2.xml"]!);
     expect(cover).toMatch(/<p:bg>[\s\S]*?val="030C44"/);
     expect(cover).not.toMatch(/gradFill/i);
   });

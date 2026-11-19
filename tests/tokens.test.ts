@@ -114,7 +114,7 @@ describe("brand tokens", () => {
     expect(SURFACE_BACKGROUND.closing).toBe("deepNavy");
   });
 
-  test("content slides alternate BLUE and WHITE strictly", () => {
+  test("content pages share one light surface and close on deep navy", () => {
     const layouts = [
       "section-divider",
       "context-bullets",
@@ -126,23 +126,21 @@ describe("brand tokens", () => {
     ];
     const surfaces = assignSurfaces(layouts);
     expect(surfaces.at(-1)).toBe("closing");
-    expect(surfaces.filter((surface) => surface === "blue")).toHaveLength(0);
-    for (let index = 1; index < surfaces.length; index += 1) {
-      if (surfaces[index] === "closing" || surfaces[index - 1] === "closing") continue;
-      expect(surfaces[index]).not.toBe(surfaces[index - 1]);
-    }
+    expect(surfaces.filter((surface) => surface === "closing")).toHaveLength(1);
+    // The reference kit draws every content page on the light surface.
+    expect(surfaces.slice(0, -1).every((surface) => surface === "light")).toBe(true);
   });
 
-  test("a rendered deck uses only brand colours and embeds no image", async () => {
+  test("a rendered deck uses only brand colours and the bundled imagery", async () => {
     const rendered = await renderDeck(spec(), { date: "18 November 2026", subtitle: "Pitch" });
     const parts = unzipSync(rendered.bytes);
     expect(checkDeckPalette(parts)).toEqual([]);
     expect(checkDeckGradients(parts)).toEqual([]);
     expect(checkDeckFonts(parts)).toEqual([]);
-    // The only pictures are the Aionos wordmark logos (PNG).
+    // The pictures are the wordmark logos (PNG) and the baked brand gradient (JPEG).
     const media = Object.keys(parts).filter((name) => /^ppt\/media\/.+/.test(name));
     expect(media.length).toBeGreaterThan(0);
-    expect(media.every((name) => /\.png$/i.test(name))).toBe(true);
+    expect(media.every((name) => /\.(?:png|jpe?g)$/i.test(name))).toBe(true);
     const { sequence, findings } = checkDeckBackgrounds(parts);
     expect(findings).toEqual([]);
     expect(sequence[0]).toBe(palette.white);
