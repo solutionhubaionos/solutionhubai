@@ -44,6 +44,7 @@ import {
 } from "@/lib/chat/conversationScope";
 import { loadConversationScope, saveConversationScope } from "@/lib/chat/scope.functions";
 import { analyzeTargetSite } from "@/lib/documents/logo.functions";
+import { rasteriseLogo } from "@/lib/logo/rasterise";
 import { stopRequest } from "@/lib/documents/cancel.functions";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { ChatTopBar } from "@/components/chat/ChatTopBar";
@@ -328,14 +329,11 @@ function ChatPage() {
       try {
         const result = await analyzeTargetSite({ data: { url: website } });
         if (!result.ok) return;
+        const raster = result.logo ? await rasteriseLogo(result.logo.dataUrl) : undefined;
         await persistScope(
           withPrimaryTargetInfo(read(), {
-            logo: result.logo
-              ? {
-                  dataUrl: result.logo.dataUrl,
-                  light: result.logo.light,
-                  aspect: result.logo.width / result.logo.height,
-                }
+            logo: raster
+              ? { dataUrl: raster.dataUrl, light: raster.light, aspect: raster.aspect }
               : null,
             siteText: result.siteText,
           }),

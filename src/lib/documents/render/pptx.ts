@@ -1987,7 +1987,12 @@ export async function renderPptx(
     const { renderDeck } = await import("./deck");
     return renderDeck(
       model.deck,
-      { date: model.cover.date, subtitle: model.cover.subtitle },
+      {
+        date: model.cover.date,
+        subtitle: model.cover.subtitle,
+        industry: model.cover.industry,
+        customer: model.cover.client,
+      },
       { ...config, ...(model.clientLogo ? { clientLogo: model.clientLogo } : {}) },
     );
   }

@@ -542,7 +542,9 @@ describe("consulting layouts", () => {
       ),
     ]);
     const rendered = await renderDeck(spec, { date: "2026-11-17", subtitle: "Pitch" });
-    expect(rendered.pages).toBe(2);
+    // Co-brand lockup, gradient title, then one content page (under the agenda
+    // threshold of three slides).
+    expect(rendered.pages).toBe(3);
     const parts = unzipSync(rendered.bytes);
     const xml = Object.keys(parts)
       .filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name))
@@ -591,7 +593,8 @@ describe("consulting layouts", () => {
       ),
     ]);
     const rendered = await renderDeck(spec, { date: "2026-11-17", subtitle: "Pitch" });
-    expect(rendered.pages).toBe(3);
+    // Co-brand lockup, gradient title, then the two content pages.
+    expect(rendered.pages).toBe(4);
     const parts = unzipSync(rendered.bytes);
     const xml = Object.keys(parts)
       .filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name))
@@ -639,12 +642,13 @@ describe("consulting layouts", () => {
       {},
     );
     const parts = unzipSync(rendered.bytes);
-    // The cover uses a solid brand canvas, never a gradient image or blob.
-    const coverXml = new TextDecoder().decode(parts["ppt/slides/slide1.xml"]!);
+    // Page 1 is the white co-brand lockup; page 2 is the deep-navy gradient
+    // title, a baked image rather than an <a:gradFill>.
+    const coverXml = new TextDecoder().decode(parts["ppt/slides/slide2.xml"]!);
     expect(coverXml).toMatch(/<p:bg>[\s\S]*?val="030C44"/);
     expect(coverXml).not.toMatch(/gradFill/i);
     // The divider is a BLUE (navy) surface, and its title is legible on it.
-    const dividerXml = new TextDecoder().decode(parts["ppt/slides/slide2.xml"]!);
+    const dividerXml = new TextDecoder().decode(parts["ppt/slides/slide3.xml"]!);
     const background = dividerXml.match(/<p:bg>.*?val="([0-9A-F]{6})"/s)?.[1] ?? "";
     expect(background).toBe("1C2453");
     const inks = [
@@ -726,10 +730,11 @@ describe("deck pipeline", () => {
     if (!spec) return;
 
     const direct = await renderDeck(spec, { date: "2026-11-16", subtitle: "Pitch deck" });
-    expect(direct.pages).toBe(spec.slides.length + 1);
+    // Co-brand lockup + gradient title + (agenda, threshold met) + one page per slide.
+    expect(direct.pages).toBeGreaterThanOrEqual(spec.slides.length + 2);
 
     const pptx = await renderPptx(result.model);
-    expect(pptx.pages).toBe(spec.slides.length + 1);
+    expect(pptx.pages).toBe(direct.pages);
     const parts = unzipSync(pptx.bytes);
     expect(Object.keys(parts).some((name) => /^ppt\/charts\/chart\d+\.xml$/.test(name))).toBe(true);
     // Every declared part must exist, or the in-app viewer renders nothing.

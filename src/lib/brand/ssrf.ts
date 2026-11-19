@@ -8,7 +8,6 @@
  * argument so the rules can be tested without a network.
  */
 import { isIP } from "node:net";
-import { lookup } from "node:dns/promises";
 
 export class UnsafeUrlError extends Error {
   constructor(message: string) {
@@ -147,17 +146,21 @@ export function assertAllowedUrl(input: URL | string): URL {
  * every answer (not just the first) closes the DNS-rebinding gap where a name
  * returns one public and one internal address.
  */
-export async function assertPublicDns(
-  url: URL,
-  resolve: DnsResolver = (hostname) => lookup(hostname, { all: true, verbatim: true }),
-): Promise<URL> {
+export async function assertPublicDns(url: URL, resolve?: DnsResolver): Promise<URL> {
   const allowed = assertAllowedUrl(url);
   const host = allowed.hostname.replace(/^\[|\]$/g, "");
   if (isIP(host) !== 0) return allowed;
 
+  // `node:dns` is imported lazily so a non-Node target can still load this
+  // module; a caller that supplies its own resolver never touches it.
+  const resolver =
+    resolve ??
+    (async (hostname: string) =>
+      (await import("node:dns/promises")).lookup(hostname, { all: true, verbatim: true }));
+
   let answers: { address: string; family: number }[];
   try {
-    const result = await resolve(host);
+    const result = await resolver(host);
     answers = Array.isArray(result) ? result : [result];
   } catch {
     throw new UnsafeUrlError("That address could not be resolved.");

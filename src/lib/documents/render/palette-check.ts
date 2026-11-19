@@ -1,10 +1,11 @@
 /**
  * Deterministic style lint for a rendered deck: every colour that reaches the
- * slides or charts must come from `aionos.tokens.json`, no gradient may appear,
- * only the two brand typefaces may be used, and the content backgrounds must
- * alternate BLUE (navy) and WHITE between a deep-navy cover and closing. The
- * renderer reads only the tokens, so a finding here means a literal slipped in
- * or a dependency injected its own default. Run on the exported package; see
+ * slides or charts must come from `aionos.tokens.json`, no programmatic
+ * gradient fill may appear (the title bleeds a bundled baked gradient image,
+ * not `<a:gradFill>`), only the two brand typefaces may be used, and the deck
+ * opens on the white co-brand page and closes on a deep-navy page. The renderer
+ * reads only the tokens, so a finding here means a literal slipped in or a
+ * dependency injected its own default. Run on the exported package; see
  * `scripts/check-deck.ts`.
  */
 import { palette, type PaletteName } from "../tokens";
@@ -85,9 +86,10 @@ function slideBackground(xml: string): string | null {
 }
 
 /**
- * The strict rhythm: the cover is WHITE, the closing is deep navy, and the
- * content slides in between alternate BLUE (navy) and WHITE with no two
- * neighbours the same.
+ * The kit's rhythm: the deck opens on the white co-brand page and closes on a
+ * deep-navy page. The pages in between are free to be any brand colour (the
+ * gradient title is deep navy, the contents pearl, content white), so only the
+ * first and last are fixed.
  */
 export function checkDeckBackgrounds(parts: Record<string, Uint8Array>): {
   sequence: string[];
@@ -100,24 +102,13 @@ export function checkDeckBackgrounds(parts: Record<string, Uint8Array>): {
   const sequence = slides.map((name) => slideBackground(decoder.decode(parts[name]!)) ?? "?");
   const findings: StyleFinding[] = [];
   const deepNavy = palette.deepNavy;
-  const navy = palette.navy;
   const white = palette.white;
   slides.forEach((name, index) => {
     const colour = sequence[index]!;
-    if (index === 0) {
-      if (colour !== white) findings.push({ part: name, reason: "cover must be white" });
-      return;
-    }
-    if (index === slides.length - 1) {
-      if (colour !== deepNavy) findings.push({ part: name, reason: "closing must be deep navy" });
-      return;
-    }
-    if (colour !== navy && colour !== white) {
-      findings.push({ part: name, reason: `content background ${colour} is not navy or white` });
-      return;
-    }
-    if (colour === sequence[index - 1]) {
-      findings.push({ part: name, reason: "two consecutive slides share a background colour" });
+    if (index === 0 && colour !== white)
+      findings.push({ part: name, reason: "cover must be white" });
+    if (index === slides.length - 1 && colour !== deepNavy) {
+      findings.push({ part: name, reason: "closing must be deep navy" });
     }
   });
   return { sequence, findings };

@@ -40,8 +40,8 @@ export const AIONOS_AGENT_GUIDE = [
   'Naming: write "Aionos" (title case) in all body copy. Use "AIONOS" only for headlines/signage. Never write "AionOS".',
   "Avoid: jargon, exaggeration, unsupported claims, hype words (revolutionary, cutting-edge, game-changing, seamless, unleash, supercharge), and technical complexity without explanation.",
   "Grounded: evidence over claims. Every claim needs a number, source or example from the retrieved passages; no evidence, no claim.",
-  "Background rhythm: COVER (WHITE) first, then content slides alternate BLUE (aionos navy) and WHITE strictly, never two of the same in a row, with CLOSING (deep navy) last.",
-  "Colour: the only colours are aionos navy, deep navy, electric blue, warm clay, pearl, soft blue and white. On a WHITE slide, boxes, table headers and borders are electric blue with white text; body text is deep navy; the eyebrow label is electric blue. On a BLUE slide, every box or border is white or pearl with deep navy text; text is white; the eyebrow label is soft blue. Never navy boxes with light text.",
+  "Background rhythm: the deck opens on a white co-brand page and a deep-navy gradient title, then content pages run on white, with CLOSING (deep navy) last. Content never alternates surface and never uses a gradient of its own.",
+  "Colour: the only colours are aionos navy, deep navy, electric blue, warm clay, pearl, soft blue and white. On a white content page, boxes, table headers and borders are electric blue with white text; body text is deep navy; the eyebrow label is electric blue. On the closing deep-navy page, text is white. Never navy boxes with light text.",
   "Charts: use only real, sourced numbers; if there is no real number, do not make a chart. Label axes and units and prefer direct labels over a legend. No chart of two identical placeholder values.",
   "Imagery: real people and work environments only. Never generic futuristic AI visuals (robots, glowing brains, circuit art). If no authentic image exists, use none.",
   "Content hard rules: never name any other client, company or deck source - anonymise except for the current target. Content is for the current client, URL and sector only. Never print citation numbers in prose; source ids live in the slide's sources field.",
@@ -53,12 +53,9 @@ export const CHART_SERIES_LIGHT = [...TOKENS.chartSeries.light];
 export const CHART_SERIES_NAVY = [...TOKENS.chartSeries.navy];
 
 /**
- * The rhythm pass. The cover is WHITE, then content slides alternate BLUE
- * (aionos navy) and WHITE strictly, starting BLUE, with the closing slide deep
- * navy and last. Never two adjacent content slides on the same colour.
+ * The rhythm pass. The reference kit draws every content page on white and
+ * closes on deep navy; only the closing slide changes surface.
  */
 export function assignSurfaces(layouts: readonly string[]): Surface[] {
-  return layouts.map((layout, index) =>
-    layout === "next-steps-ask" ? "closing" : index % 2 === 0 ? "navy" : "light",
-  );
+  return layouts.map((layout) => (layout === "next-steps-ask" ? "closing" : "light"));
 }
