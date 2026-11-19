@@ -30,6 +30,21 @@ describe("client logo detection", () => {
     const urls = logoCandidates(html, new URL("https://example.com/")).map((entry) => entry.url);
     expect(urls).toContain("https://example.com/img/footer-logo.svg");
   });
+
+  test("prefers a CSS-background brand logo over a third-party badge and a footer logo", () => {
+    // Mirrors easemytrip.com: the navbar wordmark is a styled <div>, the
+    // TrustPilot badge is an <img> that names itself "logo", and the footer
+    // holds a white variant.
+    const html = `
+      <style>._EMTLogo{background:url(https://images.example.com/brandlogo/emtlogo_new8.svg) 50%/138px 58px no-repeat}</style>
+      <body>
+        <div class="_EMTLogo"><a href="/">home</a></div>
+        <section><img src="https://images.example.com/desk-img/tp-logo-black.svg" alt="TP Logo" /></section>
+        <footer><img src="https://images.example.com/common/footer/EMTLogo_white.png" /></footer>
+      </body>`;
+    const candidates = logoCandidates(html, new URL("https://example.com/"));
+    expect(candidates[0]?.url).toBe("https://images.example.com/brandlogo/emtlogo_new8.svg");
+  });
 });
 
 function specWithLogo(): DeckSpec {
@@ -71,7 +86,10 @@ describe("client logo on the cover", () => {
   });
 
   test("renders without a logo when none is provided", async () => {
-    const rendered = await renderDeck(specWithLogo(), { date: "18 November 2026", subtitle: "Pitch" });
+    const rendered = await renderDeck(specWithLogo(), {
+      date: "18 November 2026",
+      subtitle: "Pitch",
+    });
     expect(rendered.pages).toBeGreaterThanOrEqual(2);
   });
 });

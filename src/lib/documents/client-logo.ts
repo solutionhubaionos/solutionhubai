@@ -8,6 +8,11 @@
  * is a hero banner, not a logo. When the static HTML has no logo, the rendered
  * DOM is read once through Cloudflare Browser Run (see `renderedHtml`).
  *
+ * The wordmark is often not an <img>: SPA navbars set it as a CSS
+ * background-image, so url() values naming a logo/brand are also considered.
+ * Trust/review badges (which also call themselves "logo") and footer variants
+ * are down-ranked so they cannot win.
+ *
  * Server-only: uses node:dns and @napi-rs/canvas.
  */
 import { createCanvas, loadImage } from "@napi-rs/canvas";
@@ -66,17 +71,30 @@ async function guardedFetch(url: URL): Promise<{ bytes: Uint8Array; contentType:
 
 type Candidate = { url: string; score: number };
 
+/** A review/trust badge is never the client's own logo. */
+const BADGE_LOGO = /(?:trustpilot|trust-?box|tp-logo|review|rating|badge|widget|seal)/i;
+
 /** Ordered logo candidates from the page HTML. Never og:image. */
 export function logoCandidates(html: string, base: URL): Candidate[] {
   const $ = cheerio.load(html);
   const candidates: Candidate[] = [];
-  const push = (raw: string | null | undefined, score: number) => {
+  const push = (raw: string | null | undefined, score: number, context = "", inFooter = false) => {
     if (!raw || raw.startsWith("data:")) return;
+    let url: string;
     try {
-      candidates.push({ url: new URL(raw, base).toString(), score });
+      url = new URL(raw, base).toString();
     } catch {
       // A malformed href is simply skipped.
+      return;
     }
+    let adjusted = score;
+    // A trust/review badge (e.g. TrustPilot) marks its image "logo" too, so it
+    // would otherwise beat the real wordmark; push it below the other signals.
+    if (BADGE_LOGO.test(`${raw} ${context}`)) adjusted -= 70;
+    // A logo in the footer is usually the white/mono variant; prefer the header.
+    if (inFooter || /footer/i.test(url)) adjusted -= 40;
+    if (adjusted <= 0) return;
+    candidates.push({ url, score: adjusted });
   };
 
   $("link[rel]").each((_, element) => {
@@ -93,11 +111,21 @@ export function logoCandidates(html: string, base: URL): Candidate[] {
     const text = ["src", "href", "class", "id", "alt", "aria-label"]
       .map((name) => node.attr(name) ?? "")
       .join(" ");
-    if (/logo/i.test(text)) push(node.attr("src") ?? node.attr("href"), 85);
+    if (/logo/i.test(text)) {
+      push(node.attr("src") ?? node.attr("href"), 85, text, node.closest("footer").length > 0);
+    }
   });
 
   // Any header or nav image is a weaker signal.
   $("header img, nav img").each((_, element) => push($(element).attr("src"), 45));
+
+  // A logo set as a CSS background-image (common for SPA navbars: the wordmark
+  // is a styled <div>, not an <img>) is invisible to the scan above. Read every
+  // url(...) in the page's styles and inline styles that names a logo or brand.
+  for (const match of html.matchAll(/url\(\s*(['"]?)([^'")]+)\1\s*\)/gi)) {
+    const raw = match[2];
+    if (raw && /logo|brand/i.test(raw)) push(raw, 82, "css-background");
+  }
 
   push(new URL("/apple-touch-icon.png", base).toString(), 25);
   push(new URL("/favicon.ico", base).toString(), 10);
@@ -132,7 +160,10 @@ async function toPng(bytes: Uint8Array): Promise<ClientLogo | null> {
   for (let index = 0; index < data.length; index += 4) {
     const alpha = data[index + 3] ?? 0;
     if (alpha < 128) continue;
-    sum += 0.2126 * (data[index] ?? 0) + 0.7152 * (data[index + 1] ?? 0) + 0.0722 * (data[index + 2] ?? 0);
+    sum +=
+      0.2126 * (data[index] ?? 0) +
+      0.7152 * (data[index + 1] ?? 0) +
+      0.0722 * (data[index + 2] ?? 0);
     count += 1;
   }
   const light = count === 0 ? false : sum / count / 255 > 0.72;
@@ -296,15 +327,13 @@ export async function fetchSiteText(
   const html = new TextDecoder().decode(page.bytes);
   const title = stripHtml(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "");
   const description = stripHtml(
-    html.match(
-      /<meta[^>]+name=["']description["'][^>]*content=["']([^"']+)["']/i,
-    )?.[1] ??
-      html.match(
-        /<meta[^>]+content=["']([^"']+)["'][^>]*name=["']description["']/i,
-      )?.[1] ??
+    html.match(/<meta[^>]+name=["']description["'][^>]*content=["']([^"']+)["']/i)?.[1] ??
+      html.match(/<meta[^>]+content=["']([^"']+)["'][^>]*name=["']description["']/i)?.[1] ??
       "",
   );
-  const body = stripHtml(html.replace(/<(?:nav|header|footer)[\s\S]*?<\/(?:nav|header|footer)>/gi, " "));
+  const body = stripHtml(
+    html.replace(/<(?:nav|header|footer)[\s\S]*?<\/(?:nav|header|footer)>/gi, " "),
+  );
   const text = [title, description, body].filter(Boolean).join(". ").slice(0, 1600).trim();
   if (!text) {
     log("client site: no text", { url: base.href });
