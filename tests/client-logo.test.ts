@@ -109,7 +109,7 @@ describe("client logo on the cover", () => {
     expect(rendered.pages).toBeGreaterThanOrEqual(2);
   });
 
-  test("backs a mostly-light logo with a navy panel on the lockup page", async () => {
+  test("draws the client logo on the lockup page with no panel", async () => {
     const rendered = await renderDeck(
       specWithLogo(),
       { date: "18 November 2026", subtitle: "Pitch" },
@@ -117,6 +117,8 @@ describe("client logo on the cover", () => {
     );
     const parts = unzipSync(rendered.bytes);
     const lockup = new TextDecoder().decode(parts["ppt/slides/slide1.xml"]!);
-    expect(lockup).toMatch('val="1C2453"');
+    // Only the logo image; no navy panel or border behind it.
+    expect((lockup.match(/<a:blip/g) ?? []).length).toBe(1);
+    expect(lockup).not.toMatch('val="1C2453"');
   });
 });

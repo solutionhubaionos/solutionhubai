@@ -44,12 +44,8 @@ export async function rasteriseLogo(dataUrl: string | undefined): Promise<Raster
         (pixels[index + 2] ?? 0) * 0.0722;
       visible += 1;
     }
+    // The mark is placed without any backing, so the PNG stays transparent.
     const light = visible > 0 && brightness / visible > 190;
-    if (light) {
-      context.fillStyle = "#1C2453";
-      context.fillRect(0, 0, canvas.width, canvas.height);
-      context.drawImage(loaded, x, y, width, height);
-    }
     const png = canvas.toDataURL("image/png");
     const aspect = loaded.naturalHeight ? loaded.naturalWidth / loaded.naturalHeight : 3;
     return /^data:image\/png/.test(png) ? { dataUrl: png, light, aspect } : undefined;

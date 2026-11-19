@@ -419,7 +419,7 @@ function cover(pres: PptxGenJS, spec: DeckSpec, meta: DeckCoverMeta, pageNumber:
   slide.addNotes(clean(spec.storyline));
 }
 
-/** The white client-lockup page: the target's own mark, and nothing else. */
+/** The white client-lockup page: the target's own mark, centred, with no frame. */
 function clientLockupPage(
   pres: PptxGenJS,
   clientLogo: { dataUrl: string; light: boolean; aspect: number } | null,
@@ -427,29 +427,16 @@ function clientLockupPage(
   const slide = pres.addSlide();
   slide.background = { color: C.white };
   if (!clientLogo) return;
-  const width = 3.15;
-  const x = (W - width) / 2;
-  // A mostly-light mark (many sites ship a white navbar logo) disappears on
-  // the white page, so it sits on a navy panel.
-  if (clientLogo.light) {
-    const panelWidth = 3.51;
-    slide.addShape("roundRect", {
-      x: (W - panelWidth) / 2,
-      y: 3.23,
-      w: panelWidth,
-      h: 0.9,
-      fill: { color: NAVY_HEX },
-      line: { color: NAVY_HEX, width: 0 },
-      rectRadius: 0.06,
-    });
-  }
+  // Just the logo: no panel, no border, no container.
+  const width = 4.4;
+  const height = 1.05;
   slide.addImage({
     data: clientLogo.dataUrl,
-    x,
-    y: 3.37,
+    x: (W - width) / 2,
+    y: (H - height) / 2,
     w: width,
-    h: 0.62,
-    sizing: { type: "contain", w: width, h: 0.62 },
+    h: height,
+    sizing: { type: "contain", w: width, h: height },
   });
 }
 
