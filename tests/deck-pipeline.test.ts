@@ -625,7 +625,7 @@ describe("consulting layouts", () => {
     expect(joined).toContain("Operational data is fragmented");
   });
 
-  test("keeps house-theme cover and divider titles readable on navy", async () => {
+  test("keeps the gradient title dark and every content page white", async () => {
     const spec = specWith([
       slide(
         {
@@ -642,15 +642,16 @@ describe("consulting layouts", () => {
       {},
     );
     const parts = unzipSync(rendered.bytes);
-    // Page 1 is the white co-brand lockup; page 2 is the deep-navy gradient
+    // Page 1 is the white client lockup; page 2 is the deep-navy gradient
     // title, a baked image rather than an <a:gradFill>.
     const coverXml = new TextDecoder().decode(parts["ppt/slides/slide2.xml"]!);
     expect(coverXml).toMatch(/<p:bg>[\s\S]*?val="030C44"/);
     expect(coverXml).not.toMatch(/gradFill/i);
-    // The divider is a BLUE (navy) surface, and its title is legible on it.
+    // The divider is now a white page (blue is never a solid background), and
+    // its title is legible on it.
     const dividerXml = new TextDecoder().decode(parts["ppt/slides/slide3.xml"]!);
     const background = dividerXml.match(/<p:bg>.*?val="([0-9A-F]{6})"/s)?.[1] ?? "";
-    expect(background).toBe("1C2453");
+    expect(background).toBe("FFFFFF");
     const inks = [
       ...dividerXml
         .replace(/<p:bg>.*?<\/p:bg>/s, "")

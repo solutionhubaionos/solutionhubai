@@ -95,7 +95,9 @@ if (cover) {
     const inks = [...body.matchAll(/<a:solidFill><a:srgbClr val="([0-9A-F]{6})"\/>/g)].map(
       (match) => match[1]!,
     );
-    if (!inks.some((ink) => contrastRatio(`#${ink}`, `#${background}`) >= 4.5)) {
+    // A text run on the cover must be readable. The lockup page is an image
+    // only (the client's mark), so a page with no text runs is not a finding.
+    if (inks.length > 0 && !inks.some((ink) => contrastRatio(`#${ink}`, `#${background}`) >= 4.5)) {
       hits.push(`ppt/slides/slide1.xml: no cover text run reaches 4.5 contrast on #${background}`);
     }
   }

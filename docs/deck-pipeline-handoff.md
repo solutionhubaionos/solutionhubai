@@ -1236,5 +1236,7 @@ cannot be rasterised in this workspace.
 
 | 2026-11-20 | `package.json`, `bun.lock`, `src/lib/documents/render/deck.ts` | Removed the unused `cheerio` dependency (`logoCandidates` is pure regex now; no source imports it). Slide 1 is the client's own mark alone, centred — the Aionos wordmark and the "×" lockup are gone (`clientLockupPage`), so the deck no longer carries Aionos branding on the opening page. | `bun run typecheck`; `bun test tests` 217 pass; golden deck slide 1 has 0 images and passes `check-deck`. |
 
+| 2026-11-20 | `aionos.tokens.json`, `src/lib/documents/{brand-guide,render/deck,render/palette-check}.ts`, `scripts/check-deck.ts`, `tests/{tokens,deck-pipeline}.test.ts`, `src/components/chat/DocumentCard.tsx` | Dark blue is no longer a slide background anywhere. The `Surface` type and token map drop `navy`/`blue`/`closing`; every content page (including section dividers and the closing ask) is white, and the baked gradient title is the only blue canvas. `checkDeckBackgrounds` now allows white/pearl and a deep-navy page only when it embeds the gradient image. `check-deck.ts` skips the cover-text contrast rule for the image-only lockup page. Also fixed the draft card's context pills running flush into the footer (`px-4 pt-3` → `py-3`). | `bun run typecheck`; `bun test tests` 217 pass; golden backgrounds `FFFFFF 030C44 F5F4F1 F5F4F1 FFFFFF…FFFFFF`, 0 findings; `check-deck` OK. |
+
 > Add a row for every subsequent change. Keep the status line at the top
 > accurate: IN PROGRESS / BLOCKED / COMPLETE.

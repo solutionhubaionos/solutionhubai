@@ -130,7 +130,7 @@ function surfaceView(surface: Surface): SurfaceView {
   };
 }
 
-let VIEW: SurfaceView = surfaceView("navy");
+let VIEW: SurfaceView = surfaceView("light");
 /** The target industry shown as the eyebrow on every content page. */
 let EYEBROW = "";
 /** The "01" prefix carried by the current slide's heading. */
@@ -451,7 +451,7 @@ function clientLockupPage(
 }
 
 function divider(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number): void {
-  const slide = chrome(pres, { dark: true, index });
+  const slide = chrome(pres, { index });
   if (slideSpec.content.layout !== "section-divider") return;
   addText(slide, SLIDE_NUMBER, M, 1.5, 2, 0.5, {
     fontFace: FONTS.heading,
@@ -1008,7 +1008,7 @@ function imageSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number): v
 }
 
 function askSlide(pres: PptxGenJS, slideSpec: DeckSpecSlide, index: number): void {
-  const slide = chrome(pres, { dark: true, index });
+  const slide = chrome(pres, { index });
   if (slideSpec.content.layout !== "next-steps-ask") return;
   addText(slide, "THE ASK", M, 0.85, 4, 0.3, {
     fontSize: 12,
@@ -1441,9 +1441,7 @@ async function renderDeckSpec(
     pageNumber += 1;
     const index = pageNumber;
     SLIDE_NUMBER = sectionNumber(position);
-    setSurface(
-      slideSpec.content.layout === "section-divider" ? "navy" : (surfaces[position] ?? "light"),
-    );
+    setSurface(surfaces[position] ?? "light");
     switch (slideSpec.content.layout) {
       case "section-divider":
         divider(pres, slideSpec, index);

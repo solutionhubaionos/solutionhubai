@@ -86,10 +86,10 @@ function slideBackground(xml: string): string | null {
 }
 
 /**
- * The kit's rhythm: the deck opens on the white co-brand page and closes on a
- * deep-navy page. The pages in between are free to be any brand colour (the
- * gradient title is deep navy, the contents pearl, content white), so only the
- * first and last are fixed.
+ * Backgrounds: the deck opens on the white lockup page, every content page is
+ * white (the contents page may be pearl), and blue is never a solid background
+ * — the only dark canvas is the gradient title, recognised by its embedded
+ * image. A dark background without that image is a finding.
  */
 export function checkDeckBackgrounds(parts: Record<string, Uint8Array>): {
   sequence: string[];
@@ -99,17 +99,25 @@ export function checkDeckBackgrounds(parts: Record<string, Uint8Array>): {
   const slides = Object.keys(parts)
     .filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name))
     .sort((a, b) => Number(a.match(/(\d+)/)![1]) - Number(b.match(/(\d+)/)![1]));
-  const sequence = slides.map((name) => slideBackground(decoder.decode(parts[name]!)) ?? "?");
+  const decoded = slides.map((name) => decoder.decode(parts[name]!));
+  const sequence = decoded.map((xml) => slideBackground(xml) ?? "?");
   const findings: StyleFinding[] = [];
   const deepNavy = palette.deepNavy;
   const white = palette.white;
+  const lightBackdrops = new Set([white, palette.pearl]);
   slides.forEach((name, index) => {
     const colour = sequence[index]!;
-    if (index === 0 && colour !== white)
-      findings.push({ part: name, reason: "cover must be white" });
-    if (index === slides.length - 1 && colour !== deepNavy) {
-      findings.push({ part: name, reason: "closing must be deep navy" });
+    if (index === 0) {
+      if (colour !== white) findings.push({ part: name, reason: "cover must be white" });
+      return;
     }
+    if (lightBackdrops.has(colour)) return;
+    // The one allowed dark canvas: the baked gradient title carries an image.
+    if (colour === deepNavy && decoded[index]!.includes("<a:blip")) return;
+    findings.push({
+      part: name,
+      reason: `background ${colour} must be white or pearl; blue is only the gradient title`,
+    });
   });
   return { sequence, findings };
 }
