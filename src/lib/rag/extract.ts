@@ -45,7 +45,7 @@ export type EmptyUnit = {
 
 /** A picture that carries content but no text: only a vision pass can read it. */
 export type ImageCandidate = {
-  pageOrSlide: number;
+  pageOrSlide: number | null;
   /** Part name inside the package, e.g. ppt/media/image41.png. */
   path: string;
   mimeType: string;
@@ -328,6 +328,94 @@ export function readMediaFiles(zip: Uint8Array, paths: readonly string[]): Map<s
   const files = unzipSync(zip, { filter: (file) => wanted.has(file.name) });
   for (const [name, data] of Object.entries(files)) result.set(name, data);
   return result;
+}
+
+/**
+ * Media parts worth reading with OCR, with the slide they sit on. Unlike
+ * `images` (limited to text-poor slides for the vision pass), this is not
+ * filtered by slide text: a chart or table picture on a text-rich slide still
+ * carries readable content. Only called when OCR is enabled, so extraction and
+ * the vision path are unchanged.
+ */
+export function collectOcrImages(bytes: Uint8Array, format: DocumentFormat): ImageCandidate[] {
+  if (format === "pptx") return pptxOcrImages(bytes);
+  if (format === "docx") return docxOcrImages(bytes);
+  return [];
+}
+
+function pptxOcrImages(bytes: Uint8Array): ImageCandidate[] {
+  const mediaBytes = new Map<string, number>();
+  const files = unzipSync(bytes, {
+    filter: (file) => {
+      if (file.name.startsWith("ppt/media/")) {
+        mediaBytes.set(file.name, Math.max(file.originalSize ?? 0, file.size ?? 0));
+        return false;
+      }
+      return (
+        /^ppt\/slides\/slide\d+\.xml$/.test(file.name) ||
+        /^ppt\/slides\/_rels\/slide\d+\.xml\.rels$/.test(file.name)
+      );
+    },
+  });
+
+  const slides = Object.keys(files)
+    .map((path) => ({ path, match: /^ppt\/slides\/slide(\d+)\.xml$/.exec(path) }))
+    .filter((entry): entry is { path: string; match: RegExpExecArray } => entry.match !== null)
+    .sort((a, b) => Number(a.match[1]) - Number(b.match[1]));
+
+  const images: ImageCandidate[] = [];
+  const seen = new Set<string>();
+  for (const { path, match } of slides) {
+    const data = files[path];
+    if (!data) continue;
+    try {
+      const xml = strFromU8(data);
+      const relsFile = files[`ppt/slides/_rels/slide${match[1]}.xml.rels`];
+      const rels = parseRels(relsFile ? strFromU8(relsFile) : undefined);
+      for (const picture of pptxPictures(xml)) {
+        const target = picture.relId ? rels.get(picture.relId) : undefined;
+        const part = target && target.startsWith("ppt/media/") ? target : null;
+        if (!part || seen.has(part)) continue;
+        const size = mediaBytes.get(part) ?? 0;
+        if (size < MIN_FIGURE_BYTES) continue;
+        seen.add(part);
+        images.push({
+          pageOrSlide: Number(match[1]),
+          path: part,
+          mimeType: imageMimeType(part),
+          bytes: size,
+          altText: usableAltText(picture.altText),
+        });
+      }
+    } catch {
+      // A malformed slide must never fail OCR of the rest of the deck.
+    }
+  }
+  return images;
+}
+
+function docxOcrImages(bytes: Uint8Array): ImageCandidate[] {
+  const sizes = new Map<string, number>();
+  unzipSync(bytes, {
+    filter: (file) => {
+      if (file.name.startsWith("word/media/")) {
+        sizes.set(file.name, Math.max(file.originalSize ?? 0, file.size ?? 0));
+      }
+      return false;
+    },
+  });
+  const images: ImageCandidate[] = [];
+  for (const [path, size] of sizes) {
+    if (size < MIN_FIGURE_BYTES) continue;
+    images.push({
+      pageOrSlide: null,
+      path,
+      mimeType: imageMimeType(path),
+      bytes: size,
+      altText: null,
+    });
+  }
+  return images;
 }
 
 function pptxTables(xml: string, slide: number): ExtractedSection[] {

@@ -23,7 +23,7 @@ export const EMBEDDING_USD_PER_TOKEN = 1e-7;
  * (drizzle/migrations/0019) queues the whole library for re-ingestion.
  * EXTRACTOR_VERSION must match the string passed to that function.
  */
-export const EXTRACTOR_VERSION = "2026-11-17.1";
+export const EXTRACTOR_VERSION = "2026-11-19.1";
 export const CHUNKER_VERSION = "2026-11-10.1";
 
 /** Stub chunks below this size are merged into their predecessor, not embedded. */

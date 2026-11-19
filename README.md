@@ -63,10 +63,30 @@ builds the four reference decks in `qa/golden/`.
 | `LIBRARY_USER_EMAIL`, `LIBRARY_USER_PASSWORD`        | worker                   | Member login for private Storage and the worker RPCs                   |
 | `TOKENFACTORY_API_BASE`, `TOKENFACTORY_API_KEY`      | worker, server functions | Embeddings and chat completions                                        |
 | `RAG_VISION`, `RAG_VISION_MODEL`                     | worker                   | Optional vision pass over image-only slides; off unless `RAG_VISION=1` |
+| `OCR_ENABLED`, `OCR_MODEL`, `OCR_PROMPT`             | worker                   | Optional OCR pass over scanned pages and images; off unless `OCR_ENABLED=true` |
+| `OCR_TIMEOUT_MS`, `OCR_CONCURRENCY`, `OCR_MAX_IMAGES_PER_DOC`, `OCR_MIN_TEXT_CHARS`, `OCR_CACHE_DIR` | worker | OCR cost/latency/cache knobs |
 | `SUPABASE_SERVICE_ROLE_KEY`                          | optional                 | Bypasses RLS; Lovable Cloud does not expose it                         |
 | `SUPABASE_DB_URL`                                    | optional scripts         | Direct Postgres; Lovable Cloud does not expose it                      |
 
 Never put the service-role key or `SUPABASE_DB_URL` behind a `VITE_` prefix.
+
+### OCR ingest (optional)
+
+With `OCR_ENABLED=true` the worker also reads text that lives only inside
+images: scanned PDF pages, image-only slides, and chart/table pictures exported
+as images (PPTX `ppt/media/*`, DOCX `word/media/*`). Each image is transcribed by
+`zai-org/glm-ocr` at ingest time and its text is chunked, embedded and stored
+exactly like native text, so existing hybrid search and DeepSeek answers use it
+with no retrieval change. With the flag off nothing runs and ingestion is
+unchanged.
+
+Cost/latency: one model call per image, capped at `OCR_MAX_IMAGES_PER_DOC` per
+file and `OCR_CONCURRENCY` in flight. Only PDF pages below `OCR_MIN_TEXT_CHARS`
+are rendered; small images (<100px) are skipped; results are cached by image
+hash under `OCR_CACHE_DIR`, so a re-ingest of an unchanged file makes no model
+calls. Any OCR failure logs and skips that image — it never fails ingestion.
+The default prompt strings are unverified against the provider; check a sample
+and tune `OCR_PROMPT` if the output is wrong.
 
 ### Lovable Cloud
 
