@@ -35,6 +35,7 @@ spike-input-sample/
 # Ingestion worker runtime files
 .ingest.log
 .ingest.lock
+.cache/
 
 # Eval outputs with generated answers stay local; retrieval JSON has no document text
 evals/results/answers-*.json

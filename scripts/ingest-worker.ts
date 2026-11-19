@@ -54,6 +54,8 @@ import {
   type EmbeddedChunk,
 } from "../src/lib/rag/ingest";
 import { describeImage } from "../src/lib/rag/vision";
+import { ocrConfigFromEnv } from "../src/lib/rag/ocr/glm-ocr";
+import { ocrDocumentSections } from "../src/lib/rag/ocr/extract-images";
 import { extractChunkFacts, type FactEntityType, type KnownEntity } from "../src/lib/rag/facts";
 
 const BUCKET = "content";
@@ -139,6 +141,13 @@ const visionEnabled = process.env.RAG_VISION === "1";
 const visionModel = process.env.RAG_VISION_MODEL ?? "google/gemma-4-31b-it";
 /** Cost guard: a deck with forty screenshots gets its first eight described. */
 const VISION_MAX_IMAGES = 8;
+
+/**
+ * OCR is opt-in and additive: off unless OCR_ENABLED is set. With it off the
+ * pipeline is exactly as before; with it on, scanned pages and image-only
+ * slides/media are transcribed and chunked like any other text.
+ */
+const ocrConfig = ocrConfigFromEnv();
 
 let supabase: SupabaseClient | null = null;
 let localFiles: Map<string, string> | null = null;
@@ -499,6 +508,21 @@ async function processJob(job: Job, counters: Counters) {
         );
       }
     }
+  }
+
+  // OCR supplement: read text that is trapped in images (scans, image-only
+  // slides, charts/tables exported as pictures). Runs after native extraction
+  // and feeds the same chunk/embed/insert path. Disabled by default.
+  if (ocrConfig.enabled) {
+    const ocr = await ocrDocumentSections(
+      bytes,
+      extracted.document.format,
+      extracted.document,
+      ocrConfig,
+      (message) => console.warn(`job ${job.id} ${label} ${message}`),
+    );
+    sections.push(...ocr.sections);
+    warnings.push(...ocr.warnings);
   }
 
   // Provenance is written into every chunk (and therefore into the full-text
