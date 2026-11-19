@@ -85,7 +85,7 @@ export const RETRIEVAL_MAX_K = 8;
 export const RELEVANCE_SCORE_RATIO = 0.5;
 /** One deck, or one slide split into chunks, may not crowd out the rest. */
 export const MAX_CHUNKS_PER_DOCUMENT = 3;
-export const MAX_CHUNKS_PER_SLIDE = 2;
+export const MAX_CHUNKS_PER_SLIDE = 3;
 
 /**
  * Follow-up rewriting. A small completion turns "and for Zurich?" into a
