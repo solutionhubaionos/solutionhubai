@@ -122,6 +122,7 @@ listed before the mechanics.
 | `src/lib/rag/ingest.ts`                 | One document: hash, reuse-or-embed, staging batches, atomic commit, failure recording.                             |
 | `src/lib/rag/eval.ts`, `answer-eval.ts` | Retrieval metrics and answer scoring behind `bun run eval` / `eval:answers`.                                       |
 | `src/lib/rag/vision.ts`                 | Optional image descriptions for picture-only slides.                                                               |
+| `src/lib/rag/ocr/*`                     | Optional OCR at ingest: `glm-ocr.ts` client, `extract-images.ts` candidates, cleaning, cache (§4.10).              |
 | `src/lib/chat/chat.functions.ts`        | `askLibrary`: rewrite → entities → scopes → evidence → answer → citations.                                         |
 | `src/lib/chat/rewrite.ts`               | The follow-up rewrite gate and its small completion.                                                               |
 | `src/lib/chat/answer.ts`                | Prompt, context block, model call, continuations, citation post-processing.                                        |
@@ -225,7 +226,7 @@ input.
 
 | Format | Library        | What is extracted                                                                                                                                                                                                                           |
 | ------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| PDF    | `unpdf`        | Per-page text, page number in metadata. Scanned pages yield nothing — there is no OCR.                                                                                                                                                      |
+| PDF    | `unpdf`        | Per-page text, page number in metadata. Scanned pages yield nothing unless the OCR supplement is on (§4.10).                                                                                                                                                      |
 | DOCX   | `mammoth`      | Paragraphs and headings with a style map, so heading levels survive and can be used as section boundaries. Tables become rows of text.                                                                                                      |
 | PPTX   | `fflate` (own) | Zipped XML read directly: slide order from the presentation, shapes in document order, `a:tbl` tables as rows, chart series from cached values, SmartArt from its data part, speaker notes appended, picture-only slides offered to vision. |
 
@@ -234,12 +235,12 @@ from file names, so slide numbers match what a person sees in PowerPoint.
 Chart numbers come from the _cached_ values inside the chart part, which is why a
 chart question can be answered without rendering anything.
 
-Picture-only slides are the one gap. With `RAG_VISION=1` up to **8** images per
+Picture-only slides are one gap; with `OCR_ENABLED=true` their text is read at ingest instead (§4.10). With `RAG_VISION=1` up to **8** images per
 document (≥ 24 KB, or slides with < 400 characters of text) are described by a
 vision model and the description becomes the slide's text. With vision off they
 land as title-only sections, which retrieval will use as a label but never as
-evidence. Scanned PDFs land as `empty` with a warning rather than as a silent
-success.
+evidence. Scanned PDFs land as `empty` with a warning when OCR is off, and are
+transcribed and indexed when it is on.
 
 ### 4.5 Chunking
 
@@ -339,7 +340,7 @@ is slower than a normal query.
 | --------- | ----------------------------------------------------------- | ------------------------------------------- |
 | `queued`  | waiting for `not_before` or a free worker                   | check the cron tick                         |
 | `running` | leased; heartbeat within 5 min                              | wait, or inspect `attempts`                 |
-| `empty`   | extractor found no text (scan, image-only deck, empty file) | OCR is out of scope; vision helps PPTX only |
+| `empty`   | extractor found no text (scan, image-only deck, empty file) | enable OCR (§4.10) or vision; else a warning |
 | `skipped` | unsupported format                                          | add the format (see §17)                    |
 | `failed`  | 3 attempts exhausted; `error` holds the last message        | fix, then `worker_requeue_all`              |
 
@@ -347,6 +348,30 @@ is slower than a normal query.
 or is null, failed jobs, and `ready` jobs with zero chunks; it also inserts a job
 for any item that has none. It skips `running` jobs and does not delete current
 chunks until the new run commits.
+
+### 4.10 OCR: text that only exists as pixels (optional)
+
+Off by default. With `OCR_ENABLED=true` the worker transcribes pictures that carry
+text and would otherwise be lost, then feeds them through the same chunk → embed →
+commit path:
+
+- **What is read.** PDF pages whose native text is below `OCR_MIN_TEXT_CHARS` are
+  rendered (`unpdf` + `@napi-rs/canvas`) and OCR'd; PPTX `ppt/media/*` and DOCX
+  `word/media/*` pictures ≥ 24 KB are OCR'd directly.
+- **How.** `src/lib/rag/ocr/glm-ocr.ts` calls `zai-org/glm-ocr` on the provider's
+  OpenAI-compatible endpoint, downscales images over 2000 px, skips anything under
+  100 px, retries 429/5xx and never throws — a failure or timeout logs and skips
+  that image, so ingestion never fails.
+- **Bounding cost.** `OCR_MAX_IMAGES_PER_DOC` per file and `OCR_CONCURRENCY` in
+  flight; results are cached on disk by model + prompt + image hash, so re-ingesting
+  an unchanged file makes no model calls.
+- **Cleanup.** `extract-images.ts` drops non-transcriptions, JSON/code-fenced
+  wrappers and stray labels before the text becomes a chunk.
+- **Tagging.** OCR chunks carry `metadata.source = "ocr"` and a `[Slide N – OCR text]`
+  context line; retrieval and the answer model treat them like any other chunk.
+  `vision.ts` (`RAG_VISION=1`) stays the separate path for describing charts.
+
+With the flag off nothing runs and extraction is byte-for-byte unchanged.
 
 ---
 
@@ -1003,6 +1028,8 @@ Re-measure before quoting any number.
 | `SUPABASE_SERVICE_ROLE_KEY`                     | optional; Storage maintenance only   |
 | `SUPABASE_DB_URL`                               | optional; eval diagnostics           |
 | `RAG_VISION`, `RAG_VISION_MODEL`                | optional vision pass                 |
+| `OCR_ENABLED`, `OCR_MODEL`, `OCR_PROMPT`        | optional OCR pass at ingest (§4.10)  |
+| `OCR_TIMEOUT_MS`, `OCR_CONCURRENCY`, `OCR_MAX_IMAGES_PER_DOC`, `OCR_MIN_TEXT_CHARS`, `OCR_CACHE_DIR` | OCR limits and on-disk cache |
 | `DOC_*`                                         | document budgets (`llm-budget.ts`)   |
 
 ### First-time setup
@@ -1041,7 +1068,7 @@ select count(distinct content_id) from public.document_chunks;
 select embedding_model, count(*) from public.document_chunks group by 1;
 
 -- full re-index after a pipeline bump
-select public.worker_requeue_all('2026-11-10.1');
+select public.worker_requeue_all('2026-11-19.1');
 ```
 
 ### Diagnosing a bad answer
@@ -1068,14 +1095,14 @@ select public.worker_requeue_all('2026-11-10.1');
 | `EMBEDDING_MODEL`                         | `qwen/qwen3-embedding-8b`      | `rag/config.ts`  |
 | `EMBEDDING_DIMENSIONS`                    | 1536                           | same             |
 | `EMBEDDING_BATCH_SIZE`                    | 100                            | same             |
-| `EXTRACTOR_VERSION` / `CHUNKER_VERSION`   | `2026-11-10.1`                 | same             |
+| `EXTRACTOR_VERSION` / `CHUNKER_VERSION`   | `2026-11-19.1` / `2026-11-10.1` | same             |
 | chunk target / overlap / min              | 600 tok / 80 tok / 40 chars    | same             |
 | `DEFAULT_MATCH_COUNT` / `MAX_MATCH_COUNT` | 8 / 50                         | same             |
 | RRF constant                              | 60, top 50 per arm             | migration `0014` |
 | `RETRIEVAL_CANDIDATES`                    | 24                             | `rag/config.ts`  |
 | `RETRIEVAL_MIN_K` / `RETRIEVAL_MAX_K`     | 3 / 8                          | same             |
 | `RELEVANCE_SCORE_RATIO`                   | 0.5                            | same             |
-| `MAX_CHUNKS_PER_DOCUMENT` / `_SLIDE`      | 3 / 2                          | same             |
+| `MAX_CHUNKS_PER_DOCUMENT` / `_SLIDE`      | 3 / 3                          | same             |
 | `ANSWER_MODEL`                            | `deepseek/deepseek-v4.1-flash` | same             |
 | `ANSWER_MAX_TOKENS` / `_CONTINUATIONS`    | 2400 / 1                       | same             |
 | `ANSWER_TIMEOUT_MS`                       | 90 000                         | same             |
@@ -1092,6 +1119,7 @@ select public.worker_requeue_all('2026-11-10.1');
 | attempt cap / stale lease / heartbeat     | 3 / 5 min / 60 s               | `0017`           |
 | staging batch                             | 10                             | `rag/ingest.ts`  |
 | vision images per document                | 8                              | `rag/vision.ts`  |
+| OCR images per document / in flight       | 40 / 3                         | `rag/ocr/`       |
 | document search concurrency               | 3                              | `documents/`     |
 
 ---
@@ -1174,8 +1202,10 @@ one chunker, one embedder, one version, full idempotency.
   would likely improve `vague` and `projection` questions.
 - **No streaming.** Answers arrive in one response, so a 2400-token answer is a
   visible wait.
-- **No OCR.** Scanned PDFs land `empty` with a warning. Only PPTX pictures can be
-  read, and only with `RAG_VISION=1`.
+- **OCR is optional and partial.** With `OCR_ENABLED=true`, scans and picture text
+  are indexed, but a chart on a text-rich PDF page is not rendered, and plausible
+  hallucinations on photos are not filtered. It is off by default and each image is
+  a model call; enable it and re-ingest with `worker_requeue_all`.
 - **Vision is off and capped at 8 images**, so image-only slides are invisible to
   retrieval until it is enabled.
 - **FTS is English-only** (`'english'` regconfig); other languages rely on the
@@ -1267,12 +1297,15 @@ and a new or changed URL triggers `analyzeTargetSite` once
 `src/lib/brand/ssrf.ts` and returns two best-effort values:
 
 - **Logo** (`src/lib/documents/client-logo.ts`): ordered candidates from
-  `<link rel="icon">` / `apple-touch-icon`, then `img`/`svg` tags whose attributes
-  mention "logo", then header images, then `/apple-touch-icon.png` and
-  `/favicon.ico`. The first usable one is drawn to a capped PNG with
-  `@napi-rs/canvas`; the luminance of its opaque pixels decides whether it sits on
-  navy without a panel. It is never recoloured. `og:image` is deliberately not a
-  candidate — it is a hero banner, not a logo.
+  `<link rel="icon">` / `apple-touch-icon`, `img`/`svg` tags whose attributes
+  mention "logo", and logo/brand `url(...)` values in styles and inline styles
+  (SPA navbars set the wordmark as a CSS background, not an `<img>`), then header
+  images, then `/apple-touch-icon.png` and `/favicon.ico`. Trust/review badges (a
+  TrustPilot image is named "logo" too) and footer variants are down-ranked so they
+  cannot win. The first usable one is drawn to a capped PNG with `@napi-rs/canvas`;
+  the luminance of its opaque pixels decides whether it sits on navy without a
+  panel. It is never recoloured. `og:image` is deliberately not a candidate — it is
+  a hero banner, not a logo.
 - **Homepage text**: title, meta description and body text, stripped and capped at
   1600 characters, so the deck can be grounded on what the client says about
   itself rather than on model memory.
