@@ -60,11 +60,8 @@
     "flat": ["2148FB", "1C2453", "FFAF75", "BAD6FF"]
   },
   "surfaces": {
-    "$comment": "Rhythm: the deck opens on the white co-brand page, then the deep-navy gradient title, a pearl contents page and white content pages; closing is solid deep_navy. The gradient is a baked brand image, never an <a:gradFill>.",
+    "$comment": "White is the only slide background. The gradient title's fallback canvas is deep_navy, but blue is never a solid background anywhere else — the baked gradient image is the only blue surface, and never an <a:gradFill>.",
     "cover": "deepNavy",
-    "closing": "deepNavy",
-    "blue": "navy",
-    "navy": "navy",
     "light": "white",
     "white": "white"
   },

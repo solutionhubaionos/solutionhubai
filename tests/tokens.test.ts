@@ -111,10 +111,10 @@ describe("brand tokens", () => {
     expect(TOKENS.fonts.deckBody).toBe("Aptos");
     expect(TOKENS.fonts.deckChart).toBe("+mn-lt");
     expect(SURFACE_BACKGROUND.cover).toBe("deepNavy");
-    expect(SURFACE_BACKGROUND.closing).toBe("deepNavy");
+    expect(SURFACE_BACKGROUND.light).toBe("white");
   });
 
-  test("content pages share one light surface and close on deep navy", () => {
+  test("every content page is the light surface", () => {
     const layouts = [
       "section-divider",
       "context-bullets",
@@ -125,10 +125,8 @@ describe("brand tokens", () => {
       "next-steps-ask",
     ];
     const surfaces = assignSurfaces(layouts);
-    expect(surfaces.at(-1)).toBe("closing");
-    expect(surfaces.filter((surface) => surface === "closing")).toHaveLength(1);
-    // The reference kit draws every content page on the light surface.
-    expect(surfaces.slice(0, -1).every((surface) => surface === "light")).toBe(true);
+    // Dark blue is never a content background; the gradient title is separate.
+    expect(surfaces.every((surface) => surface === "light")).toBe(true);
   });
 
   test("a rendered deck uses only brand colours and the bundled imagery", async () => {
@@ -144,7 +142,8 @@ describe("brand tokens", () => {
     const { sequence, findings } = checkDeckBackgrounds(parts);
     expect(findings).toEqual([]);
     expect(sequence[0]).toBe(palette.white);
-    expect(sequence.at(-1)).toBe(palette.deepNavy);
+    // The only dark canvas is the gradient title; the last page is white.
+    expect(sequence.at(-1)).toBe(palette.white);
     const cover = new TextDecoder().decode(parts["ppt/slides/slide1.xml"]!);
     expect(cover).toMatch(`val="${palette.white}"`);
   });

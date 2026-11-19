@@ -21,15 +21,13 @@ export const AIONOS_TOKENS = {
   white: palette.white,
 } as const;
 
-export type Surface = "cover" | "light" | "navy" | "blue" | "closing";
+/** The only backgrounds a slide wears: the light page and the gradient title. */
+export type Surface = "cover" | "light";
 
 /** The token key that names each surface's background. */
 export const SURFACE_BACKGROUND: Record<Surface, PaletteName> = {
   cover: TOKENS.surfaces.cover as PaletteName,
   light: TOKENS.surfaces.light as PaletteName,
-  navy: TOKENS.surfaces.navy as PaletteName,
-  blue: TOKENS.surfaces.blue as PaletteName,
-  closing: TOKENS.surfaces.closing as PaletteName,
 };
 
 /** The brand's own writing/voice/content contract. Keep it short and operational. */
@@ -53,9 +51,9 @@ export const CHART_SERIES_LIGHT = [...TOKENS.chartSeries.light];
 export const CHART_SERIES_NAVY = [...TOKENS.chartSeries.navy];
 
 /**
- * The rhythm pass. The reference kit draws every content page on white and
- * closes on deep navy; only the closing slide changes surface.
+ * Every content page is white. Dark blue is never a solid background; the only
+ * blue surface is the baked gradient title, drawn directly by the renderer.
  */
 export function assignSurfaces(layouts: readonly string[]): Surface[] {
-  return layouts.map((layout) => (layout === "next-steps-ask" ? "closing" : "light"));
+  return layouts.map(() => "light");
 }

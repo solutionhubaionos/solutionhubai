@@ -202,7 +202,7 @@ export function DocumentCard({
       </div>
 
       {context.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 px-4 pt-3">
+        <div className="flex flex-wrap gap-1.5 px-4 py-3">
           {context.map((value) => (
             <Chip key={value}>{value}</Chip>
           ))}
