@@ -8,6 +8,7 @@ import {
   Globe,
   Link2,
   Search,
+  Trash2,
   UserRound,
   X,
 } from "lucide-react";
@@ -218,9 +219,11 @@ export function ContextToolbar({
         <button
           type="button"
           onClick={onReset}
-          className={`${FOCUS} shrink-0 rounded-full px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground`}
+          aria-label="Clear all"
+          title="Clear all"
+          className={`${FOCUS} grid h-7 w-7 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground`}
         >
-          Clear all
+          <Trash2 size={14} aria-hidden />
         </button>
       )}
     </div>
@@ -267,14 +270,14 @@ function Pill({
         aria-expanded={open}
         aria-label={set ? `${label}: ${full}` : `${label} — not set`}
         title={set ? full : label}
-        className={`${FOCUS} inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs transition-colors duration-150 ${
+        className={`${FOCUS} inline-flex h-8 w-[104px] shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-[11px] transition-colors duration-150 ${
           set
             ? "border-primary/20 bg-primary/10 font-medium text-primary hover:bg-primary/15"
             : "border-border bg-card text-muted-foreground hover:bg-secondary hover:text-foreground"
         }`}
       >
         <span className={`shrink-0 ${set ? "text-primary" : "text-muted-foreground"}`}>{icon}</span>
-        <span className="max-w-[140px] truncate">{pillLabel}</span>
+        <span className="min-w-0 flex-1 truncate">{pillLabel}</span>
         <ChevronDown
           size={13}
           className={`shrink-0 ${set ? "text-primary" : "text-muted-foreground"}`}
@@ -526,7 +529,7 @@ function PitchClientInput({
   const set = value.length > 0;
   return (
     <div
-      className={`flex h-8 min-w-[150px] max-w-[220px] shrink grow basis-[180px] items-center gap-1.5 rounded-full border px-2.5 transition-colors duration-150 focus-within:border-primary focus-within:ring-2 focus-within:ring-ring/30 ${
+      className={`flex h-8 w-[150px] shrink-0 items-center gap-1.5 rounded-full border px-2.5 transition-colors duration-150 focus-within:border-primary focus-within:ring-2 focus-within:ring-ring/30 ${
         set ? "border-primary/25 bg-primary/5" : "border-border bg-card"
       }`}
     >
@@ -549,7 +552,8 @@ function PitchClientInput({
         name="pitch-client"
         autoComplete="off"
         spellCheck={false}
-        className="min-w-0 flex-1 bg-transparent text-xs text-foreground focus:outline-none placeholder:text-muted-foreground"
+        title={value || undefined}
+        className="min-w-0 flex-1 truncate bg-transparent text-xs text-foreground focus:outline-none placeholder:text-muted-foreground"
       />
     </div>
   );
@@ -582,7 +586,7 @@ function WebsiteInput({
     <>
       <div
         title={invalid ? "Check this address — for example acme.com" : undefined}
-        className={`flex h-8 min-w-[180px] shrink grow basis-[220px] items-center gap-1.5 rounded-full border px-2.5 transition-colors duration-150 ${
+        className={`flex h-8 w-[180px] shrink-0 items-center gap-1.5 rounded-full border px-2.5 transition-colors duration-150 ${
           invalid
             ? "border-destructive/60 bg-card focus-within:border-destructive focus-within:ring-2 focus-within:ring-destructive/30"
             : set
@@ -612,7 +616,8 @@ function WebsiteInput({
           aria-label="Client website"
           aria-invalid={invalid || undefined}
           aria-describedby={invalid ? "ctx-website-hint" : undefined}
-          className="min-w-0 flex-1 bg-transparent text-xs text-foreground focus:outline-none placeholder:text-muted-foreground"
+          title={value || undefined}
+          className="min-w-0 flex-1 truncate bg-transparent text-xs text-foreground focus:outline-none placeholder:text-muted-foreground"
         />
         {set && (
           <button
