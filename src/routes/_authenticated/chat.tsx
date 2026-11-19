@@ -32,6 +32,7 @@ import {
 import {
   EMPTY_SCOPE,
   contextFromScope,
+  documentScopeReady,
   mergeScopeWithContext,
   normalizeScope,
   scopePillLabels,
@@ -39,6 +40,7 @@ import {
   withPrimaryTargetInfo,
   withPrimaryTargetName,
   withPrimaryTargetWebsite,
+  withSelection,
   type ConversationScope,
   type TargetClient,
 } from "@/lib/chat/conversationScope";
@@ -248,6 +250,8 @@ function ChatPage() {
     () => scopePillLabels(scope, industryNameBySlug),
     [scope, industryNameBySlug],
   );
+  // Create stays closed until an industry, the client and its website are set.
+  const scopeReady = documentScopeReady(scope);
 
   /** Saves an edited scope for this conversation; it applies from the next turn. */
   const persistScope = useCallback(
@@ -1064,9 +1068,19 @@ function ChatPage() {
     setInput("");
 
     // Only an explicit request (verb + format) starts an export; merely naming a
-    // deck, or finishing the wizard, never does.
+    // deck, or finishing the wizard, never does. Without a complete scope the
+    // request is answered with a prompt to finish the selection, never a draft.
     const intent = detectExportIntent(question, history);
     if (intent) {
+      if (!scopeReady) {
+        appendMessage(threadId, {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content:
+            "I can create that once the scope is set — pick an industry, the client you're pitching and their website in the bar above the message box, then ask me again.",
+        });
+        return;
+      }
       startExport(
         threadId,
         {
@@ -1084,7 +1098,16 @@ function ChatPage() {
     }
 
     ask.mutate({ threadId, question, history });
-  }, [activeThread, appendMessage, ask, context, industryNameBySlug, input, startExport]);
+  }, [
+    activeThread,
+    appendMessage,
+    ask,
+    context,
+    industryNameBySlug,
+    input,
+    scopeReady,
+    startExport,
+  ]);
 
   const newChat = useCallback(() => {
     const pristine =
@@ -1107,17 +1130,27 @@ function ChatPage() {
   }, []);
 
   // The "+" menu opens a draft the user has to confirm, exactly like a typed
-  // request; the sheet maker is the one tool still unconnected.
+  // request; the sheet maker is the one tool still unconnected. It stays closed
+  // until the scope is complete, so a deck is never built without a subject.
   const onCreateTool = useCallback(
     (toolId: string) => {
+      if (toolId === "sheet") {
+        toast("Spreadsheet maker isn’t connected yet", {
+          description: "Decks, PDFs and Word documents can be created from this menu.",
+        });
+        return;
+      }
+      if (!scopeReady) {
+        toast("Choose your industry, client and website first", {
+          description: "Set the scope in the bar above the message box, then create a document.",
+        });
+        return;
+      }
       if (toolId === "ppt") return startDocument("pptx");
       if (toolId === "doc") return startDocument("docx");
       if (toolId === "pdf") return startDocument("pdf");
-      toast("Spreadsheet maker isn’t connected yet", {
-        description: "Decks, PDFs and Word documents can be created from this menu.",
-      });
     },
-    [startDocument],
+    [startDocument, scopeReady],
   );
 
   const expanded = hovered || focused || overlayOpen || tapped;
@@ -1324,6 +1357,8 @@ function ChatPage() {
               focusSignal={focusSignal}
               onCreateTool={onCreateTool}
               disabled={picking}
+              createLocked={!scopeReady}
+              createHint="Choose your industry, client and website to create a document"
               {...(picking
                 ? {
                     placeholder:
@@ -1335,7 +1370,20 @@ function ChatPage() {
               contextBar={
                 <ContextToolbar
                   value={context}
-                  onChange={setContextValue}
+                  onChange={(key, next) => {
+                    setContextValue(key, next);
+                    // The pills are the scope editor: an industry or company
+                    // change re-points retrieval and exports from the next turn.
+                    if (key === "industries" || key === "clients") {
+                      void persistScope(
+                        withSelection(scope, {
+                          industries:
+                            key === "industries" ? (next as string[]) : context.industries,
+                          companies: key === "clients" ? (next as string[]) : context.clients,
+                        }),
+                      );
+                    }
+                  }}
                   onCommit={(website) => {
                     setContextValue("website", website);
                     void queueTargetWebsite(website);

@@ -1242,5 +1242,7 @@ cannot be rasterised in this workspace.
 
 | 2026-11-20 | `src/routes/index.tsx`, `src/components/AppHeader.tsx`, `src/lib/documents/render/deck.ts`, `src/lib/logo/rasterise.ts`, `tests/client-logo.test.ts` | Moved the Chat entry point off the public landing page: removed the landing topbar button, and on the library topbar added a Chat button beside the Menu button while dropping "AI Search" from the menu. Slide 1 of the deck now draws the client logo alone — enlarged to 4.4×1.05in, centred, with no panel or border — and the client rasteriser no longer bakes a navy backing into the PNG. | `bun run typecheck`; `bun test tests` 217 pass; slide-1 probe: 1 image, no navy fill; ESLint clean. |
 
+| 2026-11-20 | `src/lib/chat/conversationScope.ts`, `src/components/chat/Composer.tsx`, `src/routes/_authenticated/chat.tsx`, `tests/scope.test.ts` | Document creation is now gated on a complete scope: `documentScopeReady(scope)` (industry + pitched client + that client's website) locks the Create menu and the typed create command, which replies with a prompt to finish the selection while chat stays available. The context pills became the live scope editor — an industry or evidence-company change persists via `withSelection` (replace, not union), so retrieval and exports re-point mid-conversation and multiple picks union into the scoped search. | `bun run typecheck`; `bun test tests` 219 pass (new scope tests); ESLint clean. |
+
 > Add a row for every subsequent change. Keep the status line at the top
 > accurate: IN PROGRESS / BLOCKED / COMPLETE.

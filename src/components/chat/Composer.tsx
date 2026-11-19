@@ -34,6 +34,8 @@ export function Composer({
   disabled = false,
   placeholder,
   busy = false,
+  createLocked = false,
+  createHint,
   onStop,
 }: {
   value: string;
@@ -49,6 +51,10 @@ export function Composer({
   placeholder?: string;
   /** A request or generation is in flight; the send button becomes Stop. */
   busy?: boolean;
+  /** The Create command stays closed until the conversation scope is complete. */
+  createLocked?: boolean;
+  /** Why Create is closed, shown on the disabled button. */
+  createHint?: string;
   onStop?: () => void;
 }) {
   const areaRef = useRef<HTMLTextAreaElement>(null);
@@ -92,8 +98,8 @@ export function Composer({
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              disabled={disabled}
-              title="Create a document from this conversation"
+              disabled={disabled || createLocked}
+              title={createLocked ? createHint : "Create a document from this conversation"}
               className={`${FOCUS} inline-flex h-9 items-center gap-1.5 rounded-xl border border-border bg-card px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50`}
             >
               <Plus size={16} aria-hidden />

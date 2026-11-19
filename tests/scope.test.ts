@@ -13,6 +13,7 @@ import type { Database } from "../src/integrations/supabase/types";
 import {
   EMPTY_SCOPE,
   contextFromScope,
+  documentScopeReady,
   mergeScopeWithContext,
   normalizeScope,
   outsideScopeEntities,
@@ -22,6 +23,7 @@ import {
   scopePromptLine,
   scopeRetrievalScopes,
   reorderTargetClients,
+  withSelection,
   type ConversationScope,
 } from "../src/lib/chat/conversationScope";
 import { EMPTY_CONTEXT } from "../src/lib/chat/scope";
@@ -161,6 +163,50 @@ describe("conversation scope model", () => {
     expect(merged.industries).toEqual(["airports", "aviation"]);
     expect(merged.companies.map((company) => company.canonicalName)).toEqual(["Zurich Airport"]);
     expect(merged.updatedAt).toBe("2026-11-13T00:00:00.000Z");
+  });
+
+  test("withSelection replaces the evidence selection", () => {
+    const next = withSelection(TWO_PARTY_SCOPE, {
+      industries: ["aviation"],
+      companies: ["IndiGo"],
+    });
+    expect(next.industries).toEqual(["aviation"]);
+    expect(next.companies.map((company) => company.canonicalName)).toEqual(["IndiGo"]);
+    // A company carried over keeps its industry rather than losing it.
+    const kept = withSelection(TWO_PARTY_SCOPE, {
+      industries: ["airports", "aviation"],
+      companies: ["Zurich Airport"],
+    });
+    expect(kept.companies[0]?.industry).toBe("airports");
+  });
+
+  test("a document is only ready with an industry, client and website", () => {
+    const target = {
+      name: "",
+      websiteUrl: null,
+      logo: null,
+      siteText: null,
+      industry: null,
+      anonymise: true,
+      includePriorWork: false,
+      notes: "",
+    };
+    const ready = (patch: Partial<typeof target>) =>
+      documentScopeReady({
+        ...EMPTY_SCOPE,
+        industries: ["airlines"],
+        targetClients: [{ ...target, name: "Qantas", websiteUrl: "qantas.com", ...patch }],
+      });
+    expect(documentScopeReady(EMPTY_SCOPE)).toBe(false);
+    expect(ready({ websiteUrl: null })).toBe(false);
+    expect(ready({ name: "" })).toBe(false);
+    expect(
+      documentScopeReady({
+        ...EMPTY_SCOPE,
+        targetClients: [{ ...target, name: "Qantas", websiteUrl: "qantas.com" }],
+      }),
+    ).toBe(false);
+    expect(ready({})).toBe(true);
   });
 
   test("an organisation outside the scope is named, not blocked", () => {

@@ -115,7 +115,8 @@ export function normalizeTargetClient(value: unknown): TargetClient | null {
           return {
             dataUrl,
             light: entry["light"] === true,
-            aspect: typeof entry["aspect"] === "number" && entry["aspect"] > 0 ? entry["aspect"] : 3,
+            aspect:
+              typeof entry["aspect"] === "number" && entry["aspect"] > 0 ? entry["aspect"] : 3,
           };
         })()
       : null;
@@ -267,6 +268,41 @@ export function normalizeScope(value: unknown): ConversationScope {
 /** Company names in scope, in selection order. */
 export function scopeCompanyNames(scope: ConversationScope): string[] {
   return scope.companies.map((company) => company.canonicalName);
+}
+
+/**
+ * Replaces the evidence selection with the pill row's current picks, so a change
+ * mid-conversation re-points retrieval and exports from the next turn (adding a
+ * pill adds its documents, removing one drops them).
+ */
+export function withSelection(
+  scope: ConversationScope,
+  selection: { industries: readonly string[]; companies: readonly string[] },
+): ConversationScope {
+  const known = new Map(
+    scope.companies.map((company) => [company.canonicalName.toLowerCase(), company]),
+  );
+  return {
+    ...scope,
+    industries: uniqueStrings(selection.industries),
+    companies: uniqueStrings(selection.companies).map(
+      (name) => known.get(name.toLowerCase()) ?? { id: null, canonicalName: name, industry: null },
+    ),
+  };
+}
+
+/**
+ * Whether the conversation has chosen enough to create a document: an industry,
+ * the client being pitched, and that client's website. Until all three are set
+ * the Create command stays closed and only chat is available.
+ */
+export function documentScopeReady(scope: ConversationScope): boolean {
+  const target = scope.targetClients[0];
+  return (
+    scope.industries.length > 0 &&
+    Boolean(target?.name.trim()) &&
+    Boolean(target?.websiteUrl?.trim())
+  );
 }
 
 /**
