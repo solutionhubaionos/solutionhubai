@@ -15,14 +15,13 @@ import {
   File,
   FileText,
   Loader2,
+  Plus,
   Presentation,
   Sparkles,
   Upload,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -42,7 +41,7 @@ import {
   type DocumentDraftState,
   type DocumentMode,
 } from "@/lib/documents/types";
-import { FOCUS, eyebrowCls } from "./theme";
+import { FOCUS, chipCls, eyebrowCls } from "./theme";
 
 const ICONS = { pdf: File, docx: FileText, pptx: Presentation } as const;
 
@@ -82,6 +81,9 @@ export function DocumentCard({
   const [saveStep, setSaveStep] = useState<"sector" | "industry">("sector");
   const [saveSector, setSaveSector] = useState("");
   const [saveCustomer, setSaveCustomer] = useState("");
+  /** The "+ New" tile in the industry list: a name being created in this sector. */
+  const [addingCompany, setAddingCompany] = useState(false);
+  const [newCompany, setNewCompany] = useState("");
   const sectorName =
     industries.find((industry) => industry.slug === saveSector)?.name ?? saveSector;
   const sectorClients = saveSector ? (clientsByIndustry[saveSector] ?? []) : [];
@@ -91,7 +93,30 @@ export function DocumentCard({
     setSaveSector(draft.industrySlug ?? "");
     setSaveCustomer(draft.client?.trim() ?? "");
     setSaveStep("sector");
+    setAddingCompany(false);
+    setNewCompany("");
     setUploadOpen(true);
+  }
+
+  /**
+   * The "+ New" tile: creates a company under the chosen sector and selects it,
+   * so the document can be saved into the industry it was just filed under.
+   */
+  async function createCompany(rawName: string) {
+    const name = rawName.trim().replace(/\s+/g, " ").slice(0, 80);
+    if (!name || !saveSector || !user) return;
+    const { error } = await supabase
+      .from("customers")
+      .insert({ industry: saveSector, name, created_by: user.id });
+    // 23505 means the company already exists — that is the name we want anyway.
+    if (error && error.code !== "23505") {
+      toast.error(error.message || "Could not create that company.");
+      return;
+    }
+    void qc.invalidateQueries({ queryKey: ["chat-industry-clients"] });
+    setSaveCustomer(name);
+    setNewCompany("");
+    setAddingCompany(false);
   }
   const format = DOCUMENT_FORMATS[draft.type];
   const Icon = ICONS[draft.type];
@@ -440,25 +465,62 @@ export function DocumentCard({
                       onToggle={() => setSaveCustomer(name)}
                     />
                   ))}
-                </div>
-                <div className="space-y-1 pt-1">
-                  <Label htmlFor="save-client" className="text-xs">
-                    Client folder
-                  </Label>
-                  <Input
-                    id="save-client"
-                    maxLength={80}
-                    value={saveCustomer}
-                    onChange={(event) => setSaveCustomer(event.target.value)}
-                    autoComplete="off"
-                    name="save-client"
-                    placeholder="Type a client to create its folder, e.g. Air India"
-                  />
+                  {addingCompany ? (
+                    <span className={chipCls}>
+                      <input
+                        autoFocus
+                        value={newCompany}
+                        onChange={(event) => setNewCompany(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            void createCompany(newCompany);
+                          } else if (event.key === "Escape") {
+                            setAddingCompany(false);
+                            setNewCompany("");
+                          }
+                        }}
+                        maxLength={80}
+                        placeholder="New company name"
+                        aria-label="New company name"
+                        name="new-company"
+                        autoComplete="off"
+                        className="w-32 bg-transparent text-xs text-foreground placeholder:text-muted-foreground focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void createCompany(newCompany)}
+                        aria-label="Create company"
+                        className={`${FOCUS} grid h-4 w-4 place-items-center rounded-full text-primary hover:bg-primary/10`}
+                      >
+                        <Check size={11} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAddingCompany(false);
+                          setNewCompany("");
+                        }}
+                        aria-label="Cancel new company"
+                        className={`${FOCUS} grid h-4 w-4 place-items-center rounded-full text-muted-foreground hover:bg-secondary`}
+                      >
+                        <X size={11} />
+                      </button>
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setAddingCompany(true)}
+                      className={`${chipCls} border-dashed text-muted-foreground hover:text-foreground`}
+                    >
+                      <Plus size={11} aria-hidden /> New
+                    </button>
+                  )}
                 </div>
                 <p className="text-xs text-muted-foreground">
                   {saveCustomer.trim()
-                    ? `Saves under ${sectorName} · ${saveCustomer.trim()}; if that client folder does not exist yet it is created.`
-                    : `Pick a customer above, type a new one to create its folder, or leave empty to save as industry-wide content.`}
+                    ? `Saves under ${sectorName} · ${saveCustomer.trim()}.`
+                    : `Pick a company, or + New to create one in ${sectorName}; leave empty to save as industry-wide content.`}
                 </p>
               </div>
             )}
