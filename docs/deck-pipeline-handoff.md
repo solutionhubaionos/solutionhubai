@@ -1246,5 +1246,7 @@ cannot be rasterised in this workspace.
 
 | 2026-11-20 | `src/components/chat/DocumentCard.tsx` | "Save to library" is now an explicit two-step wizard: pick a **Sector**, then press the footer **Select Industry** button to reveal that sector's companies (with a **+ New** tile that creates a company in the sector and selects it), then save into the chosen industry. Selecting a sector no longer jumps straight into the list. The old free-text "Client folder" field is replaced by the tile. | `bun run typecheck`; `bun test tests` 219 pass; ESLint clean. |
 
+| 2026-11-20 | `drizzle/migrations/0026_conversation_messages.sql`, `src/lib/chat/storage.functions.ts`, `src/routes/_authenticated/chat.tsx`, `src/integrations/supabase/types.ts` | Persistent chats per account. `conversations` gains `title`, `messages` (jsonb) and `intake` (jsonb); new server fns list/load/save/delete, all owner-only under the existing RLS. The chat page loads the account's list on mount, loads a transcript when a chat is opened (including the `?c=` deep link), and debounce-saves the open chat once it has content. The sidebar lists every stored chat. List query never reads `messages`. **The migration must be applied to the database** (direct Postgres is firewalled here). | `bun run typecheck`; `bun test tests` 219 pass; ESLint clean. |
+
 > Add a row for every subsequent change. Keep the status line at the top
 > accurate: IN PROGRESS / BLOCKED / COMPLETE.

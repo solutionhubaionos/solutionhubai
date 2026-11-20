@@ -45,6 +45,12 @@ import {
   type TargetClient,
 } from "@/lib/chat/conversationScope";
 import { loadConversationScope, saveConversationScope } from "@/lib/chat/scope.functions";
+import {
+  listConversations,
+  loadConversation,
+  saveConversation,
+  type ChatSummaryRow,
+} from "@/lib/chat/storage.functions";
 import { analyzeTargetSite } from "@/lib/documents/logo.functions";
 import { rasteriseLogo } from "@/lib/logo/rasterise";
 import { stopRequest } from "@/lib/documents/cancel.functions";
@@ -147,6 +153,8 @@ function ChatPage() {
   const [context, setContext] = useState<ChatContext>(EMPTY_CONTEXT);
   const [threads, setThreads] = useState<ChatThread[]>(() => [greetingThread()]);
   const [activeId, setActiveId] = useState<string | null>(null);
+  /** The account's stored chats, for the sidebar; newest first. */
+  const [serverChats, setServerChats] = useState<ChatSummaryRow[]>([]);
   const [input, setInput] = useState("");
   const [focusSignal, setFocusSignal] = useState(0);
   const [scrolled, setScrolled] = useState(false);
@@ -160,6 +168,11 @@ function ChatPage() {
   const [tapped, setTapped] = useState(false);
   const [coarse, setCoarse] = useState(false);
   const sidebarRef = useRef<HTMLElement>(null);
+  /** Latest threads, so callbacks can test membership without a stale closure. */
+  const threadsRef = useRef<ChatThread[]>([]);
+  useEffect(() => {
+    threadsRef.current = threads;
+  }, [threads]);
 
   useEffect(() => {
     if (!drawerOpen) return;
@@ -169,6 +182,21 @@ function ChatPage() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [drawerOpen]);
+
+  // The account's chats are loaded once; opening one loads its transcript.
+  useEffect(() => {
+    let cancelled = false;
+    listConversations()
+      .then((rows) => {
+        if (!cancelled) setServerChats(rows);
+      })
+      .catch(() => {
+        // A chat is never blocked by a failed list; the transcript is in memory.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Whether hover can expand the rail at all: a coarse pointer never fires it.
   useEffect(() => {
@@ -230,7 +258,76 @@ function ChatPage() {
   const activeThread = threads.find((thread) => thread.id === activeId) ?? threads[0] ?? null;
   const messages = activeThread?.messages ?? [];
   const intake = activeThread?.intake ?? INITIAL_INTAKE;
+
+  // The sidebar list: the account's stored chats plus any just-started local
+  // chat that has content and is not saved yet.
+  const chatList = useMemo(() => {
+    const saved = new Set(serverChats.map((chat) => chat.id));
+    const local = threads
+      .filter(
+        (thread) =>
+          !saved.has(thread.id) &&
+          thread.messages.some((message) => message.role === "user" || message.document),
+      )
+      .map((thread) => ({ id: thread.id, title: thread.title, updatedAt: "" }));
+    return [...local, ...serverChats];
+  }, [serverChats, threads]);
   const picking = isPickingScope(intake);
+
+  /** Loads one stored conversation into the in-memory thread cache (once). */
+  const loadThread = useCallback(async (id: string): Promise<boolean> => {
+    if (threadsRef.current.some((thread) => thread.id === id)) return true;
+    try {
+      const conversation = await loadConversation({ data: { conversationId: id } });
+      if (!conversation) return false;
+      setThreads((previous) =>
+        previous.some((thread) => thread.id === id)
+          ? previous
+          : [
+              {
+                id,
+                title: conversation.title,
+                messages: conversation.messages as unknown as ChatMessageView[],
+                intake: (conversation.intake as IntakeState | null) ?? { stage: "complete" },
+              },
+              ...previous,
+            ],
+      );
+      return true;
+    } catch {
+      // A missing row leaves the greeting in place; the chat still works.
+      return false;
+    }
+  }, []);
+
+  // Persist the open chat (debounced) once it has any content, so a refresh or a
+  // later session reopens it. An empty greeting chat is never stored.
+  useEffect(() => {
+    const thread = activeThread;
+    if (!thread) return;
+    if (!thread.messages.some((message) => message.role === "user" || message.document)) return;
+    const handle = setTimeout(() => {
+      void saveConversation({
+        data: {
+          conversationId: thread.id,
+          title: thread.title,
+          messages: thread.messages,
+          intake: thread.intake,
+        },
+      })
+        .then((result) => {
+          if (!result.ok) return;
+          setServerChats((previous) => [
+            { id: thread.id, title: thread.title, updatedAt: new Date().toISOString() },
+            ...previous.filter((chat) => chat.id !== thread.id),
+          ]);
+        })
+        .catch(() => {
+          // A failed save keeps the chat in memory; the next change retries.
+        });
+    }, 700);
+    return () => clearTimeout(handle);
+  }, [activeThread]);
 
   // The scope lives with the conversation on the server, so it survives a
   // reload and a later session of the same chat; the client only displays it.
@@ -405,30 +502,25 @@ function ChatPage() {
     (threadId: string) => {
       setActiveId(threadId);
       void navigate({ to: "/chat", search: { c: threadId }, replace: true });
+      void loadThread(threadId);
     },
-    [navigate],
+    [loadThread, navigate],
   );
 
-  // A conversation id in the URL reopens that conversation — and with it the
-  // stored scope — even in a fresh tab, where the transcript restarts empty.
+  // A conversation id in the URL reopens that conversation and its transcript,
+  // even in a fresh tab. An id that names no stored chat (never saved, or saved
+  // before persistence existed) is dropped, so the page never sits on a dead id
+  // with an empty transcript.
   useEffect(() => {
     const id = search.c;
     if (!id) return;
-    setThreads((previous) =>
-      previous.some((thread) => thread.id === id)
-        ? previous
-        : [
-            {
-              id,
-              title: "Resumed conversation",
-              messages: [{ id: crypto.randomUUID(), role: "assistant", content: INTAKE_GREETING }],
-              intake: { stage: "complete" },
-            },
-            ...previous,
-          ],
-    );
     setActiveId(id);
-  }, [search.c]);
+    void loadThread(id).then((found) => {
+      if (found) return;
+      setActiveId(null);
+      void navigate({ to: "/chat", search: {}, replace: true });
+    });
+  }, [loadThread, navigate, search.c]);
 
   const appendMessage = useCallback((threadId: string, message: ChatMessageView) => {
     setThreads((previous) =>
@@ -1113,15 +1205,20 @@ function ChatPage() {
     const pristine =
       activeThread !== null &&
       !activeThread.messages.some((message) => message.role === "user" || message.document);
-    if (!pristine) {
+    if (pristine && activeThread) {
+      // Reuse the empty chat, but drop any id still in the URL.
+      setActiveId(activeThread.id);
+    } else {
       const thread = greetingThread();
       setThreads((previous) => [thread, ...previous]);
-      openThread(thread.id);
-      setContext(EMPTY_CONTEXT);
+      setActiveId(thread.id);
     }
+    setContext(EMPTY_CONTEXT);
     setInput("");
     setFocusSignal((signal) => signal + 1);
-  }, [activeThread, openThread]);
+    // Always land on /chat with no id, so a new chat is instant and unambiguous.
+    void navigate({ to: "/chat", search: {}, replace: true });
+  }, [activeThread, navigate]);
 
   // An example card drops its prompt into the composer for editing — never sends.
   const useExample = useCallback((prompt: string) => {
@@ -1162,11 +1259,7 @@ function ChatPage() {
   }) => (
     <ChatSidebar
       expanded={options.expanded}
-      chats={threads
-        .filter((thread) =>
-          thread.messages.some((message) => message.role === "user" || message.document),
-        )
-        .map((thread) => ({ id: thread.id, title: thread.title }))}
+      chats={chatList}
       activeChatId={activeThread?.id ?? null}
       onSelectChat={openThread}
       onNewChat={newChat}
