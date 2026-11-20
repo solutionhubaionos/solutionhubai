@@ -432,7 +432,6 @@ export function DocumentCard({
                               ? (draft.client?.trim() ?? "")
                               : "",
                           );
-                          setSaveStep("industry");
                         }}
                       />
                     ))}
@@ -529,14 +528,18 @@ export function DocumentCard({
               <Button variant="ghost" onClick={() => setUploadOpen(false)} disabled={uploading}>
                 Cancel
               </Button>
-              <Button onClick={saveToLibrary} disabled={uploading || !saveSector}>
-                {uploading ? <Loader2 className="animate-spin" /> : <Upload />}
-                {uploading
-                  ? "Uploading…"
-                  : saveSector
-                    ? `Upload to ${sectorName}${saveCustomer.trim() ? ` · ${saveCustomer.trim()}` : ""}`
-                    : "Choose a sector"}
-              </Button>
+              {saveStep === "sector" ? (
+                <Button onClick={() => setSaveStep("industry")} disabled={!saveSector}>
+                  Select Industry
+                </Button>
+              ) : (
+                <Button onClick={saveToLibrary} disabled={uploading || !saveSector}>
+                  {uploading ? <Loader2 className="animate-spin" /> : <Upload />}
+                  {uploading
+                    ? "Uploading…"
+                    : `Upload to ${sectorName}${saveCustomer.trim() ? ` · ${saveCustomer.trim()}` : ""}`}
+                </Button>
+              )}
             </DialogFooter>
           </DialogContent>
         </Dialog>
