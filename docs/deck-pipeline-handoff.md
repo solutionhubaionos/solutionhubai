@@ -1244,5 +1244,7 @@ cannot be rasterised in this workspace.
 
 | 2026-11-20 | `src/lib/chat/conversationScope.ts`, `src/components/chat/Composer.tsx`, `src/routes/_authenticated/chat.tsx`, `tests/scope.test.ts` | Document creation is now gated on a complete scope: `documentScopeReady(scope)` (industry + pitched client + that client's website) locks the Create menu and the typed create command, which replies with a prompt to finish the selection while chat stays available. The context pills became the live scope editor — an industry or evidence-company change persists via `withSelection` (replace, not union), so retrieval and exports re-point mid-conversation and multiple picks union into the scoped search. | `bun run typecheck`; `bun test tests` 219 pass (new scope tests); ESLint clean. |
 
+| 2026-11-20 | `src/components/chat/DocumentCard.tsx` | "Save to library" flow: after choosing a sector, the industry (company) list in the dialog now ends with a **+ New** tile that creates a company inside that sector and selects it, so the document can be saved into the just-created industry. The old free-text "Client folder" field is replaced by the tile; the sector → industry → save order is unchanged. | `bun run typecheck`; `bun test tests` 219 pass; ESLint clean. |
+
 > Add a row for every subsequent change. Keep the status line at the top
 > accurate: IN PROGRESS / BLOCKED / COMPLETE.
