@@ -1,5 +1,5 @@
 {
-  "$comment": "Aionos brand tokens - the single source of truth for every generated document. Change a value here and every exported deck, PDF and DOCX restyles. Colours are six-digit hex without '#'. The palette is closed: aionos_navy, deep_navy, electric_blue, warm_clay, pearl, soft_blue, plus pure white. Do not add any other colour or typeface.",
+  "$comment": "Aionos brand tokens - the single source of truth for every generated document. Change a value here and every exported deck, PDF and DOCX restyles. Colours are six-digit hex without '#'. The palette is closed: aionos_navy, deep_navy, electric_blue, warm_clay, pearl, mist, light_grey, soft_blue, electric_cyan, plus pure white. Do not add any other colour or typeface.",
   "brand": {
     "name": "Aionos",
     "wordmark": "AIONOS",
@@ -11,7 +11,10 @@
     "electricBlue": "2148FB",
     "warmClay": "FFAF75",
     "pearl": "F5F4F1",
+    "mist": "D2D7E2",
+    "lightGrey": "EDEDED",
     "softBlue": "BAD6FF",
+    "electricCyan": "00ECFF",
     "white": "FFFFFF"
   },
   "fonts": {
@@ -54,38 +57,54 @@
     "cardRadius": 0.12
   },
   "chartSeries": {
-    "$comment": "Approved chart marks only. 'light' is read on a white page (electric_blue, navy, warm_clay, soft_blue); 'navy' on the dark canvases (white, soft_blue, warm_clay, pearl). 'flat' keeps the legacy section renderer on the same brand marks.",
+    "$comment": "Approved chart marks only. 'light' is read on a white page (electric_blue, navy, warm_clay, soft_blue); 'navy' on the dark canvases (white, soft_blue, warm_clay, pearl); 'flat' keeps the legacy section renderer on the same brand marks.",
     "light": ["2148FB", "1C2453", "FFAF75", "BAD6FF"],
     "navy": ["FFFFFF", "BAD6FF", "FFAF75", "F5F4F1"],
     "flat": ["2148FB", "1C2453", "FFAF75", "BAD6FF"]
   },
   "surfaces": {
-    "$comment": "Odd pages are white, even pages wear the baked gradient (deep_navy fallback) — never an <a:gradFill>, and never a solid dark blue without the image.",
+    "$comment": "Content pages are white. Section dividers and the closing page are the solid deep_navy ground. The cover bleeds the baked guideline gradient image (a deep_navy fallback) — never an <a:gradFill>.",
     "gradient": "deepNavy",
+    "navy": "deepNavy",
     "light": "white",
     "white": "white"
   },
   "contrast": {
-    "$comment": "Contrast is checked, never hardcoded. minRatio is WCAG AA for body text; large text may drop to largeMin. textInks are the only colours a text run may use; graphicsOnly fills may never carry text. The six safe pairs (white on navy/deep_navy/electric_blue, navy on pearl/soft_blue/warm_clay) are the only legal combinations and are verified against minRatio at load.",
+    "$comment": "Contrast is checked, never hardcoded. minRatio is WCAG AA for body text; large text may drop to largeMin. textInks are the only colours a text run may use; graphicsOnly fills may never carry text. safePairs are the only legal combinations and are verified against minRatio at load; forbiddenPairs are the combinations the guide names and are asserted absent.",
     "minRatio": 4.5,
     "largeMin": 3,
     "textInks": ["white", "navy", "deepNavy", "electricBlue", "softBlue"],
     "darkBackdrops": ["navy", "deepNavy", "electricBlue"],
-    "lightBackdrops": ["white", "pearl", "softBlue", "warmClay"],
+    "lightBackdrops": ["white", "pearl", "mist", "lightGrey", "softBlue", "warmClay", "electricCyan"],
     "graphicsOnly": ["warmClay", "pearl"],
     "safePairs": [
       { "text": "white", "background": "navy" },
       { "text": "white", "background": "deepNavy" },
       { "text": "white", "background": "electricBlue" },
       { "text": "navy", "background": "pearl" },
+      { "text": "navy", "background": "mist" },
+      { "text": "navy", "background": "lightGrey" },
       { "text": "navy", "background": "softBlue" },
-      { "text": "navy", "background": "warmClay" }
+      { "text": "navy", "background": "warmClay" },
+      { "text": "navy", "background": "electricCyan" }
+    ],
+    "forbiddenPairs": [
+      { "text": "electricBlue", "background": "navy" },
+      { "text": "electricBlue", "background": "deepNavy" },
+      { "text": "navy", "background": "electricBlue" },
+      { "text": "white", "background": "pearl" },
+      { "text": "white", "background": "mist" },
+      { "text": "white", "background": "lightGrey" },
+      { "text": "white", "background": "softBlue" },
+      { "text": "white", "background": "warmClay" },
+      { "text": "white", "background": "electricCyan" }
     ]
   },
   "config": {
     "showSourceLine": false,
     "includeSourcesSlide": false,
     "showTemplateFooter": true,
+    "maxSlides": 10,
     "maxTableRows": 6,
     "maxTableCols": 4,
     "maxKpiCards": 4,

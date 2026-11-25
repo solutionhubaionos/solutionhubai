@@ -56,6 +56,17 @@ export const SAFE_PAIRS: SafePair[] = raw.contrast.safePairs.map((pair) => {
   return { text, background, ratio: Number(contrastRatio(up(text), up(background)).toFixed(2)) };
 });
 
+export type ForbiddenPair = { text: PaletteName; background: PaletteName };
+
+/**
+ * Combinations the guide names as forbidden, e.g. navy on electric blue or any
+ * text on a light fill. Exposed so a test can assert each one actually fails.
+ */
+export const FORBIDDEN_PAIRS: ForbiddenPair[] = raw.contrast.forbiddenPairs.map((pair) => ({
+  text: pair.text as PaletteName,
+  background: pair.background as PaletteName,
+}));
+
 /**
  * Fail loudly on a malformed token file rather than emitting an invalid colour.
  * Runs once at import; a bad value is a build error, not a broken deck.

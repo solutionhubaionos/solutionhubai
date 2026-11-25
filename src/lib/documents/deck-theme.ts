@@ -56,6 +56,7 @@ export const DECK_THEME = {
     showTemplateFooter: TOKENS.config.showTemplateFooter,
     footer: TOKENS.brand.footer,
     wordmark: TOKENS.brand.wordmark,
+    maxSlides: TOKENS.config.maxSlides,
     maxTableRows: TOKENS.config.maxTableRows,
     maxTableCols: TOKENS.config.maxTableCols,
     maxKpiCards: TOKENS.config.maxKpiCards,

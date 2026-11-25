@@ -21,24 +21,28 @@ export const AIONOS_TOKENS = {
   white: palette.white,
 } as const;
 
-/** A slide is either the light page or the gradient page; they alternate. */
-export type Surface = "light" | "gradient";
+/**
+ * A slide ground: the white content page, the solid deep-navy page (section
+ * dividers and the closing), or the cover, which bleeds the guideline gradient.
+ */
+export type Surface = "light" | "navy" | "gradient";
 
 /** The token key that names each surface's background. */
 export const SURFACE_BACKGROUND: Record<Surface, PaletteName> = {
   gradient: TOKENS.surfaces.gradient as PaletteName,
+  navy: TOKENS.surfaces.navy as PaletteName,
   light: TOKENS.surfaces.light as PaletteName,
 };
 
 /** The brand's own writing/voice/content contract. Keep it short and operational. */
 export const AIONOS_AGENT_GUIDE = [
   "Aionos brand kit (hard constraints).",
-  "Voice: clarity of an expert, responsibility of a trusted partner, confidence to own outcomes. Confident, human, matter-of-fact, plain language, point first, active voice.",
+  "Voice: clarity of an expert, responsibility of a trusted partner, confidence to own outcomes. The deck is written by Aionos for the client: plain language, point first, active voice, evidence over claims, confident without hype. Say who benefits and how.",
   "Headlines: sentence case, at most ~10 words, a finding not a topic ('Turnaround time fell 18% after rollout', never 'Results'). Bullets: at most 5 per slide, at most ~15 words each.",
   'Naming: write "Aionos" (title case) in all body copy. Use "AIONOS" only for headlines/signage. Never write "AionOS".',
   "Avoid: jargon, exaggeration, unsupported claims, hype words (revolutionary, cutting-edge, game-changing, seamless, unleash, supercharge), and technical complexity without explanation.",
   "Grounded: evidence over claims. Every claim needs a number, source or example from the retrieved passages; no evidence, no claim.",
-  "Background rhythm: the deck opens on a white co-brand page and a deep-navy gradient title, then content pages run on white, with CLOSING (deep navy) last. Content never alternates surface and never uses a gradient of its own.",
+  "Background rhythm: the deck opens on a deep-navy gradient cover that carries the client logo, then content pages run on white, with SECTION and CLOSING pages on solid deep navy. Content never alternates surface and never uses a gradient of its own.",
   "Colour: the only colours are aionos navy, deep navy, electric blue, warm clay, pearl, soft blue and white. On a white content page, boxes, table headers and borders are electric blue with white text; body text is deep navy; the eyebrow label is electric blue. On the closing deep-navy page, text is white. Never navy boxes with light text.",
   "Charts: use only real, sourced numbers; if there is no real number, do not make a chart. Label axes and units and prefer direct labels over a legend. No chart of two identical placeholder values.",
   "Imagery: real people and work environments only. Never generic futuristic AI visuals (robots, glowing brains, circuit art). If no authentic image exists, use none.",
@@ -49,11 +53,3 @@ export const AIONOS_AGENT_GUIDE = [
 /** Chart series by surface, read from the token file. */
 export const CHART_SERIES_LIGHT = [...TOKENS.chartSeries.light];
 export const CHART_SERIES_NAVY = [...TOKENS.chartSeries.navy];
-
-/**
- * The deck alternates: odd pages white, even pages the baked gradient. The
- * renderer derives each page's surface from its 1-based position.
- */
-export function surfaceForPage(pageNumber: number): Surface {
-  return pageNumber % 2 === 0 ? "gradient" : "light";
-}

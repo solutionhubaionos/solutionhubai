@@ -1,17 +1,15 @@
 /**
- * The bundled deck visual kit: the gradient title canvas, the team photograph,
- * and the closing-panel photographs, plus the Aionos wordmark variants. Read
- * once and shared by the renderer; the heavy base64 lives in
+ * The bundled deck visual kit: the cover gradient extracted from the Aionos
+ * brand guideline, the closing-panel photographs, and the Aionos wordmark
+ * variants. Read once and shared by the renderer; the heavy base64 lives in
  * `aionos-theme-images.ts`.
  */
 import { AIONOS_LOGO } from "./aionos-logo";
 import { DECK_IMAGES, CLOSING_PHOTOS } from "./aionos-theme-images";
 
 export const DECK_THEME_IMAGES = {
-  /** The full-bleed gradient drawn behind the title slide. */
+  /** The full-bleed cover gradient drawn behind the title slide. */
   gradient: DECK_IMAGES.gradient,
-  /** The title-slide photograph, contained on the right. */
-  teamPhoto: DECK_IMAGES.teamPhoto,
   /** The wordmark for light pages and the dark title canvas. */
   navyLogo: AIONOS_LOGO.navy,
   whiteLogo: AIONOS_LOGO.white,

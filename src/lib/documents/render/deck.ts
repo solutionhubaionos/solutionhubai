@@ -12,7 +12,6 @@ import {
   CHART_SERIES_LIGHT,
   CHART_SERIES_NAVY,
   SURFACE_BACKGROUND,
-  surfaceForPage,
   type Surface,
 } from "../brand-guide";
 import { palette } from "../tokens";
@@ -111,7 +110,8 @@ function surfaceView(surface: Surface): SurfaceView {
       gradient: false,
     };
   }
-  // The gradient page: boxes are pearl with deep navy text; page text is white.
+  // The dark ground: solid deep navy for section dividers and the closing; the
+  // cover bleeds the baked guideline gradient on the same navy fallback.
   return {
     background,
     ink: WHITE_HEX,
@@ -129,13 +129,15 @@ function surfaceView(surface: Surface): SurfaceView {
     onAccent: DEEP_HEX,
     logo: AIONOS_LOGO.white,
     series: CHART_SERIES_NAVY,
-    gradient: true,
+    gradient: surface === "gradient",
   };
 }
 
 let VIEW: SurfaceView = surfaceView("light");
 /** The target industry shown as the eyebrow on every content page. */
 let EYEBROW = "";
+/** The footer wordmark ("Aionos") drawn bottom-left on every content page. */
+let FOOTER = "Aionos";
 /** The "01" prefix carried by the current slide's heading. */
 let SLIDE_NUMBER = "";
 
@@ -296,6 +298,11 @@ function chrome(pres: PptxGenJS, options: ChromeOptions): Slide {
     color: VIEW.inkMuted,
     align: "right",
   });
+  addText(slide, FOOTER, M, 6.94, 4, 0.2, {
+    fontSize: 11,
+    color: VIEW.inkMuted,
+    charSpacing: 1.1,
+  });
   return slide;
 }
 
@@ -331,79 +338,84 @@ function sourceLine(slide: Slide, value: string): void {
 
 /* ---------------------------------------------------------------- slides --- */
 
-/** The gradient title canvas: the kit's opening page, drawn full-bleed. */
-function cover(pres: PptxGenJS, spec: DeckSpec, meta: DeckCoverMeta, pageNumber: number): void {
+/** The guideline cover: the baked deep-navy → electric-blue gradient, the Aionos
+ * wordmark, the deck title and the client's logo in its reserved box. */
+function cover(
+  pres: PptxGenJS,
+  spec: DeckSpec,
+  meta: DeckCoverMeta,
+  pageNumber: number,
+  clientLogo: { dataUrl: string; light: boolean; aspect: number } | null,
+): void {
   const slide = pres.addSlide();
   slide.background = { color: DEEP_HEX };
   slide.addImage({ data: IMG.gradient, x: 0, y: 0, w: W, h: H });
+  // The Aionos wordmark, top-left, from the template. Never redrawn.
+  slide.addImage({
+    data: IMG.whiteLogo,
+    x: M,
+    y: 0.5,
+    w: 1.9,
+    h: 0.5,
+    sizing: { type: "contain", w: 1.9, h: 0.5 },
+  });
+  placeClientLogo(slide, clientLogo);
   const title = clean(spec.deckTitle);
   slide.addText(title, {
-    x: 0.7,
-    y: 0.85,
-    w: 7.1,
-    h: 1.65,
+    x: M,
+    y: 2.15,
+    w: 8.0,
+    h: 1.9,
     fontFace: FONTS.heading,
     fontSize: title.length > 90 ? 34 : 40,
     bold: true,
     color: C.white,
     margin: 0,
-    valign: "middle",
+    valign: "bottom",
     isTextBox: true,
     fit: "shrink",
   });
   const summary = splitSlideText(spec.storyline, 280);
   slide.addText(summary[0] ?? "", {
-    x: 0.7,
-    y: 2.85,
-    w: 7.0,
-    h: 1.4,
+    x: M,
+    y: 4.2,
+    w: 7.4,
+    h: 1.5,
     fontFace: FONTS.body,
-    fontSize: 17,
+    fontSize: 16,
     color: C.white,
     margin: 0,
     valign: "top",
     isTextBox: true,
     fit: "shrink",
   });
-  if (IMG.teamPhoto) {
-    slide.addImage({
-      data: IMG.teamPhoto,
-      x: 8.35,
-      y: 0.75,
-      w: 4.3,
-      h: 5.35,
-      sizing: { type: "contain", w: 4.3, h: 5.35 },
-    });
-  }
   const subtitle = clean([meta.subtitle, spec.audience].filter(Boolean).join("  ·  "));
   if (subtitle) {
     slide.addText(subtitle, {
-      x: 0.7,
-      y: 4.55,
-      w: 7.0,
-      h: 0.6,
+      x: M,
+      y: 5.75,
+      w: 7.4,
+      h: 0.5,
       fontFace: FONTS.body,
       fontSize: 13,
-      color: C.teal,
+      color: SOFT_HEX,
       margin: 0,
       valign: "top",
       isTextBox: true,
       fit: "shrink",
     });
   }
-  if (meta.date) {
-    slide.addText(clean(meta.date), {
-      x: 0.7,
-      y: 6.45,
-      w: 11.8,
-      h: 0.25,
-      fontFace: FONTS.body,
-      fontSize: 11,
-      color: C.white,
-      margin: 0,
-      isTextBox: true,
-    });
-  }
+  slide.addText(clean([meta.date, FOOTER].filter(Boolean).join("  ·  ")), {
+    x: M,
+    y: 6.94,
+    w: 8,
+    h: 0.2,
+    fontFace: FONTS.body,
+    fontSize: 11,
+    color: C.white,
+    margin: 0,
+    isTextBox: true,
+  });
   slide.addText(String(pageNumber), {
     x: W - M - 0.6,
     y: 6.94,
@@ -419,24 +431,70 @@ function cover(pres: PptxGenJS, spec: DeckSpec, meta: DeckCoverMeta, pageNumber:
   slide.addNotes(clean(spec.storyline));
 }
 
-/** The white client-lockup page: the target's own mark, centred, with no frame. */
-function clientLockupPage(
-  pres: PptxGenJS,
+/** The closing page, on the solid deep-navy ground the guideline uses. */
+function closingSlide(pres: PptxGenJS, spec: DeckSpec, meta: DeckCoverMeta, index: number): void {
+  setSurface("navy");
+  const slide = chrome(pres, { index });
+  slide.addText("Thank you", {
+    x: M,
+    y: 2.7,
+    w: CONTENT_W,
+    h: 1.2,
+    fontFace: FONTS.heading,
+    fontSize: 44,
+    bold: true,
+    color: VIEW.heading,
+    margin: 0,
+    valign: "middle",
+    isTextBox: true,
+    fit: "shrink",
+  });
+  const contact = clean([meta.subtitle, spec.audience].filter(Boolean).join("  ·  "));
+  if (contact) {
+    addText(slide, contact, M, 4.15, CONTENT_W, 0.5, {
+      fontSize: 15,
+      color: VIEW.inkMuted,
+    });
+  }
+  slide.addNotes("Close by confirming the next step and the owner.");
+}
+
+/**
+ * The client's mark in the cover's reserved box, scaled to fit with the aspect
+ * ratio preserved and clear space either side. A dark or transparent logo that
+ * would fail contrast on the gradient sits on a white rounded card. No logo,
+ * no card, no placeholder text; the export never fails for a missing mark.
+ */
+function placeClientLogo(
+  slide: Slide,
   clientLogo: { dataUrl: string; light: boolean; aspect: number } | null,
 ): void {
-  const slide = pres.addSlide();
-  slide.background = { color: C.white };
   if (!clientLogo) return;
-  // Just the logo: no panel, no border, no container.
-  const width = 4.4;
-  const height = 1.05;
+  const boxW = 3.4;
+  const boxH = 1.5;
+  const x = W - M - boxW;
+  const y = 0.4;
+  if (!clientLogo.light) {
+    slide.addShape("roundRect", {
+      x,
+      y,
+      w: boxW,
+      h: boxH,
+      fill: { color: WHITE_HEX },
+      line: { color: WHITE_HEX, width: 0 },
+      rectRadius: 0.1,
+    });
+  }
+  const pad = clientLogo.light ? 0 : 0.28;
+  const w = boxW - pad * 2;
+  const h = boxH - pad * 2;
   slide.addImage({
     data: clientLogo.dataUrl,
-    x: (W - width) / 2,
-    y: (H - height) / 2,
-    w: width,
-    h: height,
-    sizing: { type: "contain", w: width, h: height },
+    x: x + pad,
+    y: y + pad,
+    w,
+    h,
+    sizing: { type: "contain", w, h },
   });
 }
 
@@ -1336,40 +1394,14 @@ export async function renderDeck(
   return renderDeckSpec(spec, coverMeta, config);
 }
 
-/** Up to five numbered entries per agenda page keeps even long headings readable. */
-function agendaPages(entries: readonly string[]): string[][] {
-  const perPage = Math.ceil(entries.length / Math.ceil(entries.length / 5));
-  const pages: string[][] = [];
-  for (let index = 0; index < entries.length; index += perPage) {
-    pages.push(entries.slice(index, index + perPage));
-  }
-  return pages;
-}
-
-/** A numbered contents page, on whichever surface the alternation gives it. */
-function agendaSlide(pres: PptxGenJS, entries: readonly string[], index: number): void {
-  setSurface(surfaceForPage(index));
-  const slide = chrome(pres, { tag: "Contents", index });
-  slide.addText("Contents", {
-    x: M,
-    y: 0.85,
-    w: CONTENT_W,
-    h: 0.9,
-    fontFace: FONTS.heading,
-    fontSize: 34,
-    bold: true,
-    color: VIEW.heading,
-    margin: 0,
-    isTextBox: true,
-  });
-  entries.forEach((entry, position) => {
-    addText(slide, entry, M, 1.9 + position * 0.9, CONTENT_W, 0.8, {
-      fontFace: FONTS.heading,
-      fontSize: 20,
-      color: VIEW.ink,
-      valign: "top",
-    });
-  });
+/**
+ * Keeps the deck within its slide budget. When the planned content overruns,
+ * the closing ask (the last slide) is preserved and the middle is trimmed, so
+ * the argument still ends where it should.
+ */
+function capContent(slides: DeckSpecSlide[], budget: number): DeckSpecSlide[] {
+  if (slides.length <= budget) return slides;
+  return [...slides.slice(0, Math.max(0, budget - 1)), slides[slides.length - 1]!];
 }
 
 async function renderDeckSpec(
@@ -1388,30 +1420,23 @@ async function renderDeckSpec(
   pres.theme = { headFontFace: cfg.headingFont, bodyFontFace: cfg.bodyFont };
 
   EYEBROW = clean(coverMeta.industry || "");
+  FOOTER = clean(cfg.footer);
   setSurface("light");
 
-  // Page 1 is the client lockup (white); page 2 is the gradient title; then the
-  // deck alternates white / gradient by page position.
+  // Cover, then the planned content on white, then the deep-navy closing. The
+  // total is capped: the cover and the closing each cost one slide.
+  const maxSlides = T.config.maxSlides;
+  const content = capContent(spec.slides, maxSlides - 2);
   let pageNumber = 1;
-  clientLockupPage(pres, config.clientLogo ?? null);
-  pageNumber += 1;
-  cover(pres, spec, coverMeta, pageNumber);
+  cover(pres, spec, coverMeta, pageNumber, config.clientLogo ?? null);
 
-  if (spec.slides.length >= 3) {
-    const entries = spec.slides.map(
-      (slideSpec, position) => `${sectionNumber(position)}  ${slideSpec.actionTitle}`,
-    );
-    for (const entriesPage of agendaPages(entries)) {
-      pageNumber += 1;
-      agendaSlide(pres, entriesPage, pageNumber);
-    }
-  }
-
-  spec.slides.forEach((slideSpec, position) => {
+  content.forEach((slideSpec, position) => {
     pageNumber += 1;
     const index = pageNumber;
     SLIDE_NUMBER = sectionNumber(position);
-    setSurface(surfaceForPage(pageNumber));
+    // Section dividers sit on the solid deep-navy ground; every other content
+    // slide is white. The ground is chosen by layout, not by page parity.
+    setSurface(slideSpec.content.layout === "section-divider" ? "navy" : "light");
     switch (slideSpec.content.layout) {
       case "section-divider":
         divider(pres, slideSpec, index);
@@ -1461,6 +1486,11 @@ async function renderDeckSpec(
         break;
     }
   });
+
+  if (pageNumber < maxSlides) {
+    pageNumber += 1;
+    closingSlide(pres, spec, coverMeta, pageNumber);
+  }
 
   const pages = (pres as unknown as { slides: unknown[] }).slides.length;
   const output = (await pres.write({ outputType: "nodebuffer" })) as Buffer;
