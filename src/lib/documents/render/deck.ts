@@ -472,10 +472,27 @@ function closingSlide(pres: PptxGenJS, spec: DeckSpec, meta: DeckCoverMeta, inde
 }
 
 /**
+ * The client's mark, keyed and cropped for the deck: the flat background is
+ * made transparent and the padding is trimmed so the mark fills its box with
+ * the right proportions. Loaded on demand (the canvas dependency is native) and
+ * falls back to the raw logo on any failure.
+ */
+async function preparedClientLogo(
+  clientLogo: { dataUrl: string; light: boolean; aspect: number } | null,
+): Promise<{ dataUrl: string; light: boolean; aspect: number } | null> {
+  if (!clientLogo) return null;
+  try {
+    const { cleanClientLogo } = await import("./client-logo");
+    return { ...clientLogo, dataUrl: await cleanClientLogo(clientLogo.dataUrl) };
+  } catch {
+    return clientLogo;
+  }
+}
+
+/**
  * The client's mark, centred and scaled to fit with the aspect ratio preserved.
- * Pasted as a plain PNG: no panel, no border, no effects, whatever the logo's
- * own background. No logo, no placeholder text; the export never fails for a
- * missing mark.
+ * Pasted as a plain PNG: no panel, no border, no effects. No logo, no
+ * placeholder text; the export never fails for a missing mark.
  */
 function placeClientLogo(
   slide: Slide,
@@ -1424,7 +1441,7 @@ async function renderDeckSpec(
   const maxSlides = T.config.maxSlides;
   const content = capContent(spec.slides, maxSlides - 3);
   let pageNumber = 1;
-  logoCover(pres, config.clientLogo ?? null);
+  logoCover(pres, await preparedClientLogo(config.clientLogo ?? null));
   pageNumber += 1;
   titleSlide(pres, spec, coverMeta, pageNumber);
 
