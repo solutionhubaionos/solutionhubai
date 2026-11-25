@@ -338,19 +338,32 @@ function sourceLine(slide: Slide, value: string): void {
 
 /* ---------------------------------------------------------------- slides --- */
 
-/** The guideline cover: the baked deep-navy → electric-blue gradient, the Aionos
- * wordmark, the deck title and the client's logo in its reserved box. */
-function cover(
+/** Slide 1: the client's logo alone on the guideline gradient. No other text. */
+function logoCover(
   pres: PptxGenJS,
-  spec: DeckSpec,
-  meta: DeckCoverMeta,
-  pageNumber: number,
   clientLogo: { dataUrl: string; light: boolean; aspect: number } | null,
 ): void {
   const slide = pres.addSlide();
   slide.background = { color: DEEP_HEX };
   slide.addImage({ data: IMG.gradient, x: 0, y: 0, w: W, h: H });
-  // The Aionos wordmark, top-left, from the template. Never redrawn.
+  placeClientLogo(slide, clientLogo);
+  slide.addNotes("Cover: the client's logo on the Aionos gradient.");
+}
+
+/**
+ * Slide 2: the title slide, where the deck's text begins. The Aionos wordmark,
+ * the deck title and the storyline sit on the guideline gradient.
+ */
+function titleSlide(
+  pres: PptxGenJS,
+  spec: DeckSpec,
+  meta: DeckCoverMeta,
+  pageNumber: number,
+): void {
+  const slide = pres.addSlide();
+  slide.background = { color: DEEP_HEX };
+  slide.addImage({ data: IMG.gradient, x: 0, y: 0, w: W, h: H });
+  // The Aionos wordmark, from the template. Never redrawn.
   slide.addImage({
     data: IMG.whiteLogo,
     x: M,
@@ -359,7 +372,6 @@ function cover(
     h: 0.5,
     sizing: { type: "contain", w: 1.9, h: 0.5 },
   });
-  placeClientLogo(slide, clientLogo);
   const title = clean(spec.deckTitle);
   slide.addText(title, {
     x: M,
@@ -460,20 +472,20 @@ function closingSlide(pres: PptxGenJS, spec: DeckSpec, meta: DeckCoverMeta, inde
 }
 
 /**
- * The client's mark in the cover's reserved box, scaled to fit with the aspect
- * ratio preserved and clear space either side. A dark or transparent logo that
- * would fail contrast on the gradient sits on a white rounded card. No logo,
- * no card, no placeholder text; the export never fails for a missing mark.
+ * The client's mark, centred and scaled to fit with the aspect ratio preserved
+ * and clear space around it. A dark or transparent logo that would fail
+ * contrast on the gradient sits on a white rounded card. No logo, no card, no
+ * placeholder text; the export never fails for a missing mark.
  */
 function placeClientLogo(
   slide: Slide,
   clientLogo: { dataUrl: string; light: boolean; aspect: number } | null,
 ): void {
   if (!clientLogo) return;
-  const boxW = 3.4;
-  const boxH = 1.5;
-  const x = W - M - boxW;
-  const y = 0.4;
+  const boxW = 5.2;
+  const boxH = 2.4;
+  const x = (W - boxW) / 2;
+  const y = (H - boxH) / 2;
   if (!clientLogo.light) {
     slide.addShape("roundRect", {
       x,
@@ -482,10 +494,10 @@ function placeClientLogo(
       h: boxH,
       fill: { color: WHITE_HEX },
       line: { color: WHITE_HEX, width: 0 },
-      rectRadius: 0.1,
+      rectRadius: 0.12,
     });
   }
-  const pad = clientLogo.light ? 0 : 0.28;
+  const pad = clientLogo.light ? 0 : 0.45;
   const w = boxW - pad * 2;
   const h = boxH - pad * 2;
   slide.addImage({
@@ -1423,12 +1435,14 @@ async function renderDeckSpec(
   FOOTER = clean(cfg.footer);
   setSurface("light");
 
-  // Cover, then the planned content on white, then the deep-navy closing. The
-  // total is capped: the cover and the closing each cost one slide.
+  // Slide 1 is the logo-only cover, slide 2 the title slide (text starts here),
+  // the last slide the deep-navy closing; everything between is content.
   const maxSlides = T.config.maxSlides;
-  const content = capContent(spec.slides, maxSlides - 2);
+  const content = capContent(spec.slides, maxSlides - 3);
   let pageNumber = 1;
-  cover(pres, spec, coverMeta, pageNumber, config.clientLogo ?? null);
+  logoCover(pres, config.clientLogo ?? null);
+  pageNumber += 1;
+  titleSlide(pres, spec, coverMeta, pageNumber);
 
   content.forEach((slideSpec, position) => {
     pageNumber += 1;
