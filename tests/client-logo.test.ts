@@ -151,8 +151,8 @@ describe("client logo cleaning", () => {
   }
 
   test("keys out the white background and crops to the mark", async () => {
-    const cleaned = await cleanClientLogo(whiteBoxLogo());
-    const image = await loadImage(Buffer.from(cleaned.split(",")[1]!, "base64"));
+    const { dataUrl, aspect } = await cleanClientLogo(whiteBoxLogo());
+    const image = await loadImage(Buffer.from(dataUrl.split(",")[1]!, "base64"));
     const canvas = createCanvas(image.width, image.height);
     const context = canvas.getContext("2d");
     context.drawImage(image, 0, 0);
@@ -162,6 +162,8 @@ describe("client logo cleaning", () => {
     expect(image.width).toBeLessThan(120);
     expect(image.width).toBeGreaterThan(70);
     expect(image.height).toBeGreaterThan(35);
+    // The aspect ratio matches the cropped mark, so it is never stretched.
+    expect(aspect).toBeCloseTo(image.width / image.height, 5);
   });
 
   test("leaves a transparent logo unchanged in shape", async () => {
@@ -169,9 +171,10 @@ describe("client logo cleaning", () => {
     const context = canvas.getContext("2d");
     context.fillStyle = "#1C2453";
     context.fillRect(10, 10, 20, 20);
-    const cleaned = await cleanClientLogo(canvas.toDataURL("image/png"));
-    const image = await loadImage(Buffer.from(cleaned.split(",")[1]!, "base64"));
+    const { dataUrl, aspect } = await cleanClientLogo(canvas.toDataURL("image/png"));
+    const image = await loadImage(Buffer.from(dataUrl.split(",")[1]!, "base64"));
     expect(image.width).toBeLessThan(40);
     expect(image.height).toBeLessThan(40);
+    expect(aspect).toBeGreaterThan(0);
   });
 });
