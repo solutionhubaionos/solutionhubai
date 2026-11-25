@@ -136,14 +136,17 @@ describe("brand tokens", () => {
     expect(media.every((name) => /\.(?:png|jpe?g)$/i.test(name))).toBe(true);
     const { sequence, findings } = checkDeckBackgrounds(parts);
     expect(findings).toEqual([]);
-    // Cover gradient on deep navy, white content pages, deep-navy closing.
+    // Logo cover and title slide on the gradient, white content pages, deep-navy
+    // closing.
     expect(sequence[0]).toBe(palette.deepNavy);
-    expect(sequence[1]).toBe(palette.white);
+    expect(sequence[1]).toBe(palette.deepNavy);
+    expect(sequence[2]).toBe(palette.white);
     expect(sequence.at(-1)).toBe(palette.deepNavy);
+    // Slide 1 is the client logo alone: the guideline gradient, no text at all.
     const cover = new TextDecoder().decode(parts["ppt/slides/slide1.xml"]!);
     expect(cover).toMatch(`val="${palette.deepNavy}"`);
-    // The cover bleeds the baked guideline gradient, never an <a:gradFill>.
     expect(cover).toContain("<a:blip");
+    expect(cover).not.toMatch(/<a:t>/);
   });
 
   test("caps the deck at the token slide budget", async () => {

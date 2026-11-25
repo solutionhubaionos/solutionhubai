@@ -542,8 +542,8 @@ describe("consulting layouts", () => {
       ),
     ]);
     const rendered = await renderDeck(spec, { date: "2026-11-17", subtitle: "Pitch" });
-    // Cover, the one content page, then the closing page.
-    expect(rendered.pages).toBe(3);
+    // Logo cover, title slide, the one content page, then the closing page.
+    expect(rendered.pages).toBe(4);
     const parts = unzipSync(rendered.bytes);
     const xml = Object.keys(parts)
       .filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name))
@@ -592,8 +592,8 @@ describe("consulting layouts", () => {
       ),
     ]);
     const rendered = await renderDeck(spec, { date: "2026-11-17", subtitle: "Pitch" });
-    // Cover, the two content pages, then the closing page.
-    expect(rendered.pages).toBe(4);
+    // Logo cover, title slide, the two content pages, then the closing page.
+    expect(rendered.pages).toBe(5);
     const parts = unzipSync(rendered.bytes);
     const xml = Object.keys(parts)
       .filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name))
@@ -641,14 +641,15 @@ describe("consulting layouts", () => {
       {},
     );
     const parts = unzipSync(rendered.bytes);
-    // The cover is the guideline gradient: a baked image on a deep-navy canvas,
-    // never an <a:gradFill>.
+    // Slide 1 is the logo cover only: the guideline gradient on a deep-navy
+    // canvas (a baked image, never an <a:gradFill>) and no text at all.
     const coverXml = new TextDecoder().decode(parts["ppt/slides/slide1.xml"]!);
     expect(coverXml).toMatch(/<p:bg>[\s\S]*?val="030C44"/);
     expect(coverXml).not.toMatch(/gradFill/i);
     expect(coverXml).toContain("<a:blip");
+    expect(coverXml).not.toMatch(/<a:t>/);
     // The section divider sits on solid deep navy with legible white text.
-    const dividerXml = new TextDecoder().decode(parts["ppt/slides/slide2.xml"]!);
+    const dividerXml = new TextDecoder().decode(parts["ppt/slides/slide3.xml"]!);
     expect(dividerXml).toMatch(/<p:bg>[\s\S]*?val="030C44"/);
     const inks = [
       ...dividerXml
@@ -729,8 +730,9 @@ describe("deck pipeline", () => {
     if (!spec) return;
 
     const direct = await renderDeck(spec, { date: "2026-11-16", subtitle: "Pitch deck" });
-    // Cover + one page per slide + the deep-navy closing page.
-    expect(direct.pages).toBeGreaterThanOrEqual(spec.slides.length + 2);
+    // Logo cover + title slide + content (capped) + the deep-navy closing page.
+    expect(direct.pages).toBeGreaterThanOrEqual(spec.slides.length + 1);
+    expect(direct.pages).toBeLessThanOrEqual(10);
 
     const pptx = await renderPptx(result.model);
     expect(pptx.pages).toBe(direct.pages);
