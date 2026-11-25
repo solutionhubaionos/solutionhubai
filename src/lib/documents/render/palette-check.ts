@@ -86,10 +86,9 @@ function slideBackground(xml: string): string | null {
 }
 
 /**
- * Backgrounds: the deck opens on the white lockup page, every content page is
- * white (the contents page may be pearl), and blue is never a solid background
- * — the only dark canvas is the gradient title, recognised by its embedded
- * image. A dark background without that image is a finding.
+ * Backgrounds: the cover carries the baked guideline gradient (a deep-navy
+ * ground with an embedded image), content pages are white, and section dividers
+ * and the closing sit on solid deep navy. Nothing else may be a page ground.
  */
 export function checkDeckBackgrounds(parts: Record<string, Uint8Array>): {
   sequence: string[];
@@ -102,21 +101,19 @@ export function checkDeckBackgrounds(parts: Record<string, Uint8Array>): {
   const decoded = slides.map((name) => decoder.decode(parts[name]!));
   const sequence = decoded.map((xml) => slideBackground(xml) ?? "?");
   const findings: StyleFinding[] = [];
-  const deepNavy = palette.deepNavy;
-  const white = palette.white;
-  const lightBackdrops = new Set([white, palette.pearl]);
+  const grounds = new Set([
+    palette.white,
+    palette.pearl,
+    palette.lightGrey,
+    palette.navy,
+    palette.deepNavy,
+  ]);
   slides.forEach((name, index) => {
     const colour = sequence[index]!;
-    if (index === 0) {
-      if (colour !== white) findings.push({ part: name, reason: "cover must be white" });
-      return;
-    }
-    if (lightBackdrops.has(colour)) return;
-    // The one allowed dark canvas: the baked gradient title carries an image.
-    if (colour === deepNavy && decoded[index]!.includes("<a:blip")) return;
+    if (grounds.has(colour)) return;
     findings.push({
       part: name,
-      reason: `background ${colour} must be white or pearl; blue is only the gradient title`,
+      reason: `background ${colour} is not a brand ground (white, pearl, light grey or navy)`,
     });
   });
   return { sequence, findings };

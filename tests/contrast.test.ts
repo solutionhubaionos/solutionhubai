@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { unzipSync } from "fflate";
 import { checkTextPair, PALETTE } from "../src/lib/documents/contrast";
+import { FORBIDDEN_PAIRS, SAFE_PAIRS } from "../src/lib/documents/tokens";
 import { checkDeckContrast } from "../src/lib/documents/render/contrast-check";
 import { renderDeck } from "../src/lib/documents/render/deck";
 import type { DeckSpec } from "../src/lib/documents/deck/types";
@@ -105,10 +106,20 @@ describe("rendered deck contrast", () => {
     );
     const findings = checkDeckContrast(firstSlides);
     expect(findings).toEqual([]);
-    // The gradient title is a baked brand image on a deep-navy canvas, never an
-    // <a:gradFill>. Page 1 is the white co-brand lockup, page 2 the title.
-    const cover = new TextDecoder().decode(parts["ppt/slides/slide2.xml"]!);
+    // The cover is a baked brand gradient on a deep-navy canvas, and an image,
+    // never a programmatic <a:gradFill>.
+    const cover = new TextDecoder().decode(parts["ppt/slides/slide1.xml"]!);
     expect(cover).toMatch(/<p:bg>[\s\S]*?val="030C44"/);
     expect(cover).not.toMatch(/gradFill/i);
+    expect(cover).toContain("<a:blip");
+  });
+
+  test("every declared safe pair clears the bar and every forbidden pair fails", () => {
+    for (const pair of SAFE_PAIRS) {
+      expect(checkTextPair(PALETTE[pair.text], PALETTE[pair.background]).ok).toBe(true);
+    }
+    for (const pair of FORBIDDEN_PAIRS) {
+      expect(checkTextPair(PALETTE[pair.text], PALETTE[pair.background]).ok).toBe(false);
+    }
   });
 });

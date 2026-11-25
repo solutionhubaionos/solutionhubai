@@ -542,8 +542,7 @@ describe("consulting layouts", () => {
       ),
     ]);
     const rendered = await renderDeck(spec, { date: "2026-11-17", subtitle: "Pitch" });
-    // Co-brand lockup, gradient title, then one content page (under the agenda
-    // threshold of three slides).
+    // Cover, the one content page, then the closing page.
     expect(rendered.pages).toBe(3);
     const parts = unzipSync(rendered.bytes);
     const xml = Object.keys(parts)
@@ -593,7 +592,7 @@ describe("consulting layouts", () => {
       ),
     ]);
     const rendered = await renderDeck(spec, { date: "2026-11-17", subtitle: "Pitch" });
-    // Co-brand lockup, gradient title, then the two content pages.
+    // Cover, the two content pages, then the closing page.
     expect(rendered.pages).toBe(4);
     const parts = unzipSync(rendered.bytes);
     const xml = Object.keys(parts)
@@ -625,7 +624,7 @@ describe("consulting layouts", () => {
     expect(joined).toContain("Operational data is fragmented");
   });
 
-  test("keeps the gradient title dark and the third page white", async () => {
+  test("keeps the cover gradient and puts a section divider on solid navy", async () => {
     const spec = specWith([
       slide(
         {
@@ -642,22 +641,21 @@ describe("consulting layouts", () => {
       {},
     );
     const parts = unzipSync(rendered.bytes);
-    // Page 1 is the white client lockup; page 2 is the deep-navy gradient
-    // title, a baked image rather than an <a:gradFill>.
-    const coverXml = new TextDecoder().decode(parts["ppt/slides/slide2.xml"]!);
+    // The cover is the guideline gradient: a baked image on a deep-navy canvas,
+    // never an <a:gradFill>.
+    const coverXml = new TextDecoder().decode(parts["ppt/slides/slide1.xml"]!);
     expect(coverXml).toMatch(/<p:bg>[\s\S]*?val="030C44"/);
     expect(coverXml).not.toMatch(/gradFill/i);
-    // The divider is now a white page (blue is never a solid background), and
-    // its title is legible on it.
-    const dividerXml = new TextDecoder().decode(parts["ppt/slides/slide3.xml"]!);
-    const background = dividerXml.match(/<p:bg>.*?val="([0-9A-F]{6})"/s)?.[1] ?? "";
-    expect(background).toBe("FFFFFF");
+    expect(coverXml).toContain("<a:blip");
+    // The section divider sits on solid deep navy with legible white text.
+    const dividerXml = new TextDecoder().decode(parts["ppt/slides/slide2.xml"]!);
+    expect(dividerXml).toMatch(/<p:bg>[\s\S]*?val="030C44"/);
     const inks = [
       ...dividerXml
         .replace(/<p:bg>.*?<\/p:bg>/s, "")
         .matchAll(/<a:solidFill><a:srgbClr val="([0-9A-F]{6})"\/>/g),
     ].map((match) => match[1]!);
-    expect(inks.some((ink) => contrastRatio(`#${ink}`, `#${background}`) >= 4.5)).toBe(true);
+    expect(inks.some((ink) => contrastRatio(`#${ink}`, "#030C44") >= 4.5)).toBe(true);
   });
 
   test("refuses to render a deck that still carries a placeholder", () => {
@@ -731,7 +729,7 @@ describe("deck pipeline", () => {
     if (!spec) return;
 
     const direct = await renderDeck(spec, { date: "2026-11-16", subtitle: "Pitch deck" });
-    // Co-brand lockup + gradient title + (agenda, threshold met) + one page per slide.
+    // Cover + one page per slide + the deep-navy closing page.
     expect(direct.pages).toBeGreaterThanOrEqual(spec.slides.length + 2);
 
     const pptx = await renderPptx(result.model);

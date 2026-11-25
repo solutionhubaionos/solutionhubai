@@ -109,16 +109,29 @@ describe("client logo on the cover", () => {
     expect(rendered.pages).toBeGreaterThanOrEqual(2);
   });
 
-  test("draws the client logo on the lockup page with no panel", async () => {
+  test("draws the client logo on the cover, on the gradient, not a separate page", async () => {
     const rendered = await renderDeck(
       specWithLogo(),
       { date: "18 November 2026", subtitle: "Pitch" },
       { clientLogo: { dataUrl: PNG, light: true, aspect: 3 } },
     );
     const parts = unzipSync(rendered.bytes);
-    const lockup = new TextDecoder().decode(parts["ppt/slides/slide1.xml"]!);
-    // Only the logo image; no navy panel or border behind it.
-    expect((lockup.match(/<a:blip/g) ?? []).length).toBe(1);
-    expect(lockup).not.toMatch('val="1C2453"');
+    const cover = new TextDecoder().decode(parts["ppt/slides/slide1.xml"]!);
+    // The cover carries the baked gradient, the Aionos wordmark and the mark.
+    expect(cover).toMatch(/<p:bg>[\s\S]*?val="030C44"/);
+    expect((cover.match(/<a:blip/g) ?? []).length).toBeGreaterThanOrEqual(2);
+    // A light logo needs no white panel behind it.
+    expect(cover).not.toMatch('<a:prstGeom prst="roundRect"');
+  });
+
+  test("sits a dark logo on a white card on the cover", async () => {
+    const rendered = await renderDeck(
+      specWithLogo(),
+      { date: "18 November 2026", subtitle: "Pitch" },
+      { clientLogo: { dataUrl: PNG, light: false, aspect: 3 } },
+    );
+    const parts = unzipSync(rendered.bytes);
+    const cover = new TextDecoder().decode(parts["ppt/slides/slide1.xml"]!);
+    expect(cover).toMatch('<a:prstGeom prst="roundRect"');
   });
 });
