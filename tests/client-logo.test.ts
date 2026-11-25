@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { unzipSync } from "fflate";
+import { createCanvas, loadImage } from "@napi-rs/canvas";
 import { logoCandidates } from "../src/lib/logo/candidates";
 import { renderDeck } from "../src/lib/documents/render/deck";
+import { cleanClientLogo } from "../src/lib/documents/render/client-logo";
 import type { DeckSpec } from "../src/lib/documents/deck/types";
 
 const PNG =
@@ -133,5 +135,43 @@ describe("client logo on the cover", () => {
     const cover = new TextDecoder().decode(parts["ppt/slides/slide1.xml"]!);
     // Just the image: no rounded card, no shape behind it.
     expect(cover).not.toMatch('<a:prstGeom prst="roundRect"');
+  });
+});
+
+describe("client logo cleaning", () => {
+  /** An opaque white box with a blue mark in the centre, as a JPEG-like logo. */
+  function whiteBoxLogo(): string {
+    const canvas = createCanvas(200, 80);
+    const context = canvas.getContext("2d");
+    context.fillStyle = "#FFFFFF";
+    context.fillRect(0, 0, 200, 80);
+    context.fillStyle = "#2148FB";
+    context.fillRect(60, 20, 80, 40);
+    return canvas.toDataURL("image/png");
+  }
+
+  test("keys out the white background and crops to the mark", async () => {
+    const cleaned = await cleanClientLogo(whiteBoxLogo());
+    const image = await loadImage(Buffer.from(cleaned.split(",")[1]!, "base64"));
+    const canvas = createCanvas(image.width, image.height);
+    const context = canvas.getContext("2d");
+    context.drawImage(image, 0, 0);
+    const px = context.getImageData(0, 0, image.width, image.height).data;
+    // The surrounding white is gone; the mark is still there and cropped tight.
+    expect(px[3]).toBe(0);
+    expect(image.width).toBeLessThan(120);
+    expect(image.width).toBeGreaterThan(70);
+    expect(image.height).toBeGreaterThan(35);
+  });
+
+  test("leaves a transparent logo unchanged in shape", async () => {
+    const canvas = createCanvas(40, 40);
+    const context = canvas.getContext("2d");
+    context.fillStyle = "#1C2453";
+    context.fillRect(10, 10, 20, 20);
+    const cleaned = await cleanClientLogo(canvas.toDataURL("image/png"));
+    const image = await loadImage(Buffer.from(cleaned.split(",")[1]!, "base64"));
+    expect(image.width).toBeLessThan(40);
+    expect(image.height).toBeLessThan(40);
   });
 });
