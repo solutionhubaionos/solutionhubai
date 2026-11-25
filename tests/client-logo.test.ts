@@ -117,14 +117,13 @@ describe("client logo on the cover", () => {
     );
     const parts = unzipSync(rendered.bytes);
     const cover = new TextDecoder().decode(parts["ppt/slides/slide1.xml"]!);
-    // The cover carries the baked gradient, the Aionos wordmark and the mark.
+    // Slide 1 carries the baked gradient and the client mark, nothing else.
     expect(cover).toMatch(/<p:bg>[\s\S]*?val="030C44"/);
     expect((cover.match(/<a:blip/g) ?? []).length).toBeGreaterThanOrEqual(2);
-    // A light logo needs no white panel behind it.
     expect(cover).not.toMatch('<a:prstGeom prst="roundRect"');
   });
 
-  test("sits a dark logo on a white card on the cover", async () => {
+  test("pastes a dark logo with no panel or border", async () => {
     const rendered = await renderDeck(
       specWithLogo(),
       { date: "18 November 2026", subtitle: "Pitch" },
@@ -132,6 +131,7 @@ describe("client logo on the cover", () => {
     );
     const parts = unzipSync(rendered.bytes);
     const cover = new TextDecoder().decode(parts["ppt/slides/slide1.xml"]!);
-    expect(cover).toMatch('<a:prstGeom prst="roundRect"');
+    // Just the image: no rounded card, no shape behind it.
+    expect(cover).not.toMatch('<a:prstGeom prst="roundRect"');
   });
 });
