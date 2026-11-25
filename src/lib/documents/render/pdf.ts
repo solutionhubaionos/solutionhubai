@@ -18,9 +18,31 @@ import {
 import { chartPng } from "../chart-image";
 import type { Block, DocumentModel, DocumentSection } from "../types";
 import { DOCUMENT_THEME as THEME, hexToRgb } from "../theme";
+import { palette } from "../tokens";
+import { AIONOS_LOGO } from "../assets/aionos-logo";
+import { DECK_IMAGES } from "../assets/aionos-theme-images";
 
 const A4 = { width: 595.28, height: 841.89 };
 const SLIDE = { width: 960, height: 540 };
+
+/**
+ * The house PDF style, ported from the studio's `createPdf` (dashboard-to-
+ * documents): navy ink, electric-blue headings and accents, pearl paper on the
+ * dark gradient cover, mist hairlines. Named palette values come from the token
+ * file; `muted` is the one secondary ink the style uses that is not a token.
+ */
+const P = {
+  ink: `#${palette.navy}`,
+  deep: `#${palette.deepNavy}`,
+  primary: `#${palette.electricBlue}`,
+  accent: `#${palette.warmClay}`,
+  cyan: `#${palette.electricCyan}`,
+  paper: `#${palette.pearl}`,
+  muted: "#414B64",
+  surface: `#${palette.mist}`,
+  light: `#${palette.lightGrey}`,
+  soft: `#${palette.softBlue}`,
+} as const;
 
 type Ctx = {
   doc: PDFDocument;
@@ -37,9 +59,58 @@ type Ctx = {
   isSlide: boolean;
   /** Charts rasterised once per render and shared by every page that uses them. */
   chartImages: Map<Block, PDFImage>;
+  /** The ground of the page being written: the gradient overview or a plain content page. */
+  mode: "overview" | "content";
+  /** Overview pages carry light text, so the footer needs to know which pages are dark. */
+  overviewPages: Set<PDFPage>;
+  /** The industry eyebrow drawn on every content page. */
+  eyebrow: string;
+  /** Brand images embedded once and reused on every page; null when not embedded. */
+  images: {
+    gradient: PDFImage | null;
+    whiteLogo: PDFImage | null;
+    navyLogo: PDFImage | null;
+    clientLogo: PDFImage | null;
+  };
 };
 
 const color = (hex: string) => rgb(...hexToRgb(hex));
+
+/** "01", "02", ... so section headings carry the house numbering. */
+function sectionNumber(index: number): string {
+  return String(index + 1).padStart(2, "0");
+}
+
+/** The bytes behind a data URL (the bundled brand assets), or null when unreadable. */
+function dataUrlBytes(url: string): Uint8Array | null {
+  const comma = url.indexOf(",");
+  if (comma < 0) return null;
+  const meta = url.slice(0, comma);
+  const body = url.slice(comma + 1);
+  try {
+    return /;base64/i.test(meta)
+      ? new Uint8Array(Buffer.from(body, "base64"))
+      : new Uint8Array(Buffer.from(decodeURIComponent(body)));
+  } catch {
+    return null;
+  }
+}
+
+/** Embed a brand image from its data URL, trying PNG then JPEG; null on failure. */
+async function embedDataUrl(doc: PDFDocument, url: string): Promise<PDFImage | null> {
+  const bytes = dataUrlBytes(url);
+  if (!bytes || bytes.length === 0) return null;
+  try {
+    return await doc.embedPng(bytes);
+  } catch {
+    /* not a PNG */
+  }
+  try {
+    return await doc.embedJpg(bytes);
+  } catch {
+    return null;
+  }
+}
 
 /** WinAnsi-safe text: map the common typographic characters, drop the rest. */
 export function pdfSafe(text: string): string {
@@ -103,7 +174,12 @@ function newPage(ctx: Ctx): void {
   const page = ctx.doc.addPage([ctx.width, ctx.height]);
   ctx.pages.push(page);
   ctx.page = page;
-  ctx.y = ctx.height - ctx.margin;
+  if (ctx.mode === "overview") {
+    overlayOverview(ctx);
+  } else {
+    drawContentHeader(ctx);
+    ctx.y = ctx.height - (ctx.isSlide ? 120 : 77);
+  }
 }
 
 function space(ctx: Ctx, height: number): void {
@@ -656,117 +732,197 @@ function drawBlock(ctx: Ctx, block: Block): void {
   }
 }
 
-function drawCover(ctx: Ctx, model: DocumentModel): void {
-  const { width, height } = ctx;
-  ctx.page.drawRectangle({
-    x: 0,
-    y: height - 12,
-    width,
-    height: 12,
-    color: color(THEME.colors.accent),
-  });
-  ctx.page.drawRectangle({
-    x: 0,
-    y: 0,
-    width: 6,
-    height,
-    color: color(THEME.colors.accent),
-  });
-
-  const left = ctx.isSlide ? 64 : 48;
-  let y = height - (ctx.isSlide ? 92 : 130);
-  ctx.page.drawText(THEME.brand.wordmark, {
-    x: left,
-    y,
-    size: 9,
-    font: ctx.bold,
-    color: color(THEME.colors.accent),
-  });
-
-  y -= ctx.isSlide ? 54 : 72;
-  const titleLines = wrapText(model.cover.title, ctx.bold, ctx.isSlide ? 40 : 30, width - left * 2);
-  for (const line of titleLines.slice(0, 4)) {
-    ctx.page.drawText(line, {
-      x: left,
-      y,
-      size: ctx.isSlide ? 40 : 30,
-      font: ctx.bold,
-      color: color(THEME.colors.ink),
+/** The guideline gradient bleeding the full page, on a deep-navy fallback. */
+function drawGradient(ctx: Ctx): void {
+  if (ctx.images.gradient) {
+    ctx.page.drawImage(ctx.images.gradient, {
+      x: 0,
+      y: 0,
+      width: ctx.width,
+      height: ctx.height,
     });
-    y -= ctx.isSlide ? 46 : 36;
+  } else {
+    ctx.page.drawRectangle({
+      x: 0,
+      y: 0,
+      width: ctx.width,
+      height: ctx.height,
+      color: color(P.deep),
+    });
   }
+}
 
-  if (model.cover.subtitle) {
-    y -= 4;
-    for (const line of wrapText(
-      model.cover.subtitle,
-      ctx.body,
-      ctx.isSlide ? 16 : 13,
-      width - left * 2 - 60,
-    ).slice(0, 3)) {
-      ctx.page.drawText(line, {
-        x: left,
-        y,
-        size: ctx.isSlide ? 16 : 13,
-        font: ctx.body,
-        color: color(THEME.colors.muted),
+/** Page one: the "Aionos × Client" lockup alone, centred on the gradient. */
+function drawLogoCover(ctx: Ctx, model: DocumentModel): void {
+  const { width, height } = ctx;
+  drawGradient(ctx);
+  const white = ctx.images.whiteLogo;
+  const client = ctx.images.clientLogo;
+  const clientName = pdfSafe(model.cover.client ?? "").trim();
+  const logoH = ctx.isSlide ? 40 : 35;
+  const gap = ctx.isSlide ? 22 : 26;
+  const crossSize = ctx.isSlide ? 26 : 19;
+  const nameSize = ctx.isSlide ? 20 : 16;
+
+  const whiteW = logoH * (white ? white.width / white.height : 3.9);
+  const crossW = ctx.bold.widthOfTextAtSize("\u00d7", crossSize);
+  const clientW = client
+    ? logoH * (client.width / client.height)
+    : clientName
+      ? Math.min(ctx.bold.widthOfTextAtSize(clientName, nameSize), width / 2)
+      : 0;
+  const hasClient = Boolean(client || clientName);
+  const total = whiteW + (hasClient ? gap + crossW + gap + clientW : 0);
+  const midY = height / 2;
+  let x = (width - total) / 2;
+
+  if (white) {
+    ctx.page.drawImage(white, { x, y: midY - logoH / 2, width: whiteW, height: logoH });
+  } else {
+    const label = THEME.brand.wordmark;
+    const size = ctx.isSlide ? 24 : 20;
+    ctx.page.drawText(label, {
+      x,
+      y: midY - size * 0.35,
+      size,
+      font: ctx.bold,
+      color: color(P.paper),
+    });
+  }
+  x += whiteW;
+
+  if (hasClient) {
+    x += gap;
+    ctx.page.drawText("\u00d7", {
+      x,
+      y: midY - crossSize * 0.35,
+      size: crossSize,
+      font: ctx.bold,
+      color: color(P.primary),
+    });
+    x += crossW + gap;
+    if (client) {
+      ctx.page.drawImage(client, { x, y: midY - logoH / 2, width: clientW, height: logoH });
+    } else {
+      let size = nameSize;
+      while (size > 8 && ctx.bold.widthOfTextAtSize(clientName, size) > width / 2) size -= 1;
+      ctx.page.drawText(clientName, {
+        x,
+        y: midY - size * 0.35,
+        size,
+        font: ctx.bold,
+        color: color(P.paper),
       });
-      y -= ctx.isSlide ? 22 : 18;
     }
   }
+}
 
-  y -= ctx.isSlide ? 26 : 36;
-  ctx.page.drawLine({
-    start: { x: left, y },
-    end: { x: left + 70, y },
-    thickness: 2,
-    color: color(THEME.colors.accent),
+/** The gradient base of an overview page: wordmark top-left, text starts below. */
+function overlayOverview(ctx: Ctx): void {
+  drawGradient(ctx);
+  const white = ctx.images.whiteLogo;
+  const h = ctx.isSlide ? 26 : 21;
+  const w = h * (white ? white.width / white.height : 3.9);
+  if (white) {
+    ctx.page.drawImage(white, {
+      x: ctx.margin,
+      y: ctx.height - (ctx.isSlide ? 40 : 57),
+      width: w,
+      height: h,
+    });
+  } else {
+    ctx.page.drawText(THEME.brand.wordmark, {
+      x: ctx.margin,
+      y: ctx.height - (ctx.isSlide ? 46 : 62),
+      size: ctx.isSlide ? 14 : 11,
+      font: ctx.bold,
+      color: color(P.paper),
+    });
+  }
+  ctx.overviewPages.add(ctx.page);
+  ctx.y = ctx.height - (ctx.isSlide ? 96 : 158);
+}
+
+/** Page two: the document title and summary over the gradient. */
+function drawOverview(ctx: Ctx, model: DocumentModel): void {
+  overlayOverview(ctx);
+  text(ctx, model.cover.title, {
+    font: ctx.bold,
+    size: ctx.isSlide ? 40 : 27,
+    color: P.paper,
+    gap: 0,
+    keep: 1,
   });
-
-  y -= 28;
-  const meta = [
-    model.cover.client ? `Prepared for ${model.cover.client}` : null,
-    model.cover.industry ? `Industry: ${model.cover.industry}` : null,
-    model.cover.date,
-  ].filter((value): value is string => Boolean(value));
-  for (const line of meta) {
-    ctx.page.drawText(pdfSafe(line), {
-      x: left,
-      y,
-      size: ctx.isSlide ? 13 : 10.5,
-      font: ctx.body,
-      color: color(THEME.colors.muted),
+  ctx.y -= 18;
+  if (model.cover.subtitle) {
+    text(ctx, model.cover.subtitle, {
+      size: ctx.isSlide ? 16 : 12,
+      color: P.soft,
+      gap: 0,
+      keep: 1,
     });
-    y -= ctx.isSlide ? 20 : 16;
   }
-
   if (model.cover.request) {
-    const boxWidth = Math.min(width - left * 2, ctx.isSlide ? 620 : 420);
-    const lines = wrapText(
-      `Request: ${model.cover.request}`,
-      ctx.oblique,
-      8.8,
-      boxWidth - 22,
-    ).slice(0, 4);
-    const boxHeight = lines.length * 12 + 16;
-    const boxY = ctx.isSlide ? 56 : 70;
-    ctx.page.drawRectangle({
-      x: left,
-      y: boxY,
-      width: boxWidth,
-      height: boxHeight,
-      color: color(THEME.colors.surface),
-    });
-    lines.forEach((line, index) => {
-      ctx.page.drawText(line, {
-        x: left + 11,
-        y: boxY + boxHeight - 13 - index * 12,
-        size: 8.8,
-        font: ctx.oblique,
-        color: color(THEME.colors.muted),
-      });
+    ctx.y -= 12;
+    text(ctx, `Request: ${model.cover.request}`, {
+      font: ctx.oblique,
+      size: ctx.isSlide ? 12 : 9,
+      color: P.soft,
+      gap: 0,
+      keep: 1,
     });
   }
+  const meta = [model.cover.client, model.cover.industry, model.cover.date].filter(
+    (value): value is string => Boolean(value),
+  );
+  if (meta.length > 0) {
+    ctx.page.drawText(pdfSafe(meta.join("  \u00b7  ")), {
+      x: ctx.margin,
+      y: ctx.isSlide ? 44 : 74,
+      size: ctx.isSlide ? 10 : 9,
+      font: ctx.body,
+      color: color(P.paper),
+    });
+  }
+}
+
+/** The header every content page carries: industry eyebrow, wordmark, hairline. */
+function drawContentHeader(ctx: Ctx): void {
+  const s = ctx.isSlide;
+  ctx.page.drawText(pdfSafe(ctx.eyebrow || THEME.brand.name), {
+    x: ctx.margin,
+    y: ctx.height - (s ? 70 : 34),
+    size: s ? 13 : 8,
+    font: ctx.bold,
+    color: color(P.primary),
+  });
+  const navy = ctx.images.navyLogo;
+  const h = s ? 22 : 14;
+  const w = h * (navy ? navy.width / navy.height : 3.9);
+  if (navy) {
+    ctx.page.drawImage(navy, {
+      x: ctx.width - ctx.margin - w,
+      y: ctx.height - (s ? 78 : 41),
+      width: w,
+      height: h,
+    });
+  } else {
+    const size = s ? 14 : 9;
+    ctx.page.drawText(THEME.brand.wordmark, {
+      x: ctx.width - ctx.margin - ctx.bold.widthOfTextAtSize(THEME.brand.wordmark, size),
+      y: ctx.height - (s ? 76 : 39),
+      size,
+      font: ctx.bold,
+      color: color(P.ink),
+    });
+  }
+  const ruleY = ctx.height - (s ? 92 : 52);
+  ctx.page.drawLine({
+    start: { x: ctx.margin, y: ruleY },
+    end: { x: ctx.width - ctx.margin, y: ruleY },
+    thickness: 1,
+    color: color(P.surface),
+  });
 }
 
 function drawContents(
@@ -778,42 +934,20 @@ function drawContents(
   page.drawText("Contents", {
     x: ctx.margin,
     y,
-    size: 19,
+    size: 16,
     font: ctx.bold,
-    color: color(THEME.colors.ink),
-  });
-  y -= 16;
-  page.drawLine({
-    start: { x: ctx.margin, y },
-    end: { x: ctx.width - ctx.margin, y },
-    thickness: 1,
-    color: color(THEME.colors.accent),
+    color: color(P.primary),
   });
   y -= 26;
   entries.forEach((entry, index) => {
-    page.drawText(`${String(index + 1).padStart(2, "0")}`, {
+    page.drawText(`${sectionNumber(index)}   ${pdfSafe(entry.title)}`, {
       x: ctx.margin,
       y,
-      size: 9.5,
-      font: ctx.bold,
-      color: color(THEME.colors.accent),
-    });
-    const title = pdfSafe(entry.title).slice(0, 78);
-    page.drawText(title, {
-      x: ctx.margin + 24,
-      y,
-      size: 10.5,
+      size: 11,
       font: ctx.body,
-      color: color(THEME.colors.ink),
+      color: color(P.ink),
     });
-    page.drawText(String(entry.page), {
-      x: ctx.width - ctx.margin - 14,
-      y,
-      size: 10,
-      font: ctx.body,
-      color: color(THEME.colors.muted),
-    });
-    y -= 19;
+    y -= 20;
   });
 }
 
@@ -825,11 +959,11 @@ function drawSources(ctx: Ctx, model: DocumentModel): void {
   text(ctx, "Sources", {
     font: ctx.bold,
     size: ctx.isSlide ? 24 : 16,
-    color: THEME.colors.ink,
+    color: P.primary,
     gap: 4,
     keep: 1,
   });
-  rule(ctx);
+  rule(ctx, ctx.width - ctx.margin * 2, P.surface);
   model.sources.forEach((source, index) => {
     const location = source.slide
       ? `slide ${source.slide}`
@@ -864,24 +998,35 @@ async function renderThemedPdf(
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
   const oblique = await doc.embedFont(StandardFonts.HelveticaOblique);
 
-  const cover = doc.addPage([size.width, size.height]);
+  // The bundled brand assets are embedded once and reused on every page.
+  const [gradient, whiteLogo, navyLogo, clientLogo] = await Promise.all([
+    embedDataUrl(doc, DECK_IMAGES.gradient),
+    embedDataUrl(doc, AIONOS_LOGO.white),
+    embedDataUrl(doc, AIONOS_LOGO.navy),
+    model.clientLogo?.dataUrl ? embedDataUrl(doc, model.clientLogo.dataUrl) : Promise.resolve(null),
+  ]);
 
   const citations = new Map(model.sources.map((source, index) => [source.chunkId, index + 1]));
   const ctx: Ctx = {
     doc,
-    page: cover,
-    y: size.height - 56,
+    page: doc.addPage([size.width, size.height]),
+    y: size.height,
     width: size.width,
     height: size.height,
-    margin: isSlide ? 48 : 56,
+    margin: 48,
     body,
     bold,
     oblique,
-    pages: [cover],
+    pages: [],
     citations,
     isSlide,
     chartImages: new Map(),
+    mode: "overview",
+    overviewPages: new Set(),
+    eyebrow: model.cover.industry ?? "",
+    images: { gradient, whiteLogo, navyLogo, clientLogo },
   };
+  ctx.pages.push(ctx.page);
 
   // Embed the charts before any page is written: pdf-lib images are reusable
   // across pages, and a failure here falls back to a table in drawBlock.
@@ -893,12 +1038,17 @@ async function renderThemedPdf(
     }
   }
 
-  drawCover(ctx, model);
+  // Page one is the logo lockup alone; page two carries the title and summary.
+  drawLogoCover(ctx, model);
+  ctx.page = doc.addPage([size.width, size.height]);
+  ctx.pages.push(ctx.page);
+  drawOverview(ctx, model);
+  ctx.mode = "content";
 
   // A section with no grounded copy is left out of the file: the PDF states what
   // the evidence supports and our recommendation, never what is missing.
   const sections = model.sections.filter((section) => section.blocks.length > 0);
-  const contents = !isSlide && sections.length >= 5;
+  const contents = !isSlide && sections.length >= 3;
   let contentsPage: PDFPage | null = null;
   if (contents) {
     newPage(ctx);
@@ -917,47 +1067,34 @@ async function renderThemedPdf(
       space(ctx, 150);
     }
     starts.push({ title: section.title, page: ctx.pages.length });
-    text(ctx, section.title, {
+    text(ctx, `${sectionNumber(index)}   ${section.title}`, {
       font: ctx.bold,
       size: isSlide ? 26 : 17,
-      color: THEME.colors.ink,
+      color: P.primary,
       gap: 2,
       keep: 2,
     });
-    rule(ctx, ctx.width - ctx.margin * 2, THEME.colors.accent);
     ctx.y -= 8;
 
     section.blocks.forEach((block) => drawBlock(ctx, block));
+    if (!isSlide) rule(ctx, ctx.width - ctx.margin * 2, P.surface);
   });
 
   drawSources(ctx, model);
 
   if (contentsPage) drawContents(ctx, starts, contentsPage);
 
-  // Footer on every page except the cover.
+  // Page number on every page except the logo cover; light on the dark pages.
   const total = ctx.pages.length;
   ctx.pages.forEach((page, index) => {
     if (index === 0) return;
-    page.drawLine({
-      start: { x: ctx.margin, y: 40 },
-      end: { x: ctx.width - ctx.margin, y: 40 },
-      thickness: 0.6,
-      color: color(THEME.colors.border),
-    });
-    page.drawText(pdfSafe(THEME.footer), {
-      x: ctx.margin,
-      y: 29,
-      size: 7,
-      font: ctx.body,
-      color: color(THEME.colors.muted),
-    });
-    const label = `Page ${index + 1} of ${total}`;
+    const label = `${index + 1} / ${total}`;
     page.drawText(label, {
-      x: ctx.width - ctx.margin - body.widthOfTextAtSize(label, 7.5),
-      y: 29,
-      size: 7.5,
-      font: ctx.bold,
-      color: color(THEME.colors.muted),
+      x: ctx.width - ctx.margin - body.widthOfTextAtSize(label, 9),
+      y: isSlide ? 28 : 35,
+      size: 9,
+      font: ctx.body,
+      color: color(ctx.overviewPages.has(page) ? P.paper : P.muted),
     });
   });
 
