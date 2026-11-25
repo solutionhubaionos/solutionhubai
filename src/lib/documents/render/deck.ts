@@ -472,10 +472,10 @@ function closingSlide(pres: PptxGenJS, spec: DeckSpec, meta: DeckCoverMeta, inde
 }
 
 /**
- * The client's mark, centred and scaled to fit with the aspect ratio preserved
- * and clear space around it. A dark or transparent logo that would fail
- * contrast on the gradient sits on a white rounded card. No logo, no card, no
- * placeholder text; the export never fails for a missing mark.
+ * The client's mark, centred and scaled to fit with the aspect ratio preserved.
+ * Pasted as a plain PNG: no panel, no border, no effects, whatever the logo's
+ * own background. No logo, no placeholder text; the export never fails for a
+ * missing mark.
  */
 function placeClientLogo(
   slide: Slide,
@@ -484,29 +484,13 @@ function placeClientLogo(
   if (!clientLogo) return;
   const boxW = 5.2;
   const boxH = 2.4;
-  const x = (W - boxW) / 2;
-  const y = (H - boxH) / 2;
-  if (!clientLogo.light) {
-    slide.addShape("roundRect", {
-      x,
-      y,
-      w: boxW,
-      h: boxH,
-      fill: { color: WHITE_HEX },
-      line: { color: WHITE_HEX, width: 0 },
-      rectRadius: 0.12,
-    });
-  }
-  const pad = clientLogo.light ? 0 : 0.45;
-  const w = boxW - pad * 2;
-  const h = boxH - pad * 2;
   slide.addImage({
     data: clientLogo.dataUrl,
-    x: x + pad,
-    y: y + pad,
-    w,
-    h,
-    sizing: { type: "contain", w, h },
+    x: (W - boxW) / 2,
+    y: (H - boxH) / 2,
+    w: boxW,
+    h: boxH,
+    sizing: { type: "contain", w: boxW, h: boxH },
   });
 }
 
