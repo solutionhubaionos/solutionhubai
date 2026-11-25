@@ -34,23 +34,26 @@ function payloadBytes(dataUrl: string): Uint8Array | null {
 }
 
 /**
- * Returns a transparent, tightly cropped PNG data URL for the logo. On any
- * failure the original data URL is returned, so a bad logo degrades to the
- * previous behaviour rather than breaking the deck.
+ * Returns a transparent, tightly cropped PNG data URL for the logo, plus the
+ * cropped `width / height` so the renderer can place it without distortion. On
+ * any failure the original data URL is returned with `aspect: 0`, so a bad logo
+ * degrades to the previous behaviour rather than breaking the deck.
  */
-export async function cleanClientLogo(dataUrl: string): Promise<string> {
+export async function cleanClientLogo(
+  dataUrl: string,
+): Promise<{ dataUrl: string; aspect: number }> {
   const bytes = payloadBytes(dataUrl);
-  if (!bytes || bytes.length === 0) return dataUrl;
+  if (!bytes || bytes.length === 0) return { dataUrl, aspect: 0 };
 
   let image: Awaited<ReturnType<typeof loadImage>>;
   try {
     image = await loadImage(Buffer.from(bytes));
   } catch {
-    return dataUrl;
+    return { dataUrl, aspect: 0 };
   }
   const naturalWidth = image.width;
   const naturalHeight = image.height;
-  if (!naturalWidth || !naturalHeight) return dataUrl;
+  if (!naturalWidth || !naturalHeight) return { dataUrl, aspect: 0 };
 
   const scale = Math.min(1, MAX_EDGE / Math.max(naturalWidth, naturalHeight));
   const width = Math.max(1, Math.round(naturalWidth * scale));
@@ -159,7 +162,7 @@ export async function cleanClientLogo(dataUrl: string): Promise<string> {
       if (y > maxY) maxY = y;
     }
   }
-  if (maxX < minX || maxY < minY) return dataUrl;
+  if (maxX < minX || maxY < minY) return { dataUrl, aspect: 0 };
 
   const pad = 2;
   const cropX = Math.max(0, minX - pad);
@@ -168,5 +171,5 @@ export async function cleanClientLogo(dataUrl: string): Promise<string> {
   const cropH = Math.min(height, maxY + pad + 1) - cropY;
   const out = createCanvas(cropW, cropH);
   out.getContext("2d").drawImage(canvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
-  return out.toDataURL("image/png");
+  return { dataUrl: out.toDataURL("image/png"), aspect: cropW / cropH };
 }

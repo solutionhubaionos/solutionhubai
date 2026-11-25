@@ -483,31 +483,42 @@ async function preparedClientLogo(
   if (!clientLogo) return null;
   try {
     const { cleanClientLogo } = await import("./client-logo");
-    return { ...clientLogo, dataUrl: await cleanClientLogo(clientLogo.dataUrl) };
+    const cleaned = await cleanClientLogo(clientLogo.dataUrl);
+    return {
+      ...clientLogo,
+      dataUrl: cleaned.dataUrl,
+      aspect: cleaned.aspect > 0 ? cleaned.aspect : clientLogo.aspect,
+    };
   } catch {
     return clientLogo;
   }
 }
 
 /**
- * The client's mark, centred and scaled to fit with the aspect ratio preserved.
- * Pasted as a plain PNG: no panel, no border, no effects. No logo, no
- * placeholder text; the export never fails for a missing mark.
+ * The client's mark, centred on the cover. Its width and height are computed
+ * from its own aspect ratio (never stretched by the renderer), then fitted
+ * inside the box so a wide mark binds on width and a tall mark on height.
  */
 function placeClientLogo(
   slide: Slide,
   clientLogo: { dataUrl: string; light: boolean; aspect: number } | null,
 ): void {
   if (!clientLogo) return;
-  const boxW = 5.2;
-  const boxH = 2.4;
+  const maxW = 5.2;
+  const maxH = 2.4;
+  const aspect = clientLogo.aspect > 0 ? clientLogo.aspect : maxW / maxH;
+  let width = maxW;
+  let height = width / aspect;
+  if (height > maxH) {
+    height = maxH;
+    width = height * aspect;
+  }
   slide.addImage({
     data: clientLogo.dataUrl,
-    x: (W - boxW) / 2,
-    y: (H - boxH) / 2,
-    w: boxW,
-    h: boxH,
-    sizing: { type: "contain", w: boxW, h: boxH },
+    x: (W - width) / 2,
+    y: (H - height) / 2,
+    w: width,
+    h: height,
   });
 }
 
